@@ -72,6 +72,30 @@ class WxrTests(unittest.TestCase):
         item = root.find("./channel/item")
         self.assertEqual(item.findtext(f"{{{WP_NS}}}post_type"), "document")
 
+    def test_statuses_menu_order_and_cdata_sensitive_content(self):
+        for status in ("draft", "publish", "pending", "private", "trash"):
+            with self.subTest(status=status):
+                xml = render_wxr(
+                    [
+                        {
+                            "key": status,
+                            "title": "A & B < C — café",
+                            "slug": f"status-{status}",
+                            "post_type": "page",
+                            "status": status,
+                            "menu_order": 7,
+                            "excerpt": "Contains ]]> and & safely",
+                            "content": "<!-- wp:paragraph -->\n<p>One &amp; two ]]> three</p>\n<!-- /wp:paragraph -->",
+                        }
+                    ]
+                )
+                root = ET.fromstring(xml)
+                item = root.find("./channel/item")
+                self.assertEqual(item.findtext("title"), "A & B < C — café")
+                self.assertEqual(item.findtext(f"{{{WP_NS}}}status"), status)
+                self.assertEqual(item.findtext(f"{{{WP_NS}}}menu_order"), "7")
+                self.assertIn("]]>", item.findtext(f"{{{CONTENT_NS}}}encoded"))
+
 
 if __name__ == "__main__":
     unittest.main()

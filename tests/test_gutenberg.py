@@ -54,6 +54,50 @@ class GutenbergTests(unittest.TestCase):
         self.assertLess(sample.index("<!-- wp:wsuwp/section"), sample.index("<!-- wp:heading -->"))
         self.assertLess(sample.index("<!-- wp:paragraph -->"), sample.index("<!-- /wp:wsuwp/section -->"))
 
+    def test_production_style_hero_and_section_fixtures(self):
+        document = {
+            "metadata": {"title": "Student Academic Onboarding"},
+            "blocks": [
+                {"id": "h", "type": "heading", "level": 2, "content": "Welcome"},
+                {"id": "p", "type": "paragraph", "content": "Let's get started"},
+            ],
+        }
+        scenarios = [
+            ("hero-title.html", {"enabled": True}),
+            ("hero-caption.html", {"enabled": True, "caption": "RN-BSN"}),
+            (
+                "hero-image-src.html",
+                {"enabled": True, "imageSrc": "https://wpcdn.web.wsu.edu/hero-image.png"},
+            ),
+            (
+                "hero-image-id.html",
+                {
+                    "enabled": True,
+                    "imageId": 54625,
+                    "imageSrc": "https://wpcdn.web.wsu.edu/hero-image.png",
+                },
+            ),
+        ]
+        for fixture, hero in scenarios:
+            with self.subTest(fixture=fixture):
+                output = render_document(document, "wsuwp", {"hero": hero})
+                expected = (FIXTURES / "wsuwp" / fixture).read_text(encoding="utf-8").strip()
+                self.assertEqual(output.split("\n", 1)[0], expected)
+        output = render_document(
+            document,
+            "wsuwp",
+            {
+                "section_defaults": {
+                    "id": "top",
+                    "className": "wsu-color-background--white",
+                }
+            },
+        )
+        section = (FIXTURES / "wsuwp" / "section.html").read_text(encoding="utf-8").strip()
+        self.assertEqual(output.split("\n", 1)[0], section)
+        self.assertIn("<!-- wp:heading -->", output)
+        self.assertIn("<!-- wp:paragraph -->", output)
+
 
 if __name__ == "__main__":
     unittest.main()

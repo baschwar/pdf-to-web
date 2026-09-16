@@ -29,8 +29,29 @@ Source reviewed: `sample_files/collegeofnursing.WordPress.2026-09-16.xml`
 - Converting a library item to an accessible Page or Post should preserve the
   original item title, slug, visibility, publication date, author, and PDF URL
   as source metadata while defaulting the new import to Draft.
-- Phase 1's WXR serializer already accepts arbitrary post-type strings, but
-  actual `document` import behavior still requires WordPress/WSUWP round-trip
-  testing.
+- Phase 1's WXR serializer accepts arbitrary post-type strings. The destination
+  must register `document` before importing that post type; otherwise the
+  fixture proof should use Page or Post.
+
+## Phase 1B local round trip
+
+Validated on 2026-09-16 with WordPress 7.1 and WordPress Importer 0.9.6 in the
+isolated Docker stack under `tools/wordpress-roundtrip/`.
+
+- Imported a single Page, a single Post with category and tag, parent and child
+  Pages, a four-item WXR file, and a WSU-profile Page.
+- All imported publications remained Draft.
+- Page/Post types, slugs, parent resolution, and menu order survived import.
+- The editor parsed headings, paragraphs, lists and list items, images, quotes,
+  and tables as their corresponding `core/*` blocks.
+- The WSU fixture parsed as `wsuwp/hero` and `wsuwp/section` with nested core
+  blocks when the validation shim registered those block contracts.
+- Every imported item completed an edit/save/restore/reopen cycle with no
+  invalid blocks, no editor error notices, no browser console errors, and exact
+  content restoration.
+
+The WSU result proves the exporter contract against the fixture registration,
+not against every production WSUWP release. The exact destination plugin must
+still be included in release-candidate validation.
 
 The XML is reference input only. PDF to Web does not modify or re-export it.

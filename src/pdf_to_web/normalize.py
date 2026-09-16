@@ -10,6 +10,7 @@ from .errors import PdfToWebError
 from .project import load_project, utc_now
 
 NORMALIZED_SCHEMA = "pdf-to-web-normalized-v1"
+READINESS_STATUSES = {"review_ready", "needs_review", "conversion_blocked"}
 
 TYPE_MAP = {
     "heading": "heading",
@@ -108,10 +109,21 @@ def _normalize_element(element: dict[str, Any], index: int) -> dict[str, Any]:
         },
     }
     if block_type == "heading":
-        level = element.get("heading level", element.get("level", 2))
+        source_level = element.get("heading level", element.get("level"))
+        level = source_level if source_level is not None else 2
         if isinstance(level, str):
             level = 1 if level.lower() in {"title", "h1"} else 2
         block["level"] = max(1, min(6, int(level or 2)))
+        if source_level is None:
+            block["review"] = {
+                "status": "needs_review",
+                "issues": [
+                    {
+                        "code": "missing_heading_level",
+                        "message": "The source identified a heading without a heading level; H2 was used provisionally.",
+                    }
+                ],
+            }
     elif block_type == "list":
         style = str(element.get("numbering style", "")).lower()
         block["ordered"] = style not in {"", "bullet", "unordered", "none"}
@@ -124,6 +136,8 @@ def _normalize_element(element: dict[str, Any], index: int) -> dict[str, Any]:
         block["caption"] = element.get("caption")
     if block_type == "unknown":
         block["review_status"] = "review_required"
+        if source_type in {"header", "footer"}:
+            block["role"] = f"page_{source_type}"
     return block
 
 
@@ -161,18 +175,193 @@ def normalize_document(raw: dict[str, Any]) -> dict[str, Any]:
         "source_filename": raw.get("file name"),
         "page_count": raw.get("number of pages"),
     }
-    return {
+    document = {
         "schema_version": NORMALIZED_SCHEMA,
         "created_at": utc_now(),
         "metadata": metadata,
         "blocks": _walk(item for item in elements if isinstance(item, dict)),
     }
+    _associate_image_captions(document["blocks"])
+    return document
+
+
+def _associate_image_captions(blocks: list[dict[str, Any]]) -> None:
+    previous_image: dict[str, Any] | None = None
+    for block in blocks:
+        block_type = block.get("type")
+        page = block.get("provenance", {}).get("source_page")
+        if block_type == "image":
+            previous_image = block
+        elif block_type == "caption" and previous_image is not None:
+            image_page = previous_image.get("provenance", {}).get("source_page")
+            if page == image_page:
+                previous_image["caption"] = block.get("content", "")
+                previous_image["caption_block_id"] = block["id"]
+                block["associated_image_id"] = previous_image["id"]
+                block["export_as_part_of_image"] = True
+        elif block_type not in {"paragraph"}:
+            previous_image = None
 
 
 def _flatten(blocks: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
     for block in blocks:
         yield block
         yield from _flatten(block.get("children", []))
+
+
+def _block_text(block: dict[str, Any]) -> str:
+    parts = [str(block.get("content", ""))]
+    if block.get("type") == "table":
+        for row in block.get("rows", []):
+            for cell in row:
+                parts.append(str(cell.get("content", "")) if isinstance(cell, dict) else str(cell))
+    for child in block.get("children", []):
+        parts.append(_block_text(child))
+    return " ".join(part for part in parts if part)
+
+
+def _page_text(blocks: Iterable[dict[str, Any]], page: int) -> str:
+    return " ".join(
+        _block_text(block)
+        for block in blocks
+        if block.get("provenance", {}).get("source_page") == page
+    )
+
+
+def _complex_visuals(
+    document: dict[str, Any], asset_manifest: dict[str, Any]
+) -> list[dict[str, Any]]:
+    blocks = list(_flatten(document.get("blocks", [])))
+    assets_by_page: Counter[int] = Counter()
+    refs_by_page: dict[int, list[str]] = {}
+    for asset in asset_manifest.get("assets", []):
+        page = int(asset.get("source_page") or 0)
+        if not page:
+            continue
+        assets_by_page[page] += 1
+        refs_by_page.setdefault(page, []).append(str(asset.get("filename", "")))
+    image_blocks_by_page = Counter(
+        int(block.get("provenance", {}).get("source_page") or 0)
+        for block in blocks
+        if block.get("type") == "image"
+    )
+    source_page_counts = document.get("metadata", {}).get(
+        "source_embedded_text_characters_by_page", []
+    )
+    results: list[dict[str, Any]] = []
+    for page in sorted(set(assets_by_page) | set(image_blocks_by_page)):
+        visual_count = max(assets_by_page[page], image_blocks_by_page[page])
+        if visual_count < 5:
+            continue
+        recovered_text = _page_text(blocks, page)
+        source_count = (
+            int(source_page_counts[page - 1]) if page <= len(source_page_counts) else 0
+        )
+        coverage = len(recovered_text) / source_count if source_count else None
+        results.append(
+            {
+                "id": f"complex-visual-page-{page}",
+                "type": "infographic",
+                "status": "needs_text_equivalent",
+                "source_page": page,
+                "asset_references": refs_by_page.get(page, []),
+                "recovered_text": recovered_text,
+                "source_embedded_text_character_count": source_count,
+                "text_recovery_ratio": round(coverage, 4) if coverage is not None else None,
+                "human_review_required": True,
+            }
+        )
+    return results
+
+
+def apply_readiness(
+    document: dict[str, Any], asset_manifest: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    summary = extraction_summary(document)
+    asset_manifest = asset_manifest or {"assets": []}
+    complex_visuals = _complex_visuals(document, asset_manifest)
+    issues: list[dict[str, Any]] = []
+
+    recovery = summary.get("text_recovery_ratio")
+    if recovery is not None and recovery < 0.85:
+        issues.append(
+            {
+                "code": "incomplete_text_recovery",
+                "message": f"Only {recovery:.1%} of embedded source text was recovered.",
+                "metric": recovery,
+            }
+        )
+    if summary["page_coverage_ratio"] < 1:
+        issues.append(
+            {
+                "code": "incomplete_page_coverage",
+                "message": f"Extracted elements cover {summary['page_coverage_ratio']:.1%} of source pages.",
+                "metric": summary["page_coverage_ratio"],
+            }
+        )
+    if summary["replacement_character_ratio"] > 0.02:
+        issues.append(
+            {
+                "code": "invalid_text_characters",
+                "message": "Extracted text contains a significant number of replacement characters.",
+                "metric": summary["replacement_character_ratio"],
+            }
+        )
+    blocks = list(_flatten(document.get("blocks", [])))
+    missing_levels = [
+        block for block in blocks if block.get("review", {}).get("issues")
+    ]
+    if missing_levels:
+        issues.append(
+            {
+                "code": "missing_heading_levels",
+                "message": f"{len(missing_levels)} heading(s) use a provisional level.",
+                "block_ids": [block["id"] for block in missing_levels],
+            }
+        )
+    furniture = [
+        block
+        for block in blocks
+        if block.get("provenance", {}).get("source_type") in {"header", "footer"}
+    ]
+    if furniture:
+        issues.append(
+            {
+                "code": "repeated_page_furniture",
+                "message": f"{len(furniture)} header/footer block(s) require exclusion review.",
+                "severity": "advisory",
+                "block_ids": [block["id"] for block in furniture],
+            }
+        )
+    for visual in complex_visuals:
+        visual_issue = {
+            "code": "complex_visual_detected",
+            "page": visual["source_page"],
+            "message": "A likely infographic or other complex visual requires a text equivalent.",
+            "complex_visual_id": visual["id"],
+        }
+        issues.append(visual_issue)
+        if visual.get("text_recovery_ratio") is not None and visual["text_recovery_ratio"] < 0.85:
+            issues.append(
+                {
+                    "code": "complex_visual_text_loss",
+                    "page": visual["source_page"],
+                    "message": f"Only {visual['text_recovery_ratio']:.1%} of embedded text was recovered for the complex visual.",
+                    "metric": visual["text_recovery_ratio"],
+                    "complex_visual_id": visual["id"],
+                }
+            )
+
+    blocked = (
+        not blocks
+        or (recovery is not None and recovery < 0.25)
+        or summary["replacement_character_ratio"] > 0.25
+    )
+    review_codes = {issue["code"] for issue in issues if issue.get("severity") != "advisory"}
+    status = "conversion_blocked" if blocked else "needs_review" if review_codes else "review_ready"
+    review = {"status": status, "issues": issues, "complex_visuals": complex_visuals}
+    document["review"] = review
+    return review
 
 
 def extraction_summary(document: dict[str, Any]) -> dict[str, Any]:
@@ -205,13 +394,7 @@ def extraction_summary(document: dict[str, Any]) -> dict[str, Any]:
     )
     normalized_types = Counter(str(block.get("type", "unknown")) for block in blocks)
     ratio = replacement_count / max(1, len(text))
-    review_required = (
-        ratio > 0.02
-        or (declared_pages and page_coverage < 1.0)
-        or (text_recovery_ratio is not None and text_recovery_ratio < 0.7)
-    )
     return {
-        "status": "TEXT EXTRACTION REVIEW REQUIRED" if review_required else "review_ready",
         "block_count": len(blocks),
         "extracted_character_count": len(text),
         "declared_page_count": declared_pages,
@@ -268,8 +451,18 @@ def normalize_project(project_dir: Path) -> Path:
     document["metadata"]["source_embedded_text_character_count"] = project.get(
         "source", {}
     ).get("embedded_text_character_count", 0)
+    document["metadata"]["source_embedded_text_characters_by_page"] = project.get(
+        "source", {}
+    ).get("embedded_text_characters_by_page", [])
     if document["metadata"].get("title") in {None, "Untitled document"}:
         document["metadata"]["title"] = project.get("title") or "Untitled document"
+    asset_manifest_path = project_dir / "extraction" / "assets" / "manifest.json"
+    asset_manifest = (
+        json.loads(asset_manifest_path.read_text(encoding="utf-8"))
+        if asset_manifest_path.is_file()
+        else {"assets": []}
+    )
+    review = apply_readiness(document, asset_manifest)
     output = project_dir / "extraction" / "normalized" / "document.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
@@ -277,8 +470,10 @@ def normalize_project(project_dir: Path) -> Path:
     )
     report = project_dir / "output" / "reports" / "extraction-summary.json"
     report.parent.mkdir(parents=True, exist_ok=True)
+    summary = extraction_summary(document)
+    summary.update({"status": review["status"], "issues": review["issues"], "complex_visuals": review["complex_visuals"]})
     report.write_text(
-        json.dumps(extraction_summary(document), indent=2, ensure_ascii=False) + "\n",
+        json.dumps(summary, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
     return output

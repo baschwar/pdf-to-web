@@ -1,6 +1,6 @@
 import unittest
 
-from pdf_to_web.normalize import extraction_summary, normalize_document
+from pdf_to_web.normalize import apply_readiness, extraction_summary, normalize_document
 
 
 class NormalizeTests(unittest.TestCase):
@@ -74,7 +74,8 @@ class NormalizeTests(unittest.TestCase):
             }
         )
         summary = extraction_summary(document)
-        self.assertEqual(summary["status"], "TEXT EXTRACTION REVIEW REQUIRED")
+        review = apply_readiness(document)
+        self.assertEqual(review["status"], "needs_review")
         self.assertEqual(summary["represented_pages"], [1])
         self.assertEqual(summary["page_coverage_ratio"], 0.5)
 
@@ -112,6 +113,91 @@ class NormalizeTests(unittest.TestCase):
         self.assertEqual(cell["content"], "Program BSN")
         self.assertEqual(cell["row_span"], 2)
         self.assertEqual(cell["provenance"]["bounding_box"], [1, 2, 3, 4])
+
+    def test_readiness_distinguishes_review_and_blocked(self):
+        document = normalize_document(
+            {
+                "number of pages": 1,
+                "kids": [{"type": "paragraph", "page number": 1, "content": "Short"}],
+            }
+        )
+        document["metadata"]["source_embedded_text_character_count"] = 100
+        self.assertEqual(apply_readiness(document)["status"], "conversion_blocked")
+        document["blocks"][0]["content"] = "x" * 70
+        self.assertEqual(apply_readiness(document)["status"], "needs_review")
+        document["blocks"][0]["content"] = "x" * 95
+        self.assertEqual(apply_readiness(document)["status"], "review_ready")
+
+    def test_complex_visual_retains_assets_text_and_page(self):
+        document = normalize_document(
+            {
+                "number of pages": 1,
+                "kids": [
+                    {"type": "heading", "heading level": 1, "page number": 1, "content": "Heart Failure"},
+                    {"type": "paragraph", "page number": 1, "content": "Recovered instructions"},
+                ],
+            }
+        )
+        document["metadata"]["source_embedded_text_character_count"] = 100
+        document["metadata"]["source_embedded_text_characters_by_page"] = [100]
+        assets = {
+            "assets": [
+                {"source_page": 1, "filename": f"asset-{number}.png"}
+                for number in range(1, 6)
+            ]
+        }
+        review = apply_readiness(document, assets)
+        visual = review["complex_visuals"][0]
+        self.assertEqual(review["status"], "needs_review")
+        self.assertEqual(visual["type"], "infographic")
+        self.assertEqual(visual["source_page"], 1)
+        self.assertEqual(len(visual["asset_references"]), 5)
+        self.assertIn("Recovered instructions", visual["recovered_text"])
+        self.assertTrue(visual["human_review_required"])
+
+    def test_missing_heading_level_and_page_furniture_are_explicit(self):
+        document = normalize_document(
+            {
+                "number of pages": 1,
+                "kids": [
+                    {"type": "header", "page number": 1, "content": "Repeated"},
+                    {"type": "heading", "page number": 1, "content": "Provisional"},
+                ],
+            }
+        )
+        review = apply_readiness(document)
+        codes = {issue["code"] for issue in review["issues"]}
+        self.assertIn("missing_heading_levels", codes)
+        self.assertIn("repeated_page_furniture", codes)
+        self.assertEqual(document["blocks"][0]["role"], "page_header")
+
+    def test_image_caption_association_is_not_exported_twice(self):
+        document = normalize_document(
+            {
+                "kids": [
+                    {"type": "image", "id": 1, "page number": 1, "source": "figure.png"},
+                    {"type": "caption", "id": 2, "page number": 1, "content": "Figure caption"},
+                ]
+            }
+        )
+        image, caption = document["blocks"]
+        self.assertEqual(image["caption"], "Figure caption")
+        self.assertEqual(caption["associated_image_id"], image["id"])
+        self.assertTrue(caption["export_as_part_of_image"])
+
+    def test_source_reading_order_is_preserved_for_columns(self):
+        document = normalize_document(
+            {
+                "kids": [
+                    {"type": "paragraph", "page number": 1, "bounding box": [300, 700, 500, 720], "content": "Right first"},
+                    {"type": "paragraph", "page number": 1, "bounding box": [40, 650, 250, 670], "content": "Left second"},
+                ]
+            }
+        )
+        self.assertEqual(
+            [block["content"] for block in document["blocks"]],
+            ["Right first", "Left second"],
+        )
 
 
 if __name__ == "__main__":

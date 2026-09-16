@@ -44,6 +44,8 @@ def _table(block: dict[str, Any]) -> str:
 
 def _block(block: dict[str, Any]) -> str:
     block_type = block.get("type")
+    if block.get("export_as_part_of_image"):
+        return ""
     if block_type == "heading":
         level = max(1, min(6, int(block.get("level", 2))))
         return f"<h{level}>{render_inline(block)}</h{level}>"
@@ -64,7 +66,9 @@ def _block(block: dict[str, Any]) -> str:
         return _table(block)
     if block_type == "page_break":
         return "<hr>"
-    return f'<div data-pdf-to-web-type="unknown">{render_inline(block)}</div>'
+    role = block.get("role")
+    role_attr = f' data-role="{html.escape(str(role), quote=True)}"' if role else ""
+    return f'<div data-pdf-to-web-type="unknown"{role_attr}>{render_inline(block)}</div>'
 
 
 def render_document(document: dict[str, Any]) -> str:

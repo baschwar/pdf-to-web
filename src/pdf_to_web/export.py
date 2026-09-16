@@ -67,6 +67,15 @@ def export_project(project_dir: Path, target: str, profile: str | None = None) -
     selected_profile = profile or config.get("wordpress_profile", "generic")
     if selected_profile not in {"generic", "wsuwp"}:
         raise PdfToWebError(f"Unsupported WordPress profile: {selected_profile}")
+    review_status = document.get("review", {}).get("status", "needs_review")
+    if review_status == "conversion_blocked" and target in {
+        "gutenberg",
+        "wordpress-xml",
+        "all",
+    }:
+        raise PdfToWebError(
+            "Conversion is blocked by extraction issues; Gutenberg and WXR export were not generated"
+        )
 
     gutenberg_content = gutenberg.render_document(document, selected_profile, config)
     item = _publication_item(document, gutenberg_content, config)

@@ -71,6 +71,8 @@ def _render_table(block: dict[str, Any]) -> str:
 
 
 def render_block(block: dict[str, Any]) -> str:
+    if block.get("export_as_part_of_image"):
+        return ""
     block_type = block.get("type")
     if block_type == "heading":
         level = max(1, min(6, int(block.get("level", 2))))
@@ -135,10 +137,10 @@ def render_document(
                 blocks = blocks[1:]
         section = dict(config.get("section_defaults") or {})
         rendered.append(f"<!-- wp:wsuwp/section{_attrs(section, escape_hyphens=True)} -->")
-        rendered.extend(render_block(block) for block in blocks)
+        rendered.extend(content for block in blocks if (content := render_block(block)))
         rendered.append("<!-- /wp:wsuwp/section -->")
     elif profile == "generic":
-        rendered.extend(render_block(block) for block in blocks)
+        rendered.extend(content for block in blocks if (content := render_block(block)))
     else:
         raise ValueError(f"Unknown WordPress export profile: {profile}")
     return "\n\n".join(rendered) + "\n"

@@ -48,6 +48,23 @@ Run the extraction spike corpus through both deterministic modes:
 pdf-to-web spike sample_files --output sample_runs
 ```
 
+The corpus report assigns one readiness state to every normalized result:
+
+- `review_ready`: structurally exportable, with only advisory issues.
+- `needs_review`: exportable, but a human must resolve material extraction or
+  complex-visual issues.
+- `conversion_blocked`: semantic HTML remains available for diagnosis, while
+  Gutenberg and WXR generation are withheld.
+
+Generate the repeatable local WordPress fixture set with:
+
+```sh
+pdf-to-web wordpress-fixtures --output build/wordpress-fixtures
+```
+
+The Docker and block-editor procedure is documented in
+`tools/wordpress-roundtrip/README.md`.
+
 The source PDFs remain unchanged. Each timestamped run contains separate
 self-contained projects for heuristic and structure-tree extraction, plus JSON
 and CSV comparison summaries. `sample_files/` and `sample_runs/` are ignored by
@@ -57,5 +74,6 @@ Git because source publications may contain internal or copyrighted material.
 
 This repository is the Phase 1 architecture spike. It does not yet contain the
 FastAPI/PicoCSS review interface, OCR remediation, media sideloading, or a claim
-of automated WCAG conformance. WordPress import/edit/save validation still
-requires a local WordPress test instance.
+of automated WCAG conformance. The Phase 1B fixtures have been imported,
+edited, saved, and reopened in an isolated local WordPress instance. Production
+WSUWP compatibility still requires the exact deployed WSU block versions.

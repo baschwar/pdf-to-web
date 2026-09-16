@@ -28,19 +28,20 @@ representative PDF corpus are deliberately marked **unverified**.
   strong text, and emphasis without storing Gutenberg or HTML in the model.
 - Image attachment IDs are optional and are never invented.
 
-## Questions for representative-PDF testing
+## Representative-PDF findings
 
-The following cannot be answered responsibly from the schema alone:
-
-- Bounding-box reliability across rotated, cropped, and designed pages.
-- Multi-column reading order quality and whether source order needs correction.
-- Heading-level quality in untagged publications.
-- Caption-to-image association reliability.
-- Borderless and merged-cell table behavior in deterministic mode.
-- Pull-quote, sidebar, chart, and callout fallback types.
-- Header/footer detection consistency when those elements are included.
-- Whether every emitted child element consistently retains page identity.
-- Whether geometry is accurate enough for source-page highlighting.
+- The six-document corpus retains page identity and geometry on top-level
+  blocks, while some nested list items do not have independent source IDs.
+- Source order is preserved; column reading order remains a human review item
+  because geometric reordering would risk changing author intent.
+- Missing heading levels become provisional H2 blocks with a review issue.
+- Adjacent image captions are associated and suppressed as duplicate standalone
+  output.
+- Table cell text, spans, and geometry are retained by regression fixtures.
+- Headers and footers remain explicit unknown blocks with page-furniture roles
+  until a reviewer excludes or promotes them.
+- Pages with at least five visual assets receive a complex-visual record that
+  retains page, asset references, recovered text, and text-recovery ratio.
 
 ## Environment finding
 
@@ -62,14 +63,14 @@ sets have distinct provenance: OpenDataLoader images retain structural element
 references, while pypdf assets provide a source-stream diagnostic and are only
 associated to a page until reviewed.
 
-## Validation still required
+## Remaining validation boundary
 
-- Run the five requested PDF classes through the same extraction workflow.
-- Record per-element schema variations and unknown types.
-- Import generated WXR into a local WordPress instance.
-- Open, save, and reopen Generic Gutenberg and WSUWP output without validation
-  errors. XML well-formedness and fixture parity are necessary but are not a
-  substitute for this WordPress round trip.
+- Confirm WSU hero and section serialization against the exact WSUWP plugin
+  versions deployed on the destination site. The local contract shim proves the
+  generated shape is stable in WordPress, but it is not production WSU code.
+- Media sideloading and destination attachment-ID mapping remain outside Phase
+  1B.
+- Complex visuals still require authored text equivalents and human approval.
 
 ## Initial six-document corpus
 
@@ -82,15 +83,15 @@ prose, tables, posters, an infographic, and screenshot-heavy instructions. All
 | Vaccination admission policy | 97.5% text recovery | 98.9% text recovery | 1 |
 | Forrest practicum poster | 100.3% recovery; review-ready baseline | Same output as heuristic | 0 |
 | CITI instructions | 96.4% text recovery | 97.9% text recovery | 21 |
-| Heart-failure infographic | 65.9% recovery; review | 17.1% recovery; review | 19 |
+| Heart-failure infographic | 65.8% recovery; needs review | 17.1% recovery; conversion blocked | 19 |
 | Four-year sample program | 92.6% recovery; review-ready baseline | 93.4% recovery; review-ready baseline | 1 |
 | Bloodborne-pathogen guide | 96.4% text recovery | 97.9% text recovery | 0 |
 
 The infographic remains the hardest case in both modes, and heuristic mode is
 substantially better there. Mode selection cannot be based on whether a PDF is
 tagged. Text recovery, replacement-character rate, page coverage, unknown
-elements, and visual review all matter. The “review-ready” label remains a
-structural diagnostic, not an accessibility approval.
+elements, and visual review all matter. `review_ready` is a structural
+diagnostic, not an accessibility approval.
 
 ## First live sample: Soulek.pdf
 

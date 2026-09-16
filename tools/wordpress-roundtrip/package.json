@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "scripts": {
+    "validate-editor": "node validate-editor.js"
+  },
+  "dependencies": {
+    "playwright-core": "^1.55.0"
+  }
+}

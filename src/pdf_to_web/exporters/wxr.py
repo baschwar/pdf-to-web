@@ -36,6 +36,16 @@ def render_wxr(
     _sub(channel, f"{{{WP_NS}}}base_site_url", site.get("url", "https://example.invalid"))
     _sub(channel, f"{{{WP_NS}}}base_blog_url", site.get("url", "https://example.invalid"))
 
+    authors = sorted({str(item.get("author", "pdf-to-web")) for item in items})
+    for index, login in enumerate(authors, start=1):
+        author = ET.SubElement(channel, f"{{{WP_NS}}}author")
+        _sub(author, f"{{{WP_NS}}}author_id", index)
+        _sub(author, f"{{{WP_NS}}}author_login", login)
+        _sub(author, f"{{{WP_NS}}}author_email", "")
+        _sub(author, f"{{{WP_NS}}}author_display_name", login)
+        _sub(author, f"{{{WP_NS}}}author_first_name", "")
+        _sub(author, f"{{{WP_NS}}}author_last_name", "")
+
     ids: dict[str, int] = {}
     for index, item in enumerate(items, start=1):
         ids[str(item.get("key") or item.get("slug") or index)] = int(item.get("post_id", index))

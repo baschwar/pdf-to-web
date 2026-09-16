@@ -6,6 +6,8 @@ from .common import table_cell
 
 
 def _block(block: dict[str, Any], depth: int = 0) -> str:
+    if block.get("export_as_part_of_image"):
+        return ""
     block_type = block.get("type")
     content = str(block.get("content", ""))
     if block_type == "heading":
@@ -40,4 +42,6 @@ def _block(block: dict[str, Any], depth: int = 0) -> str:
 
 
 def render_document(document: dict[str, Any]) -> str:
-    return "\n\n".join(_block(block) for block in document.get("blocks", [])) + "\n"
+    return "\n\n".join(
+        content for block in document.get("blocks", []) if (content := _block(block))
+    ) + "\n"

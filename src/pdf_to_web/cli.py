@@ -13,6 +13,7 @@ from .export import export_project
 from .extraction import run_extraction
 from .normalize import normalize_project
 from .project import create_project, import_pdf
+from .wordpress_fixtures import write_wordpress_fixtures
 
 
 def _project_path(value: str) -> Path:
@@ -57,6 +58,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     export.add_argument("--project", required=True, type=_project_path)
     export.add_argument("--profile", choices=("generic", "wsuwp"))
+
+    fixtures = commands.add_parser(
+        "wordpress-fixtures", help="Generate repeatable WXR round-trip fixtures"
+    )
+    fixtures.add_argument("--output", required=True, type=_project_path)
     return parser
 
 
@@ -98,6 +104,9 @@ def main(argv: list[str] | None = None) -> int:
             print(run_corpus(args.sample_dir, args.output))
         elif args.command == "export":
             for path in export_project(args.project, args.target, args.profile):
+                print(path)
+        elif args.command == "wordpress-fixtures":
+            for path in write_wordpress_fixtures(args.output):
                 print(path)
         return 0
     except PdfToWebError as exc:
