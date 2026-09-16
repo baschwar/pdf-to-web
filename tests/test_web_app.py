@@ -72,6 +72,19 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(placeholder.status_code, 200)
         self.assertEqual(placeholder.headers["content-type"], "image/svg+xml")
 
+    @mock.patch("pdf_to_web.web.source_page_size", return_value=(612.0, 792.0))
+    def test_structure_exposes_source_region_and_page_dimensions(self, page_size):
+        self.bootstrap()
+        document = json.loads(original_path(self.project).read_text())
+        document["blocks"][0]["provenance"]["bounding_box"] = [36, 700, 300, 730]
+        original_path(self.project).write_text(json.dumps(document))
+        response = self.client.get("/structure")
+        self.assertIn('data-bbox="[36, 700, 300, 730]"', response.text)
+        self.assertIn('id="source-highlight"', response.text)
+        metadata = self.client.get("/api/source-page/1")
+        self.assertEqual(metadata.json(), {"page": 1, "width": 612.0, "height": 792.0})
+        page_size.assert_called_once_with(self.project.resolve(), 1)
+
     def test_project_loading_requires_server_issued_selection(self):
         self.bootstrap()
         bad = self.client.post("/api/projects/open", headers=self.headers(), json={"path": str(self.project)})

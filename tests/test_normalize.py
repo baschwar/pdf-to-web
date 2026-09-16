@@ -168,8 +168,23 @@ class NormalizeTests(unittest.TestCase):
         review = apply_readiness(document)
         codes = {issue["code"] for issue in review["issues"]}
         self.assertIn("missing_heading_levels", codes)
-        self.assertIn("repeated_page_furniture", codes)
+        self.assertIn("auto_excluded_page_artifacts", codes)
         self.assertEqual(document["blocks"][0]["role"], "page_header")
+        self.assertEqual(document["blocks"][0]["review"]["status"], "excluded")
+
+    def test_page_number_footer_is_excluded_without_excluding_footnote_content(self):
+        document = normalize_document(
+            {
+                "number of pages": 2,
+                "kids": [
+                    {"type": "paragraph", "page number": 1, "bounding box": [40, 40, 560, 52], "content": "Updated 03/2023 Page | 1"},
+                    {"type": "list", "page number": 1, "bounding box": [40, 90, 560, 150], "content": "1 See supporting regulation."},
+                ],
+            }
+        )
+        footer, footnote = document["blocks"]
+        self.assertEqual(footer["review"]["status"], "excluded")
+        self.assertNotEqual(footnote.get("review", {}).get("status"), "excluded")
 
     def test_image_caption_association_is_not_exported_twice(self):
         document = normalize_document(

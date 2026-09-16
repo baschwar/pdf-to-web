@@ -34,7 +34,7 @@ from .review_state import (
     update_block,
     update_complex_visual,
 )
-from .source_pages import render_source_page
+from .source_pages import render_source_page, source_page_size
 from .wordpress_preview import render_gutenberg_preview
 
 try:
@@ -268,6 +268,9 @@ def _block_card(block: dict[str, Any], index: int, *, can_edit: bool = True) -> 
     level = int(block.get("level", 2))
     levels = "".join(f'<option value="{value}"{" selected" if value == level else ""}>H{value}</option>' for value in range(1, 7))
     issue_text = " ".join(str(issue.get("message", "")) for issue in block.get("review", {}).get("issues", []))
+    source_type = str(provenance.get("source_type") or "Unknown")
+    bbox = provenance.get("bounding_box")
+    bbox_value = html.escape(json.dumps(bbox), quote=True) if isinstance(bbox, list) and len(bbox) == 4 else ""
     table = ""
     if block_type == "table":
         stats = table_summary(block)
@@ -289,9 +292,9 @@ def _block_card(block: dict[str, Any], index: int, *, can_edit: bool = True) -> 
 <button type="button" class="secondary block-action" data-action="toggle-excluded" data-block-id="{block_id}" data-current-status="{review_status}" aria-label="{include_label} block {index}">{include_label}</button>
 <button type="button" class="secondary block-action" data-action="approve" data-block-id="{block_id}" aria-label="Approve block {index}">Approve</button>
 <button type="button" class="secondary block-action" data-action="flag" data-block-id="{block_id}" aria-label="Mark block {index} as needs review">Needs review</button></footer>''' if can_edit else '<footer><strong>Inspection only while conversion is blocked.</strong></footer>'
-    return f'''<article class="block-card status-{html.escape(review_status)}" id="block-{block_id}" data-page="{page}" aria-labelledby="block-{block_id}-heading">
+    return f'''<article class="block-card status-{html.escape(review_status)}" id="block-{block_id}" data-page="{page}" data-bbox="{bbox_value}" data-block-index="{index}" data-source-type="{html.escape(source_type, quote=True)}" aria-labelledby="block-{block_id}-heading">
 <header><div><span class="order">{index}</span> <h3 id="block-{block_id}-heading">{html.escape(block_type.replace("_", " ").title())}{f' H{level}' if block_type == 'heading' else ''}</h3></div><span>Page {page} · {_status_label(review_status)}</span></header>
-{f'<p class="block-issue">{html.escape(issue_text)}</p>' if issue_text else ''}{table}{editor}
+<p class="source-provenance">OpenDataLoader source: {html.escape(source_type)}{f' · Source region available' if bbox_value else ''}</p>{f'<p class="block-issue">{html.escape(issue_text)}</p>' if issue_text else ''}{table}{editor}
 {actions}</article>'''
 
 
@@ -320,7 +323,7 @@ def _structure_page(model: dict[str, Any]) -> str:
     visuals = "".join(_complex_visual_card(visual, can_edit=can_edit) for visual in document.get("review", {}).get("complex_visuals", []))
     body = f'''<h1>Structure</h1>{_status_banner(status, document.get("review", {}).get("issues", [])) if not can_edit else ''}<div class="review-toolbar"><p><strong>{_status_label(status)}</strong> · Reviewed {progress['reviewed']} / {progress['total']}</p>{'<button id="undo-action" type="button" class="secondary">Undo last action</button>' if can_edit else ''}</div>
 {f'<section class="complex-warning" aria-labelledby="complex-heading"><h2 id="complex-heading">Complex visuals</h2>{visuals}</section>' if visuals else ''}
-<div class="structure-layout"><section class="source-pane" aria-labelledby="source-heading"><h2 id="source-heading">Source page</h2><p id="source-page-label">Select a block to view its page.</p><img id="source-image" src="/source-page/1.png" alt="Rendered source PDF page 1"><p><a id="open-source-page" href="/source.pdf#page=1" target="_blank" rel="noopener">Open source PDF page 1</a></p></section>
+<div class="structure-layout"><section class="source-pane" aria-labelledby="source-heading"><h2 id="source-heading">Source page</h2><p id="source-page-label" aria-live="polite">Select a block to view and outline its source region.</p><div class="source-image-stage"><img id="source-image" src="/source-page/1.png" alt="Rendered source PDF page 1"><span id="source-highlight" hidden aria-hidden="true"></span></div><p><a id="open-source-page" href="/source.pdf#page=1" target="_blank" rel="noopener">Open source PDF page 1</a></p></section>
 <section class="blocks-pane" aria-labelledby="blocks-heading"><h2 id="blocks-heading">Reading order</h2><p>Use Move up and Move down to correct reading order. Changes save immediately.</p>{cards or '<p>No normalized blocks are available.</p>'}</section></div>'''
     return _page("Structure", "structure", body)
 
@@ -495,6 +498,15 @@ def create_app(config: WebAppConfig):
         try:
             return FileResponse(render_source_page(current(), page), media_type="image/png")
         except (PdfToWebError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/source-page/{page}")
+    async def source_page_metadata(page: int, session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+        require_session(session)
+        try:
+            width, height = source_page_size(current(), page)
+            return {"page": page, "width": width, "height": height}
+        except (PdfToWebError, ValueError, IndexError) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.get("/api/preview/images/{name}")

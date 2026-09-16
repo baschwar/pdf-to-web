@@ -4,8 +4,27 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from pypdf import PdfReader
+
 from .errors import PdfToWebError
 from .project import load_project
+
+
+def source_page_size(project_dir: Path, page: int) -> tuple[float, float]:
+    project_dir = project_dir.expanduser().resolve()
+    project = load_project(project_dir)
+    page_count = int(project.get("source", {}).get("page_count") or 0)
+    if page < 1 or (page_count and page > page_count):
+        raise ValueError(f"Source page must be between 1 and {page_count or 1}")
+    source = project_dir / str(project.get("source", {}).get("path") or "")
+    if not source.is_file() or source.suffix.lower() != ".pdf":
+        raise PdfToWebError("Source PDF is unavailable")
+    pdf_page = PdfReader(source).pages[page - 1]
+    width = float(pdf_page.mediabox.width)
+    height = float(pdf_page.mediabox.height)
+    if int(pdf_page.rotation or 0) % 180:
+        width, height = height, width
+    return width, height
 
 
 def render_source_page(project_dir: Path, page: int) -> Path:

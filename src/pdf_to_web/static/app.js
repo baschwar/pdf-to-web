@@ -35,17 +35,40 @@ document.getElementById('choose-project')?.addEventListener('click', async () =>
 
 document.querySelectorAll('.open-project').forEach((button) => button.addEventListener('click', () => openProject(button.dataset.projectToken)));
 
-document.querySelectorAll('.block-card').forEach((card) => card.addEventListener('click', () => {
+async function selectSourceBlock(card) {
   const page = card.dataset.page;
   if (!page || page === 'Unknown') return;
+  document.querySelectorAll('.block-card').forEach((item) => item.classList.toggle('source-selected', item === card));
   const sourceImage = document.getElementById('source-image');
   sourceImage.src = `/source-page/${page}.png`;
   sourceImage.alt = `Rendered source PDF page ${page}`;
   const sourceLink = document.getElementById('open-source-page');
   sourceLink.href = `/source.pdf#page=${page}`;
   sourceLink.textContent = `Open source PDF page ${page}`;
-  document.getElementById('source-page-label').textContent = `Showing source page ${page}.`;
-}));
+  const label = document.getElementById('source-page-label');
+  const highlight = document.getElementById('source-highlight');
+  label.textContent = `Block ${card.dataset.blockIndex}, ${card.dataset.sourceType}, on source page ${page}.`;
+  highlight.hidden = true;
+  if (!card.dataset.bbox) return;
+  try {
+    const bbox = JSON.parse(card.dataset.bbox);
+    const dimensions = await api(`/api/source-page/${page}`);
+    const [x0, y0, x1, y1] = bbox.map(Number);
+    highlight.style.left = `${Math.min(x0, x1) / dimensions.width * 100}%`;
+    highlight.style.top = `${(dimensions.height - Math.max(y0, y1)) / dimensions.height * 100}%`;
+    highlight.style.width = `${Math.abs(x1 - x0) / dimensions.width * 100}%`;
+    highlight.style.height = `${Math.abs(y1 - y0) / dimensions.height * 100}%`;
+    highlight.hidden = false;
+    label.textContent += ' The approximate source region is outlined.';
+  } catch (error) {
+    label.textContent += ' Its source region could not be outlined.';
+  }
+}
+
+document.querySelectorAll('.block-card').forEach((card) => {
+  card.addEventListener('click', () => selectSourceBlock(card));
+  card.addEventListener('focusin', () => selectSourceBlock(card));
+});
 
 document.querySelectorAll('.block-form').forEach((form) => form.addEventListener('submit', async (event) => {
   event.preventDefault();

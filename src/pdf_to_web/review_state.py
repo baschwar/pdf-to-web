@@ -43,6 +43,8 @@ def _walk(blocks: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
 
 
 def _default_block_status(block: dict[str, Any]) -> str:
+    if block.get("review", {}).get("status") == "excluded":
+        return "excluded"
     if block.get("review", {}).get("status") == "needs_review":
         return "needs_review"
     if block.get("review_status") == "review_required" or block.get("type") == "unknown":

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from itertools import count
 from pathlib import Path
@@ -11,6 +12,9 @@ from .project import load_project, utc_now
 
 NORMALIZED_SCHEMA = "pdf-to-web-normalized-v1"
 READINESS_STATUSES = {"review_ready", "needs_review", "conversion_blocked"}
+PAGE_NUMBER_PATTERN = re.compile(
+    r"(?:\bpage\s*(?:\||of)?\s*\d+\b|\b\d+\s*(?:of|/)\s*\d+\b)", re.IGNORECASE
+)
 
 TYPE_MAP = {
     "heading": "heading",
@@ -182,7 +186,37 @@ def normalize_document(raw: dict[str, Any]) -> dict[str, Any]:
         "blocks": _walk(item for item in elements if isinstance(item, dict)),
     }
     _associate_image_captions(document["blocks"])
+    _mark_automatic_page_artifacts(document["blocks"])
     return document
+
+
+def _mark_automatic_page_artifacts(blocks: list[dict[str, Any]]) -> None:
+    for block in _flatten(blocks):
+        provenance = block.get("provenance", {})
+        source_type = str(provenance.get("source_type") or "").lower()
+        content = str(block.get("content", "")).strip()
+        bbox = provenance.get("bounding_box")
+        bottom_margin_page_number = False
+        if isinstance(bbox, list) and len(bbox) == 4 and PAGE_NUMBER_PATTERN.search(content):
+            try:
+                bottom_margin_page_number = min(float(bbox[1]), float(bbox[3])) <= 72
+            except (TypeError, ValueError):
+                pass
+        if source_type not in {"header", "footer"} and not bottom_margin_page_number:
+            continue
+        block["review"] = {
+            "status": "excluded",
+            "issues": [
+                {
+                    "code": "auto_excluded_page_artifact",
+                    "message": "Automatically excluded as repeated header, footer, or page numbering.",
+                }
+            ],
+        }
+        block["normalization"] = {
+            "auto_excluded": True,
+            "reason": "page_furniture" if source_type in {"header", "footer"} else "page_number",
+        }
 
 
 def _associate_image_captions(blocks: list[dict[str, Any]]) -> None:
@@ -309,7 +343,12 @@ def apply_readiness(
         )
     blocks = list(_flatten(document.get("blocks", [])))
     missing_levels = [
-        block for block in blocks if block.get("review", {}).get("issues")
+        block
+        for block in blocks
+        if any(
+            issue.get("code") == "missing_heading_level"
+            for issue in block.get("review", {}).get("issues", [])
+        )
     ]
     if missing_levels:
         issues.append(
@@ -324,13 +363,28 @@ def apply_readiness(
         for block in blocks
         if block.get("provenance", {}).get("source_type") in {"header", "footer"}
     ]
-    if furniture:
+    auto_excluded = [
+        block for block in blocks if block.get("normalization", {}).get("auto_excluded")
+    ]
+    pending_furniture = [
+        block for block in furniture if block.get("review", {}).get("status") != "excluded"
+    ]
+    if pending_furniture:
         issues.append(
             {
                 "code": "repeated_page_furniture",
-                "message": f"{len(furniture)} header/footer block(s) require exclusion review.",
+                "message": f"{len(pending_furniture)} header/footer block(s) require exclusion review.",
                 "severity": "advisory",
-                "block_ids": [block["id"] for block in furniture],
+                "block_ids": [block["id"] for block in pending_furniture],
+            }
+        )
+    if auto_excluded:
+        issues.append(
+            {
+                "code": "auto_excluded_page_artifacts",
+                "message": f"{len(auto_excluded)} repeated header, footer, or page-number block(s) were automatically excluded.",
+                "severity": "advisory",
+                "block_ids": [block["id"] for block in auto_excluded],
             }
         )
     for visual in complex_visuals:
