@@ -202,7 +202,8 @@ function nextReviewBlockId(card) {
 document.querySelectorAll('.block-form').forEach((form) => form.addEventListener('submit', async (event) => {
   event.preventDefault();
   const values = Object.fromEntries(new FormData(form));
-  values.level = Number(values.level);
+  if (values.type === 'heading') values.level = Number(values.level);
+  else delete values.level;
   try {
     await api(`/api/blocks/${encodeURIComponent(form.dataset.blockId)}`, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(values) });
     announce('Block saved.');
@@ -213,6 +214,7 @@ document.querySelectorAll('.block-form').forEach((form) => form.addEventListener
 document.querySelectorAll('.block-form select[name="type"]').forEach((select) => select.addEventListener('change', () => {
   const level = select.closest('form').querySelector('.heading-level');
   level.hidden = select.value !== 'heading';
+  level.querySelector('select').disabled = select.value !== 'heading';
 }));
 
 document.querySelectorAll('.complex-visual-form').forEach((form) => form.addEventListener('submit', async (event) => {

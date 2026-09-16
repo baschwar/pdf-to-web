@@ -328,7 +328,7 @@ def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool
     editable = block_type in BLOCK_TYPES
     editor = f'''<form class="block-form" data-block-id="{block_id}"><div class="form-grid">
 <label>Block type<select name="type">{options}</select></label>
-<label class="heading-level"{"" if block_type == "heading" else " hidden"}>Heading level<select name="level">{levels}</select></label>
+<label class="heading-level"{"" if block_type == "heading" else " hidden"}>Heading level<select name="level"{"" if block_type == "heading" else " disabled"}>{levels}</select></label>
 <label>Review state<select name="review_status">{states}</select></label></div>
 <label>Text<textarea name="content" rows="3">{html.escape(content)}</textarea></label>
 <button type="submit" aria-label="Save block {index}">Save block</button></form>''' if editable and can_edit else ""
