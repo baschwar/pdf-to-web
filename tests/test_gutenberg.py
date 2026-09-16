@@ -98,6 +98,47 @@ class GutenbergTests(unittest.TestCase):
         self.assertIn("<!-- wp:heading -->", output)
         self.assertIn("<!-- wp:paragraph -->", output)
 
+    def test_footnotes_render_as_end_document_blocks(self):
+        document = {
+            "metadata": {"title": "Footnote sample"},
+            "blocks": [
+                {
+                    "id": "p",
+                    "type": "paragraph",
+                    "content": "Claim 1.",
+                    "footnote_references": [
+                        {
+                            "id": "fnref-1",
+                            "footnote_id": "fn-1",
+                            "marker": "1",
+                            "start": 6,
+                            "end": 7,
+                        }
+                    ],
+                },
+                {
+                    "id": "fn-body",
+                    "type": "paragraph",
+                    "content": "1. Footnote text.",
+                    "export_as_footnote_body": True,
+                },
+            ],
+            "footnotes": [
+                {
+                    "id": "fn-1",
+                    "marker": "1",
+                    "text": "Footnote text.",
+                    "references": [{"id": "fnref-1", "marker": "1"}],
+                }
+            ],
+        }
+        output = render_document(document)
+        self.assertIn('<a href="#fn-1" id="fnref-1">1</a>', output)
+        self.assertIn("<h2 class=\"wp-block-heading\">Footnotes</h2>", output)
+        self.assertIn('<li id="fn-1">Footnote text.', output)
+        self.assertIn('aria-label="Back to footnote reference 1"', output)
+        self.assertNotIn("1. Footnote text.</p>", output)
+
 
 if __name__ == "__main__":
     unittest.main()

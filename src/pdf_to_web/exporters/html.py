@@ -3,13 +3,15 @@ from __future__ import annotations
 import html
 from typing import Any
 
-from .common import image_src, is_excluded, render_inline, table_cell
+from .common import image_src, is_excluded, is_footnote_body, render_footnotes_list, render_inline, table_cell
 
 
 def _list(block: dict[str, Any]) -> str:
     tag = "ol" if block.get("ordered") else "ul"
     items: list[str] = []
     for child in block.get("children", []):
+        if is_excluded(child) or is_footnote_body(child):
+            continue
         if child.get("type") == "list_item":
             nested = "".join(
                 _block(grandchild) for grandchild in child.get("children", [])
@@ -43,7 +45,7 @@ def _table(block: dict[str, Any]) -> str:
 
 
 def _block(block: dict[str, Any]) -> str:
-    if is_excluded(block):
+    if is_excluded(block) or is_footnote_body(block):
         return ""
     block_type = block.get("type")
     if block.get("export_as_part_of_image"):
@@ -75,7 +77,11 @@ def _block(block: dict[str, Any]) -> str:
 
 def render_document(document: dict[str, Any]) -> str:
     title = html.escape(str(document.get("metadata", {}).get("title", "Untitled document")))
-    body = "\n".join(_block(block) for block in document.get("blocks", []))
+    body_parts = [_block(block) for block in document.get("blocks", [])]
+    footnotes = render_footnotes_list(document)
+    if footnotes:
+        body_parts.append(footnotes)
+    body = "\n".join(body_parts)
     return (
         "<!doctype html>\n"
         '<html lang="en">\n<head>\n<meta charset="utf-8">\n'

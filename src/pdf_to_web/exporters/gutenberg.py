@@ -5,7 +5,7 @@ import json
 import re
 from typing import Any
 
-from .common import image_src, is_excluded, render_inline, table_cell
+from .common import image_src, is_excluded, is_footnote_body, render_footnote_backlinks, render_inline, table_cell
 
 
 def _attrs(values: dict[str, Any], escape_hyphens: bool = False) -> str:
@@ -31,6 +31,8 @@ def _list_markup(block: dict[str, Any]) -> str:
     tag = "ol" if ordered else "ul"
     items: list[str] = []
     for child in block.get("children", []):
+        if is_excluded(child) or is_footnote_body(child):
+            continue
         nested = "".join(
             _list_markup(item)
             for item in child.get("children", [])
@@ -71,7 +73,7 @@ def _render_table(block: dict[str, Any]) -> str:
 
 
 def render_block(block: dict[str, Any]) -> str:
-    if is_excluded(block):
+    if is_excluded(block) or is_footnote_body(block):
         return ""
     if block.get("export_as_part_of_image"):
         return ""
@@ -112,6 +114,22 @@ def render_block(block: dict[str, Any]) -> str:
     )
 
 
+def _render_footnotes(document: dict[str, Any]) -> list[str]:
+    footnotes = [note for note in document.get("footnotes", []) if isinstance(note, dict)]
+    if not footnotes:
+        return []
+    items: list[str] = []
+    for footnote in footnotes:
+        footnote_id = html.escape(str(footnote.get("id", "")), quote=True)
+        text = html.escape(str(footnote.get("text", "")))
+        backlinks = render_footnote_backlinks(footnote)
+        items.append(f'<li id="{footnote_id}">{text} {backlinks}</li>')
+    return [
+        _wrap("heading", '<h2 class="wp-block-heading">Footnotes</h2>'),
+        _wrap("list", f'<ol class="wp-block-list">{"".join(items)}</ol>', {"ordered": True}),
+    ]
+
+
 def _wsu_hero(document: dict[str, Any], config: dict[str, Any]) -> str:
     hero = dict(config.get("hero") or {})
     title = document.get("metadata", {}).get("title", "Untitled document")
@@ -145,4 +163,5 @@ def render_document(
         rendered.extend(content for block in blocks if (content := render_block(block)))
     else:
         raise ValueError(f"Unknown WordPress export profile: {profile}")
+    rendered.extend(_render_footnotes(document))
     return "\n\n".join(rendered) + "\n"

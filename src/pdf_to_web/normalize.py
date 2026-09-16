@@ -15,6 +15,8 @@ READINESS_STATUSES = {"review_ready", "needs_review", "conversion_blocked"}
 PAGE_NUMBER_PATTERN = re.compile(
     r"(?:\bpage\s*(?:\||of)?\s*\d+\b|\b\d+\s*(?:of|/)\s*\d+\b)", re.IGNORECASE
 )
+FOOTNOTE_SOURCE_TYPES = {"footnote", "endnote", "note"}
+FOOTNOTE_START_RE = re.compile(r"^\s*(?:\[(?P<bracket>[A-Za-z0-9]+)\]|(?P<plain>[A-Za-z0-9]{1,3}))[.)]?\s+(?P<text>.+)$", re.DOTALL)
 
 TYPE_MAP = {
     "heading": "heading",
@@ -142,7 +144,40 @@ def _normalize_element(element: dict[str, Any], index: int) -> dict[str, Any]:
         block["review_status"] = "review_required"
         if source_type in {"header", "footer"}:
             block["role"] = f"page_{source_type}"
+    references = _raw_footnote_references(element)
+    if references:
+        block["footnote_references"] = references
     return block
+
+
+def _raw_footnote_references(element: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_refs = (
+        element.get("footnote references")
+        or element.get("footnote_references")
+        or element.get("references")
+    )
+    if not isinstance(raw_refs, list):
+        return []
+    references: list[dict[str, Any]] = []
+    for index, raw in enumerate(raw_refs, start=1):
+        if not isinstance(raw, dict):
+            continue
+        marker = raw.get("marker") or raw.get("label") or raw.get("number")
+        if marker is None:
+            continue
+        footnote_id = raw.get("footnote_id") or raw.get("footnote id")
+        references.append(
+            {
+                "marker": str(marker),
+                "footnote_id": str(footnote_id) if footnote_id is not None else "",
+                "source_page": raw.get("page number", element.get("page number", element.get("page"))),
+                "source_block": _block_id(element, index),
+                "occurrence_order": index,
+                "start": raw.get("start"),
+                "end": raw.get("end"),
+            }
+        )
+    return references
 
 
 def _walk(
@@ -186,12 +221,143 @@ def normalize_document(raw: dict[str, Any]) -> dict[str, Any]:
         "blocks": _walk(item for item in elements if isinstance(item, dict)),
     }
     _associate_image_captions(document["blocks"])
+    _extract_footnotes(document)
     _mark_automatic_page_artifacts(document["blocks"])
     return document
 
 
+def _footnote_marker_and_text(block: dict[str, Any]) -> tuple[str, str] | None:
+    raw = block.get("provenance", {}).get("raw", {})
+    marker = raw.get("footnote marker") or raw.get("footnote_marker") or raw.get("marker")
+    text = raw.get("footnote text") or raw.get("footnote_text")
+    if marker is not None and text:
+        return str(marker), str(text).strip()
+    content = str(block.get("content", "")).strip()
+    match = FOOTNOTE_START_RE.match(content)
+    if not match:
+        return None
+    return str(match.group("bracket") or match.group("plain")), match.group("text").strip()
+
+
+def _explicit_footnote_id(block: dict[str, Any], marker: str) -> str:
+    raw = block.get("provenance", {}).get("raw", {})
+    source_id = raw.get("footnote id") or raw.get("footnote_id") or raw.get("id")
+    base = str(source_id) if source_id is not None else marker
+    cleaned = re.sub(r"[^A-Za-z0-9_-]+", "-", base).strip("-").lower()
+    return f"fn-{cleaned or marker}"
+
+
+def _marker_occurrences(text: str, marker: str) -> list[tuple[int, int]]:
+    if not marker:
+        return []
+    pattern = re.compile(rf"(?<![A-Za-z0-9]){re.escape(marker)}(?![A-Za-z0-9])")
+    return [match.span() for match in pattern.finditer(text)]
+
+
+def _find_reference_blocks(
+    blocks: list[dict[str, Any]], note_index: int, marker: str, page: Any
+) -> list[tuple[dict[str, Any], int, int]]:
+    references: list[tuple[dict[str, Any], int, int]] = []
+    for block in reversed(blocks[:note_index]):
+        if block.get("export_as_footnote_body") or block.get("type") not in {"paragraph", "heading", "caption", "list_item"}:
+            continue
+        if block.get("provenance", {}).get("source_page") != page:
+            continue
+        text = str(block.get("content", ""))
+        for start, end in _marker_occurrences(text, marker):
+            references.append((block, start, end))
+        if references:
+            return list(reversed(references))
+    return references
+
+
+def _append_reference(
+    block: dict[str, Any],
+    footnote_id: str,
+    marker: str,
+    order: int,
+    start: int | None = None,
+    end: int | None = None,
+) -> dict[str, Any]:
+    suffix = "" if order == 1 else f"-{order}"
+    reference = {
+        "id": f"fnref-{footnote_id.removeprefix('fn-')}{suffix}",
+        "footnote_id": footnote_id,
+        "marker": marker,
+        "source_page": block.get("provenance", {}).get("source_page"),
+        "source_block": block.get("id"),
+        "occurrence_order": order,
+    }
+    if start is not None and end is not None:
+        reference.update({"start": start, "end": end})
+    block.setdefault("footnote_references", []).append(reference)
+    return reference
+
+
+def _extract_footnotes(document: dict[str, Any]) -> None:
+    blocks = list(_flatten(document.get("blocks", [])))
+    footnotes: list[dict[str, Any]] = []
+    reference_order = 1
+    for index, block in enumerate(blocks):
+        source_type = str(block.get("provenance", {}).get("source_type") or "").lower()
+        explicit = source_type in FOOTNOTE_SOURCE_TYPES or bool(
+            block.get("provenance", {}).get("raw", {}).get("footnote")
+        )
+        if not explicit:
+            continue
+        parsed = _footnote_marker_and_text(block)
+        if parsed is None:
+            block.setdefault("review", {}).setdefault("issues", []).append(
+                {
+                    "code": "uncertain_footnote",
+                    "message": "A note-like source element could not be confidently matched as a footnote.",
+                }
+            )
+            block.setdefault("review", {})["status"] = "needs_review"
+            continue
+        marker, text = parsed
+        footnote_id = _explicit_footnote_id(block, marker)
+        page = block.get("provenance", {}).get("source_page")
+        matches = _find_reference_blocks(blocks, index, marker, page)
+        if not matches:
+            block.setdefault("review", {}).setdefault("issues", []).append(
+                {
+                    "code": "unmatched_footnote",
+                    "message": "Footnote text was preserved inline because no matching body reference was found.",
+                }
+            )
+            block.setdefault("review", {})["status"] = "needs_review"
+            continue
+        references = []
+        for reference_block, start, end in matches:
+            references.append(
+                _append_reference(
+                    reference_block, footnote_id, marker, reference_order, start, end
+                )
+            )
+            reference_order += 1
+        block["export_as_footnote_body"] = True
+        block["footnote_body_id"] = footnote_id
+        footnotes.append(
+            {
+                "id": footnote_id,
+                "marker": marker,
+                "text": text,
+                "references": references,
+                "source_page": page,
+                "source_element_provenance": block.get("provenance", {}),
+                "original_source_position": index + 1,
+                "review": {"status": "auto_detected"},
+            }
+        )
+    if footnotes:
+        document["footnotes"] = footnotes
+
+
 def _mark_automatic_page_artifacts(blocks: list[dict[str, Any]]) -> None:
     for block in _flatten(blocks):
+        if block.get("export_as_footnote_body"):
+            continue
         provenance = block.get("provenance", {})
         source_type = str(provenance.get("source_type") or "").lower()
         content = str(block.get("content", "")).strip()
@@ -356,6 +522,22 @@ def apply_readiness(
                 "code": "missing_heading_levels",
                 "message": f"{len(missing_levels)} heading(s) use a provisional level.",
                 "block_ids": [block["id"] for block in missing_levels],
+            }
+        )
+    review_required_blocks = [
+        block
+        for block in blocks
+        if any(
+            issue.get("code") != "missing_heading_level"
+            for issue in block.get("review", {}).get("issues", [])
+        )
+    ]
+    if review_required_blocks:
+        issues.append(
+            {
+                "code": "block_review_required",
+                "message": f"{len(review_required_blocks)} block(s) require review before export.",
+                "block_ids": [block["id"] for block in review_required_blocks],
             }
         )
     furniture = [

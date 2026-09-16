@@ -214,6 +214,58 @@ class NormalizeTests(unittest.TestCase):
             ["Right first", "Left second"],
         )
 
+    def test_explicit_footnote_moves_to_document_model(self):
+        document = normalize_document(
+            {
+                "number of pages": 1,
+                "kids": [
+                    {
+                        "type": "paragraph",
+                        "id": 1,
+                        "page number": 1,
+                        "content": "This statement includes a footnote 1.",
+                    },
+                    {
+                        "type": "footnote",
+                        "id": 2,
+                        "page number": 1,
+                        "content": "1. Footnote text.",
+                    },
+                ],
+            }
+        )
+        self.assertEqual(document["footnotes"][0]["marker"], "1")
+        self.assertEqual(document["footnotes"][0]["text"], "Footnote text.")
+        self.assertTrue(document["blocks"][1]["export_as_footnote_body"])
+        self.assertNotEqual(document["blocks"][1].get("review", {}).get("status"), "excluded")
+        reference = document["blocks"][0]["footnote_references"][0]
+        self.assertEqual(reference["footnote_id"], document["footnotes"][0]["id"])
+        self.assertEqual(reference["source_block"], "odl-1")
+
+    def test_unmatched_note_is_preserved_for_review(self):
+        document = normalize_document(
+            {
+                "number of pages": 1,
+                "kids": [
+                    {"type": "paragraph", "page number": 1, "content": "Body text."},
+                    {"type": "footnote", "page number": 1, "content": "1. Maybe a note."},
+                    {
+                        "type": "list",
+                        "numbering style": "decimal",
+                        "list items": [{"type": "list item", "content": "1. Ordinary item"}],
+                    },
+                ],
+            }
+        )
+        self.assertNotIn("footnotes", document)
+        self.assertFalse(document["blocks"][1].get("export_as_footnote_body", False))
+        self.assertEqual(document["blocks"][1]["review"]["status"], "needs_review")
+        self.assertIn(
+            "block_review_required",
+            {issue["code"] for issue in apply_readiness(document)["issues"]},
+        )
+        self.assertEqual(document["blocks"][2]["type"], "list")
+
 
 if __name__ == "__main__":
     unittest.main()
