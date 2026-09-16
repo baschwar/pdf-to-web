@@ -1,0 +1,16 @@
+{
+  "hero": {
+    "enabled": true,
+    "headingTag": "h1",
+    "caption": "RN-BSN",
+    "imageId": 54625,
+    "imageSrc": "https://wpcdn.web.wsu.edu/example.png",
+    "backgroundType": "image",
+    "className": " wsu-hero--style-boxed wsu-hero--size-xsmall"
+  },
+  "section_defaults": {
+    "id": "top",
+    "className": "wsu-color-background--white wsu-spacing-after--none"
+  }
+}
+

@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pdf-to-web"
+version = "0.1.0"
+description = "Local-first PDF to accessible web and WordPress conversion"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+  "opendataloader-pdf>=2.4,<3",
+  "pypdf>=6,<7",
+]
+
+[project.scripts]
+pdf-to-web = "pdf_to_web.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

@@ -1,0 +1,79 @@
+from __future__ import annotations
+
+import html
+from typing import Any
+
+from .common import image_src, render_inline, table_cell
+
+
+def _list(block: dict[str, Any]) -> str:
+    tag = "ol" if block.get("ordered") else "ul"
+    items: list[str] = []
+    for child in block.get("children", []):
+        if child.get("type") == "list_item":
+            nested = "".join(
+                _block(grandchild) for grandchild in child.get("children", [])
+            )
+            items.append(f"<li>{render_inline(child)}{nested}</li>")
+        else:
+            items.append(f"<li>{_block(child)}</li>")
+    return f"<{tag}>{''.join(items)}</{tag}>"
+
+
+def _table(block: dict[str, Any]) -> str:
+    caption = block.get("caption")
+    parts = ["<table>"]
+    if caption:
+        parts.append(f"<caption>{html.escape(str(caption))}</caption>")
+    for row_index, row in enumerate(block.get("rows", [])):
+        parts.append("<tr>")
+        cell_tag = "th" if row_index == 0 else "td"
+        for cell in row:
+            content, row_span, column_span = table_cell(cell)
+            scope = ' scope="col"' if cell_tag == "th" else ""
+            spans = ""
+            if row_span > 1:
+                spans += f' rowspan="{row_span}"'
+            if column_span > 1:
+                spans += f' colspan="{column_span}"'
+            parts.append(f"<{cell_tag}{scope}{spans}>{html.escape(content)}</{cell_tag}>")
+        parts.append("</tr>")
+    parts.append("</table>")
+    return "".join(parts)
+
+
+def _block(block: dict[str, Any]) -> str:
+    block_type = block.get("type")
+    if block_type == "heading":
+        level = max(1, min(6, int(block.get("level", 2))))
+        return f"<h{level}>{render_inline(block)}</h{level}>"
+    if block_type in {"paragraph", "caption", "callout"}:
+        return f"<p>{render_inline(block)}</p>"
+    if block_type == "quote":
+        return f"<blockquote><p>{render_inline(block)}</p></blockquote>"
+    if block_type == "list":
+        return _list(block)
+    if block_type == "image":
+        alt = "" if block.get("decorative") else html.escape(str(block.get("alt", "")), quote=True)
+        image = f'<img src="{image_src(block)}" alt="{alt}">'
+        caption = block.get("caption")
+        if caption:
+            return f"<figure>{image}<figcaption>{html.escape(str(caption))}</figcaption></figure>"
+        return f"<figure>{image}</figure>"
+    if block_type == "table":
+        return _table(block)
+    if block_type == "page_break":
+        return "<hr>"
+    return f'<div data-pdf-to-web-type="unknown">{render_inline(block)}</div>'
+
+
+def render_document(document: dict[str, Any]) -> str:
+    title = html.escape(str(document.get("metadata", {}).get("title", "Untitled document")))
+    body = "\n".join(_block(block) for block in document.get("blocks", []))
+    return (
+        "<!doctype html>\n"
+        '<html lang="en">\n<head>\n<meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        f"<title>{title}</title>\n</head>\n<body>\n<main>\n{body}\n</main>\n"
+        "</body>\n</html>\n"
+    )

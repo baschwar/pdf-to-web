@@ -1,0 +1,59 @@
+{
+  "schema_version": "pdf-to-web-normalized-v1",
+  "metadata": {"title": "Access & Equity – 2026"},
+  "blocks": [
+    {"id": "b1", "type": "heading", "level": 1, "content": "Access & Equity – 2026"},
+    {
+      "id": "b2",
+      "type": "paragraph",
+      "content": "",
+      "runs": [
+        {"type": "text", "text": "Visit "},
+        {"type": "link", "text": "WSU Nursing", "url": "https://nursing.wsu.edu/?a=1&b=2"},
+        {"type": "text", "text": " for "},
+        {"type": "strong", "text": "details & updates"},
+        {"type": "text", "text": "."}
+      ]
+    },
+    {
+      "id": "b3",
+      "type": "list",
+      "ordered": false,
+      "content": "",
+      "children": [
+        {"id": "b3a", "type": "list_item", "content": "First item", "children": []},
+        {
+          "id": "b3b",
+          "type": "list_item",
+          "content": "Second item",
+          "children": [
+            {
+              "id": "b3b1",
+              "type": "list",
+              "ordered": true,
+              "children": [
+                {"id": "b3b1a", "type": "list_item", "content": "Nested one", "children": []}
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b4",
+      "type": "image",
+      "src": "https://example.edu/image.jpg?a=1&b=2",
+      "alt": "Students in a simulation lab",
+      "caption": "Practice builds confidence.",
+      "decorative": false
+    },
+    {"id": "b5", "type": "quote", "content": "Care begins with listening."},
+    {
+      "id": "b6",
+      "type": "table",
+      "caption": "Enrollment",
+      "rows": [["Program", "Students"], ["BSN", "42"]]
+    }
+  ]
+}
+
