@@ -17,6 +17,7 @@ from pdf_to_web.web import (
     create_app,
     is_allowed_host,
     is_allowed_origin,
+    open_browser_when_ready,
     safe_project_file,
     static_path,
 )
@@ -170,6 +171,22 @@ class WebAppTests(unittest.TestCase):
         self.assertTrue(static_path("pico.min.css").is_file())
         with self.assertRaises(ValueError):
             safe_project_file(self.project, "../outside.pdf")
+
+    @mock.patch("pdf_to_web.web.webbrowser.open")
+    @mock.patch("pdf_to_web.web.socket.create_connection")
+    def test_browser_opens_only_after_server_is_ready(self, connect, browser_open):
+        connection = mock.MagicMock()
+        connect.side_effect = [ConnectionRefusedError, connection]
+
+        with mock.patch("pdf_to_web.web.time.sleep"):
+            open_browser_when_ready(
+                "http://127.0.0.1:54321/bootstrap/token",
+                "127.0.0.1",
+                54321,
+            )
+
+        self.assertEqual(connect.call_count, 2)
+        browser_open.assert_called_once_with("http://127.0.0.1:54321/bootstrap/token")
 
 
 if __name__ == "__main__":

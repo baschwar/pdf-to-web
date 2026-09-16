@@ -4,8 +4,11 @@ import html
 import json
 import os
 import secrets
+import socket
 import subprocess
 import sys
+import threading
+import time
 import webbrowser
 from collections import Counter
 from dataclasses import dataclass, field
@@ -97,6 +100,18 @@ def is_allowed_origin(value: str | None, port: int) -> bool:
 
 def browser_url(config: WebAppConfig) -> str:
     return f"http://{config.host}:{config.port}/bootstrap/{config.bootstrap_token}"
+
+
+def open_browser_when_ready(url: str, host: str, port: int, *, timeout: float = 10.0) -> None:
+    """Open the bootstrap URL after the local server begins accepting connections."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=0.25):
+                webbrowser.open(url)
+                return
+        except OSError:
+            time.sleep(0.05)
 
 
 def choose_project_folder() -> Path:
@@ -681,5 +696,10 @@ def run_server(project: Path | None, host: str, port: int, *, open_browser: bool
     url = browser_url(config)
     print(url, flush=True)
     if open_browser:
-        webbrowser.open(url)
+        threading.Thread(
+            target=open_browser_when_ready,
+            args=(url, host, port),
+            daemon=True,
+            name="pdf-to-web-browser-launcher",
+        ).start()
     uvicorn.run(create_app(config), host=host, port=port, log_level="info")
