@@ -19,20 +19,21 @@ body { letter-spacing: 0; }
 .source-page-controls button { width: auto; margin: 0; }
 .source-page-controls label { display: flex; align-items: center; gap: .4rem; margin: 0; }
 .source-page-controls input { width: 4.5rem; margin: 0; }
-.reading-order-header, .block-navigation { display: flex; align-items: center; gap: .75rem; justify-content: space-between; flex-wrap: wrap; }
+.reading-order-header { position: sticky; top: 4rem; z-index: 6; padding: .5rem 0; border-bottom: 1px solid var(--app-border); background: #fff; }
+.reading-order-header, .block-navigation { display: flex; align-items: center; gap: .5rem; justify-content: space-between; flex-wrap: wrap; }
 .reading-order-header h2, .block-navigation button { margin: 0; }
-.block-navigation button { width: auto; }
+.blocks-pane button { width: auto; min-height: 2rem; margin: 0; padding: .35rem .6rem; font-size: .825rem; }
 .block-navigation span { min-width: 8rem; text-align: center; color: var(--app-muted); }
 .source-image-stage { position: relative; display: block; width: 100%; max-width: 100%; }
 .source-pane img { display: block; width: 100%; max-height: calc(100vh - 14rem); object-fit: contain; object-position: top center; border: 1px solid var(--app-border); background: #eee; }
 #source-highlight { position: absolute; border: 4px solid #c2410c; background: rgb(255 237 213 / 35%); box-shadow: 0 0 0 2px white; pointer-events: none; }
-.block-card { border: 1px solid var(--app-border); border-radius: 6px; padding: 1rem; margin-bottom: 1rem; box-shadow: none; scroll-margin-top: 5rem; }
+.block-card { border: 1px solid var(--app-border); border-radius: 6px; padding: .75rem; margin-bottom: .75rem; box-shadow: none; scroll-margin-top: 9rem; }
 .block-card.source-selected { border-color: #c2410c; box-shadow: inset 4px 0 0 #c2410c; }
 .block-card:focus-within { outline: 3px solid #1c6ea4; outline-offset: 2px; }
 .block-card > header { border-bottom: 1px solid var(--app-border); padding-bottom: .65rem; }
 .block-card > header > div { display: flex; gap: .45rem; align-items: center; }
 .block-card > header h3 { margin: 0; font-size: 1rem; }
-.block-card > footer { border-top: 1px solid var(--app-border); padding-top: .75rem; justify-content: flex-start; }
+.block-card > footer { border-top: 1px solid var(--app-border); padding-top: .5rem; gap: .4rem; justify-content: flex-start; }
 .block-card textarea { resize: vertical; }
 .source-provenance { color: var(--app-muted); font-size: .875rem; margin-block: .75rem; }
 .order { display: inline-grid; place-items: center; width: 2rem; height: 2rem; border-radius: 50%; background: #20252b; color: white; font-weight: 700; }

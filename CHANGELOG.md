@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.3] - 2026-09-16
+
+### Changed
+
+- Previous and Next block controls remain visible while reviewing the reading
+  order, and block controls use a more compact layout.
+- Changing the source page selects and focuses the first reading-order block on
+  that page.
+
 ## [0.3.2] - 2026-09-16
 
 ### Added

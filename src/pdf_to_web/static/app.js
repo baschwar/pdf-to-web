@@ -134,6 +134,23 @@ function focusBlock(card) {
   card.scrollIntoView({ block: 'center' });
 }
 
+function navigateSourcePage(page) {
+  const pageInput = document.getElementById('source-page-number');
+  const pageCount = Number(pageInput?.max || 1);
+  const requestedPage = Math.max(1, Math.min(pageCount, Number(page) || 1));
+  const firstCard = blockCards().find((card) => Number(card.dataset.page) === requestedPage);
+  if (firstCard) {
+    selectedSourceCard = firstCard;
+    updateBlockNavigation();
+    focusBlock(firstCard);
+    showSourcePage(requestedPage, firstCard);
+    return;
+  }
+  selectedSourceCard = null;
+  updateBlockNavigation();
+  showSourcePage(requestedPage, null);
+}
+
 document.getElementById('previous-block')?.addEventListener('click', () => {
   const cards = blockCards();
   const index = selectedSourceCard ? cards.indexOf(selectedSourceCard) : cards.length;
@@ -146,17 +163,17 @@ document.getElementById('next-block')?.addEventListener('click', () => {
 });
 
 document.getElementById('source-page-previous')?.addEventListener('click', () => {
-  showSourcePage(Number(document.getElementById('source-page-number').value) - 1);
+  navigateSourcePage(Number(document.getElementById('source-page-number').value) - 1);
 });
 document.getElementById('source-page-next')?.addEventListener('click', () => {
-  showSourcePage(Number(document.getElementById('source-page-number').value) + 1);
+  navigateSourcePage(Number(document.getElementById('source-page-number').value) + 1);
 });
 document.getElementById('source-page-controls')?.addEventListener('submit', (event) => {
   event.preventDefault();
-  showSourcePage(document.getElementById('source-page-number').value);
+  navigateSourcePage(document.getElementById('source-page-number').value);
 });
 document.getElementById('source-page-number')?.addEventListener('change', (event) => {
-  showSourcePage(event.currentTarget.value);
+  navigateSourcePage(event.currentTarget.value);
 });
 
 document.querySelectorAll('.block-card').forEach((card) => {
