@@ -20,6 +20,7 @@ from pdf_to_web.web import (
     safe_project_file,
     static_path,
 )
+from pdf_to_web.wordpress_preview import WordPressPreview
 
 
 @unittest.skipIf(TestClient is None, "FastAPI test dependencies are not installed")
@@ -115,6 +116,31 @@ class WebAppTests(unittest.TestCase):
                 output = self.project / result.json()["files"][0]
                 self.assertIn("Reviewed export text", output.read_text())
 
+    def test_wordpress_preview_consumes_actual_gutenberg_output(self):
+        self.bootstrap()
+        self.client.post("/api/blocks/p1", headers=self.headers(), json={"content": "Reviewed Gutenberg preview text"})
+        with mock.patch(
+            "pdf_to_web.web.render_gutenberg_preview",
+            return_value=WordPressPreview(
+                '<p>Reviewed Gutenberg preview text</p>',
+                ("core/paragraph",),
+                ("wsuwp/example",),
+            ),
+        ) as render:
+            response = self.client.get("/api/preview/wordpress?profile=wsuwp")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Reviewed Gutenberg preview text", render.call_args.args[0])
+        self.assertIn("<!-- wp:wsuwp/section", render.call_args.args[0])
+        self.assertIn("Unsupported preview blocks", response.text)
+        self.assertIn("default-src 'none'", response.headers["content-security-policy"])
+
+    def test_preview_page_has_distinct_sandboxed_modes(self):
+        self.bootstrap()
+        response = self.client.get("/preview")
+        self.assertIn("Semantic HTML", response.text)
+        self.assertIn("WordPress Preview", response.text)
+        self.assertIn('sandbox="allow-same-origin"', response.text)
+
     def test_blocked_document_cannot_export_gutenberg_or_wxr(self):
         data = json.loads(original_path(self.project).read_text())
         data["review"]["status"] = "conversion_blocked"
@@ -125,6 +151,9 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("blocked", result.json()["error"].lower())
         html_result = self.client.post("/api/export", headers=self.headers(), json={"target": "html", "profile": "generic", "post_type": "page"})
         self.assertEqual(html_result.status_code, 200)
+        preview_result = self.client.get("/api/preview/wordpress")
+        self.assertEqual(preview_result.status_code, 200)
+        self.assertIn("Gutenberg export is blocked", preview_result.text)
         edit_result = self.client.post("/api/blocks/p1/approve", headers=self.headers(), json={})
         self.assertEqual(edit_result.status_code, 409)
 

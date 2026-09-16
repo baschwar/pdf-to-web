@@ -61,7 +61,7 @@ async function main() {
     }
 
     const firstBlockId = await page.locator('.block-card').first().getAttribute('id');
-    await clickAndReload(page.locator('.block-card').first().getByRole('button', { name: 'Move down' }));
+    await clickAndReload(page.locator('.block-card').first().getByRole('button', { name: /Move block 1 down/ }));
     await clickAndReload(page.getByRole('button', { name: 'Undo last action' }));
     const restoredFirstBlockId = await page.locator('.block-card').first().getAttribute('id');
     firstBlockRestoredAfterReorderUndo = firstBlockId === restoredFirstBlockId;
@@ -70,9 +70,15 @@ async function main() {
   await page.goto(new URL('/preview', bootstrapUrl).href, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.documentElement.dataset.appReady === 'true');
   await page.screenshot({ path: path.join(outputDir, `${label}-preview-desktop.png`), fullPage: true });
+  await page.getByRole('button', { name: 'WordPress Preview' }).click();
+  await page.locator('iframe[title="WordPress Gutenberg preview"]').waitFor();
+  await page.waitForTimeout(300);
+  const wordpressFrame = page.frameLocator('iframe[title="WordPress Gutenberg preview"]');
+  const wordpressPreviewText = await wordpressFrame.locator('main').innerText();
+  await page.screenshot({ path: path.join(outputDir, `${label}-preview-wordpress.png`), fullPage: true });
   await page.getByRole('button', { name: 'Narrow' }).click();
   await page.waitForTimeout(300);
-  await page.screenshot({ path: path.join(outputDir, `${label}-preview-mobile.png`), fullPage: true });
+  await page.screenshot({ path: path.join(outputDir, `${label}-preview-wordpress-mobile.png`), fullPage: true });
 
   await page.goto(new URL('/export', bootstrapUrl).href, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.documentElement.dataset.appReady === 'true');
@@ -99,12 +105,13 @@ async function main() {
     needsReviewVisible: documentText.includes('Needs Review'),
     exportDisabled,
     blockedWordPressDisabled,
+    wordpressPreviewHasContent: wordpressPreviewText.trim().length > 0,
     consoleErrors
   };
   fs.writeFileSync(path.join(outputDir, `${label}-report.json`), JSON.stringify(report, null, 2) + '\n');
   process.stdout.write(JSON.stringify(report, null, 2) + '\n');
   await browser.close();
-  if (consoleErrors.length || blockCount === 0 || !report.firstBlockRestoredAfterReorderUndo) process.exitCode = 1;
+  if (consoleErrors.length || blockCount === 0 || !report.firstBlockRestoredAfterReorderUndo || !report.wordpressPreviewHasContent) process.exitCode = 1;
 }
 
 main().catch((error) => {

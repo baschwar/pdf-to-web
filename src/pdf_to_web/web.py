@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 from .errors import PdfToWebError
 from .export import export_project
+from .exporters import gutenberg as gutenberg_exporter
 from .exporters import html as html_exporter
 from .normalize import extraction_summary
 from .project import load_project, save_project
@@ -31,6 +32,7 @@ from .review_state import (
     update_complex_visual,
 )
 from .source_pages import render_source_page
+from .wordpress_preview import render_gutenberg_preview
 
 try:
     from fastapi import Request
@@ -308,8 +310,19 @@ def _structure_page(model: dict[str, Any]) -> str:
     return _page("Structure", "structure", body)
 
 
-def _preview_page() -> str:
-    body = '''<h1>Preview</h1><div class="preview-controls" role="group" aria-label="Preview width"><button type="button" class="preview-width" data-width="desktop">Desktop</button><button type="button" class="secondary preview-width" data-width="mobile">Narrow</button></div><div class="preview-shell" id="preview-shell"><iframe title="Semantic HTML preview" src="/api/preview/html"></iframe></div>'''
+def _preview_page(project: dict[str, Any]) -> str:
+    selected_profile = str(project.get("export", {}).get("wordpress_profile", "generic"))
+    profile_options = "".join(
+        f'<option value="{value}"{" selected" if value == selected_profile else ""}>{label}</option>'
+        for value, label in (("generic", "Generic Gutenberg"), ("wsuwp", "WSUWP"))
+    )
+    body = f'''<h1>Preview</h1>
+<div class="preview-toolbar">
+<div class="segmented-control" role="group" aria-label="Preview mode"><button type="button" class="preview-mode" data-mode="semantic" aria-pressed="true">Semantic HTML</button><button type="button" class="secondary preview-mode" data-mode="wordpress" aria-pressed="false">WordPress Preview</button></div>
+<label class="preview-profile" hidden>WordPress profile<select id="preview-profile">{profile_options}</select></label>
+<div class="preview-controls" role="group" aria-label="Preview width"><button type="button" class="preview-width" data-width="desktop">Desktop</button><button type="button" class="secondary preview-width" data-width="mobile">Narrow</button></div></div>
+<p id="preview-description">Semantic Preview shows the reviewed document independently of WordPress.</p>
+<div class="preview-shell" id="preview-shell"><iframe title="Semantic HTML preview" sandbox="allow-same-origin" src="/api/preview/html"></iframe></div>'''
     return _page("Preview", "preview", body)
 
 
@@ -444,8 +457,7 @@ def create_app(config: WebAppConfig):
     @app.get("/preview", response_class=HTMLResponse)
     async def preview_page(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
         require_session(session)
-        current()
-        return _preview_page()
+        return _preview_page(load_project(current()))
 
     @app.get("/export", response_class=HTMLResponse)
     async def export_page(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
@@ -502,7 +514,63 @@ def create_app(config: WebAppConfig):
     @app.get("/api/preview/html", response_class=HTMLResponse)
     async def preview_html(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
         require_session(session)
-        return HTMLResponse(html_exporter.render_document(ensure_review_document(current())))
+        return HTMLResponse(
+            html_exporter.render_document(ensure_review_document(current())),
+            headers={
+                "Content-Security-Policy": "default-src 'none'; img-src 'self' data: http: https:; style-src 'self' 'unsafe-inline'; frame-ancestors 'self'"
+            },
+        )
+
+    @app.get("/api/preview/wordpress", response_class=HTMLResponse)
+    async def preview_wordpress(
+        profile: str = "generic",
+        session: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+    ):
+        require_session(session)
+        if profile not in {"generic", "wsuwp"}:
+            raise HTTPException(status_code=400, detail="Unsupported WordPress preview profile")
+        root = current()
+        document = ensure_review_document(root)
+        status = document.get("review", {}).get("status")
+        title = html.escape(str(document.get("metadata", {}).get("title", "WordPress Preview")))
+        diagnostics = ""
+        try:
+            if status == "conversion_blocked":
+                raise PdfToWebError(
+                    "WordPress Preview is unavailable while Gutenberg export is blocked"
+                )
+            config_data = load_project(root).get("export", {})
+            markup = gutenberg_exporter.render_document(document, profile, config_data)
+            preview = render_gutenberg_preview(markup)
+            if preview.unsupported_blocks:
+                names = "".join(
+                    f"<li><code>{html.escape(name)}</code></li>"
+                    for name in preview.unsupported_blocks
+                )
+                diagnostics = (
+                    '<aside class="preview-diagnostics"><strong>Unsupported preview blocks</strong>'
+                    f"<ul>{names}</ul></aside>"
+                )
+            content = preview.html
+        except PdfToWebError as exc:
+            content = (
+                '<div class="preview-error" role="alert"><strong>WordPress Preview unavailable</strong>'
+                f"<p>{html.escape(str(exc))}</p></div>"
+            )
+        page = (
+            "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+            '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            f"<title>{title} - WordPress Preview</title>"
+            '<link rel="stylesheet" href="/static/wordpress-preview.css"></head>'
+            f"<body><main>{diagnostics}{content}</main></body></html>"
+        )
+        return HTMLResponse(
+            page,
+            headers={
+                "Content-Security-Policy": "default-src 'none'; img-src 'self' data: http: https:; style-src 'self'; frame-ancestors 'self'",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
     @app.get("/api/preview/MEDIA_URL_REQUIRED")
     async def preview_missing_media(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):

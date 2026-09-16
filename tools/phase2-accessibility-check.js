@@ -73,6 +73,10 @@ async function main() {
 
   await page.goto(new URL('/preview', bootstrapUrl).href, { waitUntil: 'domcontentloaded' });
   report.checks.previewFrameNamed = await page.locator('iframe[title="Semantic HTML preview"]').count() === 1;
+  const wordpressPreview = page.getByRole('button', { name: 'WordPress Preview' });
+  await wordpressPreview.focus();
+  await page.keyboard.press('Enter');
+  report.checks.wordpressPreviewKeyboardOperable = await page.locator('iframe[title="WordPress Gutenberg preview"]').count() === 1;
   const narrow = page.getByRole('button', { name: 'Narrow' });
   await narrow.focus();
   await page.keyboard.press('Enter');

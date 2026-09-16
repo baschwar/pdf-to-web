@@ -17,6 +17,7 @@ cd /Users/bradschwartz/Documents/Codex/pdf-to-web
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -e '.[test]'
+npm install
 pdf-to-web doctor
 ```
 
@@ -50,6 +51,12 @@ The command prints and opens a one-use bootstrap URL, binds only to
 `127.0.0.1`, and keeps all project data local. Use `--no-browser` to print the
 URL without opening it automatically. Docker is not required to run, review,
 preview, or export a project.
+
+The Semantic HTML preview uses only Python dependencies. The optional WordPress
+Preview additionally requires Node.js 18.12 or newer and the local packages
+installed by `npm install`; it never requires WordPress, PHP, MySQL, Docker, or
+an external service. See `docs/GUTENBERG_PREVIEW.md` for its compatibility and
+security boundaries.
 
 Reviewed content is stored in `review/current.json`; immutable normalized input
 remains in `extraction/normalized/document.json`, and revision snapshots are

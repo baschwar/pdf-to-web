@@ -17,6 +17,12 @@ all review mutations and persistence. `source_pages` renders read-only PDF page
 images through Poppler. Route handlers do not extract PDF content and do not
 reimplement exporters.
 
+The Preview screen has two independent paths. Semantic Preview renders the
+reviewed model through the HTML exporter. WordPress Preview renders the reviewed
+model through the Gutenberg exporter, then converts that exact Gutenberg markup
+with the local `wp-block-to-html` worker. This keeps Gutenberg/profile defects
+distinguishable from normalized-model or semantic-export defects.
+
 ## Review data
 
 - `extraction/raw/`: immutable extraction output.

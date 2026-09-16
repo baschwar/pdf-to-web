@@ -9,6 +9,8 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from .wordpress_preview import preview_available
+
 
 @dataclass
 class Check:
@@ -119,6 +121,32 @@ def run_checks(project_dir: Path | None = None) -> list[Check]:
         )
     )
 
+    node = shutil.which("node")
+    node_version = None
+    if node:
+        try:
+            result = subprocess.run(
+                [node, "--version"], capture_output=True, text=True, timeout=5
+            )
+            node_version = result.stdout.strip().lstrip("v")
+        except (OSError, subprocess.SubprocessError):
+            pass
+    node_major_text = node_version.split(".", 1)[0] if node_version else ""
+    node_major = int(node_major_text) if node_major_text.isdigit() else 0
+    wordpress_preview_ok = node_major >= 18 and preview_available()
+    checks.append(
+        Check(
+            "WordPress Preview",
+            "PASS" if wordpress_preview_ok else "REVIEW",
+            f"Node {node_version}; local converter available"
+            if wordpress_preview_ok
+            else "optional local Gutenberg preview dependencies are unavailable",
+            None
+            if wordpress_preview_ok
+            else "Install Node.js 18.12 or newer and run npm install. Semantic Preview remains available.",
+        )
+    )
+
     target = (project_dir or Path.cwd()).expanduser().resolve()
     writable_target = target if target.exists() else target.parent
     writable = writable_target.exists() and os.access(writable_target, os.W_OK)
@@ -163,4 +191,3 @@ def run_checks(project_dir: Path | None = None) -> list[Check]:
 
 def checks_as_dicts(project_dir: Path | None = None) -> list[dict[str, str | None]]:
     return [asdict(check) for check in run_checks(project_dir)]
-

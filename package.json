@@ -1,0 +1,12 @@
+{
+  "name": "pdf-to-web-local-preview",
+  "private": true,
+  "description": "Optional local Gutenberg preview dependencies for PDF to Web",
+  "engines": {
+    "node": ">=18.12.0"
+  },
+  "dependencies": {
+    "sanitize-html": "2.17.7",
+    "wp-block-to-html": "1.5.0"
+  }
+}

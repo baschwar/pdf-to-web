@@ -105,6 +105,30 @@ document.querySelectorAll('.preview-width').forEach((button) => button.addEventL
   announce(`${button.textContent} preview selected.`);
 }));
 
+const previewFrame = document.querySelector('#preview-shell iframe');
+const previewProfile = document.getElementById('preview-profile');
+function selectPreviewMode(mode) {
+  if (!previewFrame) return;
+  const wordpress = mode === 'wordpress';
+  document.querySelectorAll('.preview-mode').forEach((button) => {
+    const selected = button.dataset.mode === mode;
+    button.classList.toggle('secondary', !selected);
+    button.setAttribute('aria-pressed', String(selected));
+  });
+  previewProfile?.closest('label').toggleAttribute('hidden', !wordpress);
+  previewFrame.title = wordpress ? 'WordPress Gutenberg preview' : 'Semantic HTML preview';
+  previewFrame.src = wordpress
+    ? `/api/preview/wordpress?profile=${encodeURIComponent(previewProfile?.value || 'generic')}`
+    : '/api/preview/html';
+  const description = document.getElementById('preview-description');
+  if (description) description.textContent = wordpress
+    ? 'WordPress Preview renders the actual Gutenberg export through the local block converter.'
+    : 'Semantic Preview shows the reviewed document independently of WordPress.';
+  announce(`${wordpress ? 'WordPress' : 'Semantic HTML'} preview selected.`);
+}
+document.querySelectorAll('.preview-mode').forEach((button) => button.addEventListener('click', () => selectPreviewMode(button.dataset.mode)));
+previewProfile?.addEventListener('change', () => selectPreviewMode('wordpress'));
+
 const exportForm = document.getElementById('export-form');
 function updateExportAvailability() {
   if (!exportForm) return;
