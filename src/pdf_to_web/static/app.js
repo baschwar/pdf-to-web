@@ -60,35 +60,71 @@ document.getElementById('new-project-form')?.addEventListener('submit', async (e
   }
 });
 
-async function selectSourceBlock(card) {
-  const page = card.dataset.page;
-  if (!page || page === 'Unknown') return;
+let selectedSourceCard = null;
+
+async function showSourcePage(page, card = selectedSourceCard) {
+  const pane = document.querySelector('.source-pane');
+  if (!pane) return;
+  const pageCount = Number(pane.dataset.pageCount || 1);
+  const requestedPage = Math.max(1, Math.min(pageCount, Number(page) || 1));
   document.querySelectorAll('.block-card').forEach((item) => item.classList.toggle('source-selected', item === card));
   const sourceImage = document.getElementById('source-image');
-  sourceImage.src = `/source-page/${page}.png`;
-  sourceImage.alt = `Rendered source PDF page ${page}`;
+  sourceImage.src = `/source-page/${requestedPage}.png`;
+  sourceImage.alt = `Rendered source PDF page ${requestedPage}`;
   const sourceLink = document.getElementById('open-source-page');
-  sourceLink.href = `/source.pdf#page=${page}`;
-  sourceLink.textContent = `Open source PDF page ${page}`;
+  sourceLink.href = `/source.pdf#page=${requestedPage}`;
+  sourceLink.textContent = `Open source PDF page ${requestedPage}`;
+  const pageNumber = document.getElementById('source-page-number');
+  pageNumber.value = requestedPage;
+  document.getElementById('source-page-previous').disabled = requestedPage === 1;
+  document.getElementById('source-page-next').disabled = requestedPage === pageCount;
   const label = document.getElementById('source-page-label');
   const highlight = document.getElementById('source-highlight');
-  label.textContent = `Block ${card.dataset.blockIndex}, ${card.dataset.sourceType}, on source page ${page}.`;
   highlight.hidden = true;
+  if (!card || Number(card.dataset.page) !== requestedPage) {
+    label.textContent = card
+      ? `Source page ${requestedPage}. The selected block is on page ${card.dataset.page}; no region is outlined.`
+      : `Source page ${requestedPage}. Select a block to outline its source region.`;
+    return;
+  }
+  const blockLabel = `Block ${card.dataset.blockIndex}, ${card.dataset.sourceType}, on source page ${requestedPage}.`;
+  label.textContent = blockLabel;
   if (!card.dataset.bbox) return;
   try {
     const bbox = JSON.parse(card.dataset.bbox);
-    const dimensions = await api(`/api/source-page/${page}`);
+    const dimensions = await api(`/api/source-page/${requestedPage}`);
     const [x0, y0, x1, y1] = bbox.map(Number);
     highlight.style.left = `${Math.min(x0, x1) / dimensions.width * 100}%`;
     highlight.style.top = `${(dimensions.height - Math.max(y0, y1)) / dimensions.height * 100}%`;
     highlight.style.width = `${Math.abs(x1 - x0) / dimensions.width * 100}%`;
     highlight.style.height = `${Math.abs(y1 - y0) / dimensions.height * 100}%`;
     highlight.hidden = false;
-    label.textContent += ' The approximate source region is outlined.';
+    label.textContent = `${blockLabel} The approximate source region is outlined.`;
   } catch (error) {
-    label.textContent += ' Its source region could not be outlined.';
+    label.textContent = `${blockLabel} Its source region could not be outlined.`;
   }
 }
+
+async function selectSourceBlock(card) {
+  const page = card.dataset.page;
+  if (!page || page === 'Unknown') return;
+  selectedSourceCard = card;
+  await showSourcePage(page, card);
+}
+
+document.getElementById('source-page-previous')?.addEventListener('click', () => {
+  showSourcePage(Number(document.getElementById('source-page-number').value) - 1);
+});
+document.getElementById('source-page-next')?.addEventListener('click', () => {
+  showSourcePage(Number(document.getElementById('source-page-number').value) + 1);
+});
+document.getElementById('source-page-controls')?.addEventListener('submit', (event) => {
+  event.preventDefault();
+  showSourcePage(document.getElementById('source-page-number').value);
+});
+document.getElementById('source-page-number')?.addEventListener('change', (event) => {
+  showSourcePage(event.currentTarget.value);
+});
 
 document.querySelectorAll('.block-card').forEach((card) => {
   card.addEventListener('click', () => selectSourceBlock(card));

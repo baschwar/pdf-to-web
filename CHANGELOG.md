@@ -9,10 +9,14 @@
 - Automatic advancement to the next unresolved review block after review-state
   actions.
 - First-class default-browser startup and desktop-browser testing workflow.
+- Explicit Previous, Next, and direct page controls for the rendered source
+  preview, with page-aware source highlighting.
 
 ### Changed
 
 - Imported PDFs retain their original filenames.
+- Filename collisions use readable numeric suffixes without overwriting an
+  existing project source file.
 - Source PDFs are served inline with their original filenames.
 
 ## [0.2.0] - 2026-09-16

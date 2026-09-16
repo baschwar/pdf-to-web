@@ -113,7 +113,18 @@ def import_pdf(project_dir: Path, source_pdf: Path) -> dict[str, Any]:
         raise PdfToWebError(f"Source is not a readable PDF file: {source_pdf}")
 
     destination = project_dir / "source" / source_pdf.name
-    shutil.copy2(source_pdf, destination)
+    if destination.exists() and destination.resolve() != source_pdf:
+        counter = 2
+        while True:
+            candidate = destination.with_name(
+                f"{destination.stem}-{counter}{destination.suffix}"
+            )
+            if not candidate.exists():
+                destination = candidate
+                break
+            counter += 1
+    if destination.resolve() != source_pdf:
+        shutil.copy2(source_pdf, destination)
     analysis = analyze_pdf(destination)
     data["source"] = {
         "path": str(destination.relative_to(project_dir)),
