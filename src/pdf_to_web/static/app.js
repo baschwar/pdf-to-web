@@ -109,8 +109,41 @@ async function selectSourceBlock(card) {
   const page = card.dataset.page;
   if (!page || page === 'Unknown') return;
   selectedSourceCard = card;
+  updateBlockNavigation();
   await showSourcePage(page, card);
 }
+
+function blockCards() {
+  return Array.from(document.querySelectorAll('.block-card'));
+}
+
+function updateBlockNavigation() {
+  const cards = blockCards();
+  const index = selectedSourceCard ? cards.indexOf(selectedSourceCard) : -1;
+  const previous = document.getElementById('previous-block');
+  const next = document.getElementById('next-block');
+  const position = document.getElementById('selected-block-position');
+  if (previous) previous.disabled = index <= 0;
+  if (next) next.disabled = cards.length === 0 || index === cards.length - 1;
+  if (position) position.textContent = index >= 0 ? `Block ${index + 1} of ${cards.length}` : 'No block selected';
+}
+
+function focusBlock(card) {
+  if (!card) return;
+  card.focus({ preventScroll: true });
+  card.scrollIntoView({ block: 'center' });
+}
+
+document.getElementById('previous-block')?.addEventListener('click', () => {
+  const cards = blockCards();
+  const index = selectedSourceCard ? cards.indexOf(selectedSourceCard) : cards.length;
+  focusBlock(cards[index - 1]);
+});
+document.getElementById('next-block')?.addEventListener('click', () => {
+  const cards = blockCards();
+  const index = selectedSourceCard ? cards.indexOf(selectedSourceCard) : -1;
+  focusBlock(cards[index + 1]);
+});
 
 document.getElementById('source-page-previous')?.addEventListener('click', () => {
   showSourcePage(Number(document.getElementById('source-page-number').value) - 1);
@@ -139,8 +172,7 @@ if (pendingBlockId) {
   window.addEventListener('load', () => setTimeout(() => {
     const pendingCard = document.getElementById(pendingBlockId);
     if (!pendingCard) return;
-    pendingCard.focus({ preventScroll: true });
-    pendingCard.scrollIntoView({ block: 'center' });
+    focusBlock(pendingCard);
   }, 50), { once: true });
 }
 
@@ -189,11 +221,10 @@ document.querySelectorAll('.block-action').forEach((button) => button.addEventLi
   try {
     await api(`/api/blocks/${encodeURIComponent(blockId)}/${action}`, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(body) });
     if (['approve', 'flag', 'exclude', 'include'].includes(action)) {
-      const nextId = nextReviewBlockId(button.closest('.block-card'));
-      if (nextId) {
-        sessionStorage.setItem(reviewAdvanceKey, nextId);
-        if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
-      }
+      const currentCard = button.closest('.block-card');
+      const nextId = nextReviewBlockId(currentCard);
+      sessionStorage.setItem(reviewAdvanceKey, nextId || currentCard.id);
+      if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
     }
     announce('Review action saved.');
     window.location.reload();

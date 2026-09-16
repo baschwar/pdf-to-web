@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.2] - 2026-09-16
+
+### Added
+
+- Previous block and Next block controls above Reading order, synchronized with
+  source-page selection and keyboard focus.
+
+### Fixed
+
+- Completing the final unresolved block keeps that block focused instead of
+  returning to the top of the Structure page.
+
 ## [0.3.1] - 2026-09-16
 
 ### Added
