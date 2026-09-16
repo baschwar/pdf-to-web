@@ -68,6 +68,7 @@ class WebAppTests(unittest.TestCase):
             response = self.client.get(route)
             self.assertEqual(response.status_code, 200)
             self.assertIn(f"<h1>{heading}</h1>", response.text)
+            self.assertIn("PDF to Web v", response.text)
         placeholder = self.client.get("/api/preview/MEDIA_URL_REQUIRED")
         self.assertEqual(placeholder.status_code, 200)
         self.assertEqual(placeholder.headers["content-type"], "image/svg+xml")

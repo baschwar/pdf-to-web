@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from . import __version__
 from .errors import PdfToWebError
 from .export import export_project
 from .exporters import gutenberg as gutenberg_exporter
@@ -207,7 +208,7 @@ def _page(title: str, active: str, body: str, *, selected: bool = True) -> str:
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(title)} | {APP_NAME}</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/pico.min.css"><link rel="stylesheet" href="/static/app.css"></head>
 <body><header class="app-header"><div class="container">{_nav(active, selected)}</div></header>
-<main class="container">{body}</main><div id="app-status" class="visually-hidden" role="status" aria-live="polite"></div>
+<main class="container">{body}</main><footer class="app-footer"><div class="container">{APP_NAME} v{html.escape(__version__)}</div></footer><div id="app-status" class="visually-hidden" role="status" aria-live="polite"></div>
 <script src="/static/app.js"></script></body></html>'''
 
 
