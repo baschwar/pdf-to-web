@@ -4,6 +4,10 @@ import html
 from typing import Any
 
 
+def is_excluded(block: dict[str, Any]) -> bool:
+    return block.get("review", {}).get("status") == "excluded" or bool(block.get("excluded"))
+
+
 def render_inline(block: dict[str, Any]) -> str:
     runs = block.get("runs")
     if not isinstance(runs, list):

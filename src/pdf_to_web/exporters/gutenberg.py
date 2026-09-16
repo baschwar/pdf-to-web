@@ -5,7 +5,7 @@ import json
 import re
 from typing import Any
 
-from .common import image_src, render_inline, table_cell
+from .common import image_src, is_excluded, render_inline, table_cell
 
 
 def _attrs(values: dict[str, Any], escape_hyphens: bool = False) -> str:
@@ -71,6 +71,8 @@ def _render_table(block: dict[str, Any]) -> str:
 
 
 def render_block(block: dict[str, Any]) -> str:
+    if is_excluded(block):
+        return ""
     if block.get("export_as_part_of_image"):
         return ""
     block_type = block.get("type")

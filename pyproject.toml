@@ -10,6 +10,8 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.34,<1",
   "opendataloader-pdf>=2.4,<3",
   "pypdf>=6,<7",
 ]
@@ -17,6 +19,11 @@ dependencies = [
 [project.scripts]
 pdf-to-web = "pdf_to_web.cli:main"
 
+[project.optional-dependencies]
+test = ["httpx>=0.27,<1"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+pdf_to_web = ["static/*.css", "static/*.js"]

@@ -14,6 +14,7 @@ from .extraction import run_extraction
 from .normalize import normalize_project
 from .project import create_project, import_pdf
 from .wordpress_fixtures import write_wordpress_fixtures
+from .web import run_server
 
 
 def _project_path(value: str) -> Path:
@@ -63,6 +64,12 @@ def build_parser() -> argparse.ArgumentParser:
         "wordpress-fixtures", help="Generate repeatable WXR round-trip fixtures"
     )
     fixtures.add_argument("--output", required=True, type=_project_path)
+
+    serve = commands.add_parser("serve", help="Start the local review application")
+    serve.add_argument("--project", type=_project_path)
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8765)
+    serve.add_argument("--no-browser", action="store_true")
     return parser
 
 
@@ -108,6 +115,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "wordpress-fixtures":
             for path in write_wordpress_fixtures(args.output):
                 print(path)
+        elif args.command == "serve":
+            run_server(args.project, args.host, args.port, open_browser=not args.no_browser)
         return 0
     except PdfToWebError as exc:
         print(f"Error: {exc}", file=sys.stderr)

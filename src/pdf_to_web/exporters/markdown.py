@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from .common import table_cell
+from .common import is_excluded, table_cell
 
 
 def _block(block: dict[str, Any], depth: int = 0) -> str:
+    if is_excluded(block):
+        return ""
     if block.get("export_as_part_of_image"):
         return ""
     block_type = block.get("type")

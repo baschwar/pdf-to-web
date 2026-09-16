@@ -1,0 +1,617 @@
+from __future__ import annotations
+
+import html
+import json
+import os
+import secrets
+import subprocess
+import sys
+import webbrowser
+from collections import Counter
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
+
+from .errors import PdfToWebError
+from .export import export_project
+from .exporters import html as html_exporter
+from .normalize import extraction_summary
+from .project import load_project, save_project
+from .review_state import (
+    BLOCK_TYPES,
+    ensure_review_document,
+    merge_with_next,
+    move_block,
+    review_progress,
+    split_block,
+    table_summary,
+    undo_last,
+    update_block,
+    update_complex_visual,
+)
+from .source_pages import render_source_page
+
+try:
+    from fastapi import Request
+except ImportError:  # pragma: no cover - CLI remains available without app dependencies.
+    Request = Any  # type: ignore
+
+APP_NAME = "PDF to Web"
+SESSION_COOKIE = "pdf_to_web_session"
+CSRF_COOKIE = "pdf_to_web_csrf"
+CSRF_HEADER = "x-csrf-token"
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost"}
+LOOPBACK_CLIENTS = {"127.0.0.1", "::1", "localhost", "testclient"}
+
+
+@dataclass
+class WebAppConfig:
+    project: Path | None = None
+    recent_projects: tuple[Path, ...] = ()
+    host: str = "127.0.0.1"
+    port: int = 8765
+    bootstrap_token: str = field(default_factory=lambda: secrets.token_urlsafe(32))
+    session_token: str = field(default_factory=lambda: secrets.token_urlsafe(32))
+    csrf_token: str = field(default_factory=lambda: secrets.token_urlsafe(32))
+    bootstrap_used: bool = False
+
+
+@dataclass(frozen=True)
+class ProjectSelection:
+    token: str
+    path: Path
+
+    def public(self) -> dict[str, str]:
+        return {"token": self.token, "name": self.path.name}
+
+
+def parse_host_header(value: str) -> tuple[str, int | None]:
+    if not value:
+        return "", None
+    if value.startswith("[") and "]" in value:
+        host, _, remainder = value[1:].partition("]")
+        return host, int(remainder[1:]) if remainder.startswith(":") else None
+    if ":" in value:
+        host, port = value.rsplit(":", 1)
+        try:
+            return host, int(port)
+        except ValueError:
+            return host, None
+    return value, None
+
+
+def is_allowed_host(value: str, port: int) -> bool:
+    host, supplied_port = parse_host_header(value)
+    return host in LOOPBACK_HOSTS and supplied_port == port
+
+
+def is_allowed_origin(value: str | None, port: int) -> bool:
+    if not value:
+        return False
+    parsed = urlparse(value)
+    return parsed.scheme == "http" and parsed.hostname in LOOPBACK_HOSTS and parsed.port == port
+
+
+def browser_url(config: WebAppConfig) -> str:
+    return f"http://{config.host}:{config.port}/bootstrap/{config.bootstrap_token}"
+
+
+def choose_project_folder() -> Path:
+    if sys.platform == "darwin":
+        script = 'POSIX path of (choose folder with prompt "Select a PDF to Web project")'
+        result = subprocess.run(
+            ["osascript", "-e", script], capture_output=True, text=True, timeout=300, check=False
+        )
+        if result.returncode != 0:
+            raise ValueError("No project folder was selected.")
+        return Path(result.stdout.strip()).expanduser().resolve()
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("Native folder selection is unavailable on this system") from exc
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        selected = filedialog.askdirectory(title="Select a PDF to Web project")
+    finally:
+        root.destroy()
+    if not selected:
+        raise ValueError("No project folder was selected.")
+    return Path(selected).expanduser().resolve()
+
+
+def static_path(name: str) -> Path:
+    root = (Path(__file__).parent / "static").resolve()
+    path = (root / name).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("Static path is outside the application package") from exc
+    return path
+
+
+def safe_project_file(project_dir: Path, relative: str) -> Path:
+    if not relative or Path(relative).is_absolute():
+        raise ValueError("Project file path must be relative")
+    root = project_dir.resolve()
+    path = (root / relative).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("Project file path escapes the active project") from exc
+    return path
+
+
+def _walk(blocks: list[dict[str, Any]]):
+    for block in blocks:
+        yield block
+        yield from _walk(block.get("children", []))
+
+
+def _list_text(block: dict[str, Any]) -> str:
+    return "\n".join(str(child.get("content", "")) for child in block.get("children", []))
+
+
+def document_model(project_dir: Path) -> dict[str, Any]:
+    project = load_project(project_dir)
+    document = ensure_review_document(project_dir)
+    summary = extraction_summary(document)
+    blocks = list(_walk(document.get("blocks", [])))
+    counts = Counter(str(block.get("type", "unknown")) for block in blocks)
+    return {
+        "project": project,
+        "document": document,
+        "summary": summary,
+        "counts": dict(counts),
+        "progress": review_progress(document),
+    }
+
+
+def _status_label(value: str) -> str:
+    return value.replace("_", " ").title()
+
+
+def _nav(active: str, selected: bool) -> str:
+    items = [("Projects", "/"), ("Document", "/document"), ("Structure", "/structure"), ("Preview", "/preview"), ("Export", "/export")]
+    links = []
+    for label, href in items:
+        disabled = not selected and href != "/"
+        current = ' aria-current="page"' if active == label.lower() else ""
+        links.append(
+            f'<li><a href="{href}"{current}>{label}</a></li>' if not disabled else f'<li><span aria-disabled="true">{label}</span></li>'
+        )
+    return f'<nav aria-label="Primary"><ul><li><strong>{APP_NAME}</strong></li></ul><ul>{"".join(links)}</ul></nav>'
+
+
+def _page(title: str, active: str, body: str, *, selected: bool = True) -> str:
+    return f'''<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{html.escape(title)} | {APP_NAME}</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/pico.min.css"><link rel="stylesheet" href="/static/app.css"></head>
+<body><header class="app-header"><div class="container">{_nav(active, selected)}</div></header>
+<main class="container">{body}</main><div id="app-status" class="visually-hidden" role="status" aria-live="polite"></div>
+<script src="/static/app.js"></script></body></html>'''
+
+
+def _status_banner(status: str, issues: list[dict[str, Any]]) -> str:
+    messages = "".join(f"<li>{html.escape(str(issue.get('message', issue.get('code', 'Issue'))))}</li>" for issue in issues)
+    return f'''<section class="status-banner status-{html.escape(status)}" aria-labelledby="document-status-heading">
+<h2 id="document-status-heading">{html.escape(_status_label(status))}</h2>
+<p>{len(issues)} unresolved diagnostic issue{'s' if len(issues) != 1 else ''}.</p>{f'<ul>{messages}</ul>' if messages else ''}</section>'''
+
+
+def _projects_page(config: WebAppConfig, selections: list[ProjectSelection], selected: Path | None) -> str:
+    recent = "".join(
+        f'<li><button type="button" class="secondary open-project" data-project-token="{item.token}">{html.escape(item.path.name)}</button></li>'
+        for item in selections
+    ) or "<li>No recent projects are available.</li>"
+    current = f"<p>Current project: <strong>{html.escape(selected.name)}</strong></p>" if selected else "<p>No project is open.</p>"
+    body = f'''<h1>Projects</h1>{current}
+<section aria-labelledby="open-heading"><h2 id="open-heading">Open a project</h2>
+<button id="choose-project" type="button">Choose project folder</button>
+<h3>Recent projects</h3><ul class="project-list">{recent}</ul>
+<p id="project-message" role="status" aria-live="polite"></p></section>'''
+    return _page("Projects", "projects", body, selected=selected is not None)
+
+
+def _document_page(model: dict[str, Any]) -> str:
+    project, document = model["project"], model["document"]
+    source, extraction = project.get("source", {}), project.get("extraction", {})
+    status = document.get("review", {}).get("status", "needs_review")
+    counts, progress = model["counts"], model["progress"]
+    mode = "Structure tree" if extraction.get("use_struct_tree") else "Heuristic"
+    body = f'''<h1>Document</h1>{_status_banner(status, document.get("review", {}).get("issues", []))}
+<dl class="metadata-grid">
+<div><dt>Source</dt><dd>{html.escape(str(source.get("original_filename") or "Not imported"))}</dd></div>
+<div><dt>Project source</dt><dd><code>{html.escape(str(source.get("path") or "Not available"))}</code></dd></div>
+<div><dt>Pages</dt><dd>{source.get("page_count") or "Unknown"}</dd></div>
+<div><dt>Classification</dt><dd>{html.escape(str(source.get("classification") or "Unknown"))}</dd></div>
+<div><dt>Extraction mode</dt><dd>{mode}</dd></div><div><dt>Extraction</dt><dd>{_status_label(str(extraction.get("status", "unknown")))}</dd></div>
+<div><dt>Normalized</dt><dd>Available</dd></div><div><dt>Review status</dt><dd>{_status_label(status)}</dd></div>
+</dl>
+<section aria-labelledby="content-summary"><h2 id="content-summary">Content summary</h2>
+<div class="metrics"><span><strong>{progress['total']}</strong> blocks</span><span><strong>{counts.get('heading',0)}</strong> headings</span><span><strong>{counts.get('paragraph',0)}</strong> paragraphs</span><span><strong>{counts.get('list',0)}</strong> lists</span><span><strong>{counts.get('table',0)}</strong> tables</span><span><strong>{counts.get('image',0)}</strong> images</span><span><strong>{counts.get('unknown',0)}</strong> unknown</span></div></section>
+<section aria-labelledby="review-progress"><h2 id="review-progress">Review progress</h2><p>Reviewed {progress['reviewed']} / {progress['total']} blocks</p>
+<progress value="{progress['reviewed']}" max="{max(1,progress['total'])}">{progress['reviewed']} of {progress['total']}</progress>
+<p>Approved {progress['approved']} · Needs review {progress['needs_review']} · Unreviewed {progress['unreviewed']} · Excluded {progress['excluded']}</p></section>
+<p><a href="/structure" role="button">Review structure</a></p>'''
+    return _page("Document", "document", body)
+
+
+def _block_card(block: dict[str, Any], index: int, *, can_edit: bool = True) -> str:
+    block_id = html.escape(str(block.get("id", "")), quote=True)
+    block_type = str(block.get("type", "unknown"))
+    provenance = block.get("provenance", {})
+    page = provenance.get("source_page") or "Unknown"
+    review_status = str(block.get("review", {}).get("status", "unreviewed"))
+    content = _list_text(block) if block_type == "list" else str(block.get("content", ""))
+    options = "".join(f'<option value="{kind}"{" selected" if kind == block_type else ""}>{kind.replace("_", " ").title()}</option>' for kind in sorted(BLOCK_TYPES))
+    states = "".join(f'<option value="{state}"{" selected" if state == review_status else ""}>{_status_label(state)}</option>' for state in ("unreviewed", "approved", "needs_review", "excluded"))
+    level = int(block.get("level", 2))
+    levels = "".join(f'<option value="{value}"{" selected" if value == level else ""}>H{value}</option>' for value in range(1, 7))
+    issue_text = " ".join(str(issue.get("message", "")) for issue in block.get("review", {}).get("issues", []))
+    table = ""
+    if block_type == "table":
+        stats = table_summary(block)
+        rows = "".join("<tr>" + "".join(f"<td>{html.escape(str(cell.get('content','') if isinstance(cell,dict) else cell))}</td>" for cell in row) + "</tr>" for row in block.get("rows", []))
+        table = f'<p>{stats["rows"]} rows, {stats["columns"]} columns, {stats["spans"]} spanning cells</p><div class="table-scroll"><table><tbody>{rows}</tbody></table></div>'
+    editable = block_type in BLOCK_TYPES
+    editor = f'''<form class="block-form" data-block-id="{block_id}"><div class="form-grid">
+<label>Block type<select name="type">{options}</select></label>
+<label class="heading-level"{"" if block_type == "heading" else " hidden"}>Heading level<select name="level">{levels}</select></label>
+<label>Review state<select name="review_status">{states}</select></label></div>
+<label>Text<textarea name="content" rows="3">{html.escape(content)}</textarea></label>
+<button type="submit" aria-label="Save block {index}">Save block</button></form>''' if editable and can_edit else ""
+    include_label = "Include" if review_status == "excluded" else "Exclude"
+    actions = f'''<footer class="block-actions" aria-label="Actions for block {index}">
+<button type="button" class="secondary block-action" data-action="up" data-block-id="{block_id}" aria-label="Move block {index} up">Move up</button>
+<button type="button" class="secondary block-action" data-action="down" data-block-id="{block_id}" aria-label="Move block {index} down">Move down</button>
+<button type="button" class="secondary block-action" data-action="merge" data-block-id="{block_id}" aria-label="Merge block {index} with next block">Merge next</button>
+<button type="button" class="secondary block-action" data-action="split" data-block-id="{block_id}" aria-label="Split block {index}">Split</button>
+<button type="button" class="secondary block-action" data-action="toggle-excluded" data-block-id="{block_id}" data-current-status="{review_status}" aria-label="{include_label} block {index}">{include_label}</button>
+<button type="button" class="secondary block-action" data-action="approve" data-block-id="{block_id}" aria-label="Approve block {index}">Approve</button>
+<button type="button" class="secondary block-action" data-action="flag" data-block-id="{block_id}" aria-label="Mark block {index} as needs review">Needs review</button></footer>''' if can_edit else '<footer><strong>Inspection only while conversion is blocked.</strong></footer>'
+    return f'''<article class="block-card status-{html.escape(review_status)}" id="block-{block_id}" data-page="{page}" aria-labelledby="block-{block_id}-heading">
+<header><div><span class="order">{index}</span> <h3 id="block-{block_id}-heading">{html.escape(block_type.replace("_", " ").title())}{f' H{level}' if block_type == 'heading' else ''}</h3></div><span>Page {page} · {_status_label(review_status)}</span></header>
+{f'<p class="block-issue">{html.escape(issue_text)}</p>' if issue_text else ''}{table}{editor}
+{actions}</article>'''
+
+
+def _complex_visual_card(visual: dict[str, Any], *, can_edit: bool) -> str:
+    visual_id = html.escape(str(visual.get("id", "")), quote=True)
+    ratio = visual.get("text_recovery_ratio")
+    recovery = f"{ratio:.1%}" if ratio is not None else "Unknown"
+    assets = visual.get("asset_references", [])
+    asset_list = "".join(f"<li><code>{html.escape(str(asset))}</code></li>" for asset in assets)
+    asset_image = f'<img src="/review-asset/{html.escape(str(assets[0]), quote=True)}" alt="Extracted visual asset from source page {visual.get("source_page")}">' if assets else ""
+    status = str(visual.get("status", "needs_text_equivalent"))
+    form = f'''<form class="complex-visual-form" data-visual-id="{visual_id}"><div class="form-grid">
+<label>Classification<input name="type" value="{html.escape(str(visual.get('type','infographic')), quote=True)}"></label>
+<label>Review state<select name="status"><option value="needs_text_equivalent"{" selected" if status == "needs_text_equivalent" else ""}>Keep flagged</option><option value="reclassified"{" selected" if status == "reclassified" else ""}>Reclassified</option><option value="excluded"{" selected" if status == "excluded" else ""}>Excluded</option></select></label></div>
+<label>Recovered text<textarea name="recovered_text" rows="8">{html.escape(str(visual.get('recovered_text','')))}</textarea></label><button type="submit">Save complex visual review</button></form>''' if can_edit else "<p><strong>Inspection only while conversion is blocked.</strong></p>"
+    return f'''<article class="complex-visual" id="visual-{visual_id}"><h3>Complex visual - review required</h3><p>Source page {visual.get('source_page')} · Text recovery {recovery} · {_status_label(status)}</p>{asset_image}<details><summary>Extracted assets and recovered text</summary><ul>{asset_list or '<li>No separate assets were retained.</li>'}</ul><p>{html.escape(str(visual.get('recovered_text','')))}</p></details>{form}</article>'''
+
+
+def _structure_page(model: dict[str, Any]) -> str:
+    document = model["document"]
+    status = document.get("review", {}).get("status", "needs_review")
+    can_edit = status != "conversion_blocked"
+    progress = model["progress"]
+    blocks = document.get("blocks", [])
+    cards = "".join(_block_card(block, index, can_edit=can_edit) for index, block in enumerate(blocks, 1))
+    visuals = "".join(_complex_visual_card(visual, can_edit=can_edit) for visual in document.get("review", {}).get("complex_visuals", []))
+    body = f'''<h1>Structure</h1>{_status_banner(status, document.get("review", {}).get("issues", [])) if not can_edit else ''}<div class="review-toolbar"><p><strong>{_status_label(status)}</strong> · Reviewed {progress['reviewed']} / {progress['total']}</p>{'<button id="undo-action" type="button" class="secondary">Undo last action</button>' if can_edit else ''}</div>
+{f'<section class="complex-warning" aria-labelledby="complex-heading"><h2 id="complex-heading">Complex visuals</h2>{visuals}</section>' if visuals else ''}
+<div class="structure-layout"><section class="source-pane" aria-labelledby="source-heading"><h2 id="source-heading">Source page</h2><p id="source-page-label">Select a block to view its page.</p><img id="source-image" src="/source-page/1.png" alt="Rendered source PDF page 1"><p><a id="open-source-page" href="/source.pdf#page=1" target="_blank" rel="noopener">Open source PDF page 1</a></p></section>
+<section class="blocks-pane" aria-labelledby="blocks-heading"><h2 id="blocks-heading">Reading order</h2><p>Use Move up and Move down to correct reading order. Changes save immediately.</p>{cards or '<p>No normalized blocks are available.</p>'}</section></div>'''
+    return _page("Structure", "structure", body)
+
+
+def _preview_page() -> str:
+    body = '''<h1>Preview</h1><div class="preview-controls" role="group" aria-label="Preview width"><button type="button" class="preview-width" data-width="desktop">Desktop</button><button type="button" class="secondary preview-width" data-width="mobile">Narrow</button></div><div class="preview-shell" id="preview-shell"><iframe title="Semantic HTML preview" src="/api/preview/html"></iframe></div>'''
+    return _page("Preview", "preview", body)
+
+
+def _export_page(model: dict[str, Any]) -> str:
+    document = model["document"]
+    status = str(document.get("review", {}).get("status", "needs_review"))
+    progress = model["progress"]
+    unknown = model["counts"].get("unknown", 0)
+    complex_count = len(document.get("review", {}).get("complex_visuals", []))
+    blocked = status == "conversion_blocked"
+    body = f'''<h1>Export</h1>{_status_banner(status, document.get("review", {}).get("issues", []))}
+<section aria-labelledby="readiness-heading"><h2 id="readiness-heading">Export readiness</h2><ul><li>{progress['needs_review']} blocks need review</li><li>{progress['unreviewed']} blocks are unreviewed</li><li>{unknown} unknown blocks remain</li><li>{complex_count} complex visual warnings remain</li></ul></section>
+<form id="export-form" data-conversion-blocked="{str(blocked).lower()}"><div class="form-grid"><label>Format<select name="target"><option value="html">Semantic HTML</option><option value="gutenberg">Gutenberg</option><option value="wordpress-xml">WXR/XML</option></select></label>
+<label>WordPress profile<select name="profile"><option value="generic">Generic Gutenberg</option><option value="wsuwp">WSUWP</option></select></label>
+<label>Content type<select name="post_type"><option value="page">Page</option><option value="post">Post</option></select></label></div><p>WordPress exports are created as Drafts.</p>
+<button type="submit">Export reviewed document</button><p class="blocked-export-note"{"" if blocked else " hidden"}>Conversion-blocked projects may export diagnostic HTML only.</p></form><div id="export-result" role="status" aria-live="polite"></div>'''
+    return _page("Export", "export", body)
+
+
+def create_app(config: WebAppConfig):
+    try:
+        from fastapi import Cookie, FastAPI, Header, HTTPException
+        from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
+        from fastapi.staticfiles import StaticFiles
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("Install PDF to Web application dependencies first") from exc
+
+    app = FastAPI(title=APP_NAME)
+    active_project = config.project.expanduser().resolve() if config.project else None
+    selections: dict[str, ProjectSelection] = {}
+    recent = [path.expanduser().resolve() for path in config.recent_projects]
+    if active_project and active_project not in recent:
+        recent.insert(0, active_project)
+
+    def issue(path: Path) -> ProjectSelection:
+        load_project(path)
+        selection = ProjectSelection(secrets.token_urlsafe(32), path.resolve())
+        selections[selection.token] = selection
+        return selection
+
+    def require_session(session: str | None) -> None:
+        if session != config.session_token:
+            raise HTTPException(status_code=401, detail="Session required")
+
+    def require_change(request: Request, session: str | None, csrf: str | None) -> None:
+        require_session(session)
+        if not is_allowed_origin(request.headers.get("origin"), config.port):
+            raise HTTPException(status_code=403, detail="Origin rejected")
+        if csrf != config.csrf_token:
+            raise HTTPException(status_code=403, detail="CSRF token rejected")
+
+    def current() -> Path:
+        if active_project is None:
+            raise HTTPException(status_code=400, detail="Choose a project first")
+        load_project(active_project)
+        return active_project
+
+    def require_editable_document() -> None:
+        if ensure_review_document(current()).get("review", {}).get("status") == "conversion_blocked":
+            raise HTTPException(status_code=409, detail="Document is inspection-only while conversion is blocked")
+
+    def error_response(exc: Exception, status: int = 400):
+        return JSONResponse({"status": "error", "error": str(exc)}, status_code=status)
+
+    @app.middleware("http")
+    async def loopback_only(request: Request, call_next):
+        if not is_allowed_host(request.headers.get("host", ""), config.port):
+            return JSONResponse({"detail": "Host header rejected"}, status_code=400)
+        if request.client and request.client.host not in LOOPBACK_CLIENTS:
+            return JSONResponse({"detail": "Client address rejected"}, status_code=403)
+        return await call_next(request)
+
+    app.mount("/static", StaticFiles(directory=static_path(".").resolve()), name="static")
+
+    @app.get("/api/health")
+    async def health():
+        return {"status": "ok", "app": APP_NAME}
+
+    @app.get("/bootstrap/{token}")
+    async def bootstrap(token: str):
+        if config.bootstrap_used or token != config.bootstrap_token:
+            raise HTTPException(status_code=403, detail="Bootstrap token rejected")
+        config.bootstrap_used = True
+        response = RedirectResponse("/", status_code=303)
+        response.set_cookie(SESSION_COOKIE, config.session_token, httponly=True, samesite="strict", path="/")
+        response.set_cookie(CSRF_COOKIE, config.csrf_token, httponly=False, samesite="strict", path="/")
+        return response
+
+    @app.get("/", response_class=HTMLResponse)
+    async def projects(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+        require_session(session)
+        project_selections = [issue(path) for path in recent if (path / "project.json").is_file()]
+        return _projects_page(config, project_selections, active_project)
+
+    @app.post("/api/picker/project")
+    async def pick_project(request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
+        require_change(request, session, csrf)
+        try:
+            selection = issue(choose_project_folder())
+            return {"status": "ok", "selection": selection.public()}
+        except Exception as exc:
+            return error_response(exc)
+
+    @app.post("/api/projects/open")
+    async def open_project(request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
+        nonlocal active_project
+        require_change(request, session, csrf)
+        try:
+            data = await request.json()
+            selection = selections.get(str(data.get("selection_token", "")))
+            if selection is None:
+                raise ValueError("Project selection token is invalid or expired")
+            load_project(selection.path)
+            active_project = selection.path
+            if active_project not in recent:
+                recent.insert(0, active_project)
+            ensure_review_document(active_project)
+            return {"status": "ok", "project": {"name": active_project.name}}
+        except Exception as exc:
+            return error_response(exc)
+
+    @app.get("/document", response_class=HTMLResponse)
+    async def document_page(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+        require_session(session)
+        return _document_page(document_model(current()))
+
+    @app.get("/structure", response_class=HTMLResponse)
+    async def structure_page(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+        require_session(session)
+        return _structure_page(document_model(current()))
+
+    @app.get("/preview", response_class=HTMLResponse)
+    async def preview_page(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+        require_session(session)
+        current()
+        return _preview_page()
+
+    @app.get("/export", response_class=HTMLResponse)
+    async def export_page(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+        require_session(session)
+        return _export_page(document_model(current()))
+
+    @app.get("/source.pdf")
+    async def source_pdf(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+        require_session(session)
+        root = current()
+        source = load_project(root).get("source", {}).get("path")
+        path = safe_project_file(root, str(source or ""))
+        if not path.is_file() or path.suffix.lower() != ".pdf":
+            raise HTTPException(status_code=404, detail="Source PDF is unavailable")
+        return FileResponse(path, media_type="application/pdf", filename="source.pdf")
+
+    @app.get("/source-page/{page}.png")
+    async def source_page(page: int, session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+        require_session(session)
+        try:
+            return FileResponse(render_source_page(current(), page), media_type="image/png")
+        except (PdfToWebError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/preview/images/{name}")
+    async def preview_image(name: str, session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+        require_session(session)
+        if Path(name).name != name or Path(name).suffix.lower() not in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
+            raise HTTPException(status_code=404, detail="Preview asset is unavailable")
+        path = safe_project_file(current(), f"extraction/raw/images/{name}")
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Preview asset is unavailable")
+        return FileResponse(path)
+
+    @app.get("/review-asset/{name}")
+    async def review_asset(name: str, session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+        require_session(session)
+        if Path(name).name != name or Path(name).suffix.lower() not in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
+            raise HTTPException(status_code=404, detail="Review asset is unavailable")
+        path = safe_project_file(current(), f"extraction/assets/images/{name}")
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Review asset is unavailable")
+        return FileResponse(path)
+
+    @app.get("/favicon.ico")
+    async def favicon():
+        return Response(status_code=204)
+
+    @app.get("/api/document")
+    async def api_document(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+        require_session(session)
+        return document_model(current())
+
+    @app.get("/api/preview/html", response_class=HTMLResponse)
+    async def preview_html(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+        require_session(session)
+        return HTMLResponse(html_exporter.render_document(ensure_review_document(current())))
+
+    @app.get("/api/preview/MEDIA_URL_REQUIRED")
+    async def preview_missing_media(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+        require_session(session)
+        return Response(
+            content=(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="180" '
+                'role="img" aria-label="Media URL required">'
+                '<rect width="100%" height="100%" fill="#f1f3f5"/>'
+                '<text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" '
+                'font-family="system-ui, sans-serif" font-size="18" fill="#343a40">'
+                'Media URL required</text></svg>'
+            ),
+            media_type="image/svg+xml",
+        )
+
+    @app.post("/api/blocks/{block_id}")
+    async def edit_block(block_id: str, request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
+        require_change(request, session, csrf)
+        require_editable_document()
+        try:
+            update_block(current(), block_id, await request.json())
+            return {"status": "ok", "progress": review_progress(ensure_review_document(current()))}
+        except Exception as exc:
+            return error_response(exc)
+
+    @app.post("/api/blocks/{block_id}/{action}")
+    async def block_action(block_id: str, action: str, request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
+        require_change(request, session, csrf)
+        require_editable_document()
+        try:
+            data = await request.json()
+            if action in {"up", "down"}:
+                move_block(current(), block_id, action)
+            elif action == "merge":
+                merge_with_next(current(), block_id)
+            elif action == "split":
+                split_block(current(), block_id, int(data.get("offset", 0)))
+            elif action in {"approve", "flag", "exclude", "include"}:
+                state = {"approve": "approved", "flag": "needs_review", "exclude": "excluded", "include": "unreviewed"}[action]
+                update_block(current(), block_id, {"review_status": state})
+            else:
+                raise ValueError("Unsupported block action")
+            return {"status": "ok"}
+        except Exception as exc:
+            return error_response(exc)
+
+    @app.post("/api/review/undo")
+    async def undo(request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
+        require_change(request, session, csrf)
+        require_editable_document()
+        try:
+            undo_last(current())
+            return {"status": "ok"}
+        except Exception as exc:
+            return error_response(exc)
+
+    @app.post("/api/complex-visuals/{visual_id}")
+    async def edit_complex_visual(visual_id: str, request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
+        require_change(request, session, csrf)
+        if ensure_review_document(current()).get("review", {}).get("status") == "conversion_blocked":
+            return error_response(ValueError("Complex visual editing is unavailable while conversion is blocked"), 409)
+        try:
+            update_complex_visual(current(), visual_id, await request.json())
+            return {"status": "ok"}
+        except Exception as exc:
+            return error_response(exc)
+
+    @app.post("/api/export")
+    async def run_export(request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
+        require_change(request, session, csrf)
+        try:
+            data = await request.json()
+            target = str(data.get("target", ""))
+            profile = str(data.get("profile", "generic"))
+            post_type = str(data.get("post_type", "page"))
+            if target not in {"html", "gutenberg", "wordpress-xml"}:
+                raise ValueError("Unsupported export format")
+            if profile not in {"generic", "wsuwp"} or post_type not in {"page", "post"}:
+                raise ValueError("Unsupported WordPress export setting")
+            project = load_project(current())
+            project.setdefault("export", {})["wordpress_profile"] = profile
+            wordpress = project["export"].setdefault("wordpress", {})
+            wordpress.update({"post_type": post_type, "status": "draft"})
+            save_project(current(), project)
+            paths = export_project(current(), target, profile)
+            return {
+                "status": "ok",
+                "files": [str(path.relative_to(current())) for path in paths],
+                "review": ensure_review_document(current()).get("review", {}),
+            }
+        except Exception as exc:
+            return error_response(exc)
+
+    app.state.project_selections = selections
+    app.state.get_active_project = lambda: active_project
+    return app
+
+
+def run_server(project: Path | None, host: str, port: int, *, open_browser: bool = True) -> None:
+    if host not in {"127.0.0.1", "localhost"}:
+        raise PdfToWebError("The review application may only bind to loopback")
+    try:
+        import uvicorn
+    except ImportError as exc:  # pragma: no cover
+        raise PdfToWebError("Install FastAPI and Uvicorn to run the review application") from exc
+    config = WebAppConfig(project=project, host=host, port=port, recent_projects=(project,) if project else ())
+    url = browser_url(config)
+    print(url, flush=True)
+    if open_browser:
+        webbrowser.open(url)
+    uvicorn.run(create_app(config), host=host, port=port, log_level="info")

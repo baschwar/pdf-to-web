@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 from typing import Any
 
-from .common import image_src, render_inline, table_cell
+from .common import image_src, is_excluded, render_inline, table_cell
 
 
 def _list(block: dict[str, Any]) -> str:
@@ -43,6 +43,8 @@ def _table(block: dict[str, Any]) -> str:
 
 
 def _block(block: dict[str, Any]) -> str:
+    if is_excluded(block):
+        return ""
     block_type = block.get("type")
     if block.get("export_as_part_of_image"):
         return ""

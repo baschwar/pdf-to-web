@@ -463,6 +463,9 @@ def normalize_project(project_dir: Path) -> Path:
         else {"assets": []}
     )
     review = apply_readiness(document, asset_manifest)
+    from .review_state import archive_review_document
+
+    archive_review_document(project_dir, "Normalized document was regenerated")
     output = project_dir / "extraction" / "normalized" / "document.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
@@ -480,10 +483,11 @@ def normalize_project(project_dir: Path) -> Path:
 
 
 def load_normalized(project_dir: Path) -> dict[str, Any]:
-    path = project_dir.expanduser().resolve() / "extraction" / "normalized" / "document.json"
-    if not path.is_file():
-        raise PdfToWebError("Normalize the extracted document before exporting")
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if data.get("schema_version") != NORMALIZED_SCHEMA:
-        raise PdfToWebError(f"Unsupported normalized schema: {data.get('schema_version')!r}")
-    return data
+    from .review_state import load_reviewed_document
+
+    try:
+        return load_reviewed_document(project_dir)
+    except PdfToWebError as exc:
+        if "was not found" in str(exc):
+            raise PdfToWebError("Normalize the extracted document before exporting") from exc
+        raise
