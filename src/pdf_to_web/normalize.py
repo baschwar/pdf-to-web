@@ -298,7 +298,52 @@ def _extract_footnotes(document: dict[str, Any]) -> None:
     blocks = list(_flatten(document.get("blocks", [])))
     footnotes: list[dict[str, Any]] = []
     reference_order = 1
+
+    for parent_index, parent in enumerate(blocks):
+        children = parent.get("children", [])
+        if parent.get("type") != "list" or not parent.get("ordered") or len(children) < 2:
+            continue
+        parsed_children = [_footnote_marker_and_text(child) for child in children]
+        if any(parsed is None for parsed in parsed_children):
+            continue
+        markers = [parsed[0] for parsed in parsed_children if parsed]
+        if markers != [str(number) for number in range(1, len(markers) + 1)]:
+            continue
+        page = parent.get("provenance", {}).get("source_page")
+        matches_by_child = [
+            _find_reference_blocks(blocks, blocks.index(child), marker, page)
+            for child, marker in zip(children, markers)
+        ]
+        if any(not matches for matches in matches_by_child):
+            continue
+        parent["export_as_footnote_body"] = True
+        for child, parsed, matches in zip(children, parsed_children, matches_by_child):
+            marker, text = parsed
+            footnote_id = _explicit_footnote_id(child, marker)
+            references = []
+            for reference_block, start, end in matches:
+                references.append(
+                    _append_reference(reference_block, footnote_id, marker, reference_order, start, end)
+                )
+                reference_order += 1
+            child["export_as_footnote_body"] = True
+            child["footnote_body_id"] = footnote_id
+            footnotes.append(
+                {
+                    "id": footnote_id,
+                    "marker": marker,
+                    "text": text,
+                    "references": references,
+                    "source_page": page,
+                    "source_element_provenance": child.get("provenance", {}),
+                    "original_source_position": parent_index + 1,
+                    "review": {"status": "auto_detected"},
+                }
+            )
+
     for index, block in enumerate(blocks):
+        if block.get("export_as_footnote_body"):
+            continue
         source_type = str(block.get("provenance", {}).get("source_type") or "").lower()
         explicit = source_type in FOOTNOTE_SOURCE_TYPES or bool(
             block.get("provenance", {}).get("raw", {}).get("footnote")

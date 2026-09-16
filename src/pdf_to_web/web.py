@@ -305,7 +305,7 @@ def _document_page(model: dict[str, Any]) -> str:
     return _page("Document", "document", body)
 
 
-def _block_card(block: dict[str, Any], index: int, *, can_edit: bool = True) -> str:
+def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool = True) -> str:
     block_id = html.escape(str(block.get("id", "")), quote=True)
     block_type = str(block.get("type", "unknown"))
     provenance = block.get("provenance", {})
@@ -334,8 +334,10 @@ def _block_card(block: dict[str, Any], index: int, *, can_edit: bool = True) -> 
 <button type="submit" aria-label="Save block {index}">Save block</button></form>''' if editable and can_edit else ""
     include_label = "Include" if review_status == "excluded" else "Exclude"
     actions = f'''<footer class="block-actions" aria-label="Actions for block {index}">
-<button type="button" class="secondary block-action" data-action="up" data-block-id="{block_id}" aria-label="Move block {index} up">Move up</button>
-<button type="button" class="secondary block-action" data-action="down" data-block-id="{block_id}" aria-label="Move block {index} down">Move down</button>
+<button type="button" class="secondary block-action" data-action="start" data-block-id="{block_id}" aria-label="Move block {index} to start"{" disabled" if index == 1 else ""}>Move to start</button>
+<button type="button" class="secondary block-action" data-action="up" data-block-id="{block_id}" aria-label="Move block {index} up"{" disabled" if index == 1 else ""}>Move up</button>
+<button type="button" class="secondary block-action" data-action="down" data-block-id="{block_id}" aria-label="Move block {index} down"{" disabled" if index == total else ""}>Move down</button>
+<button type="button" class="secondary block-action" data-action="end" data-block-id="{block_id}" aria-label="Move block {index} to end"{" disabled" if index == total else ""}>Move to end</button>
 <button type="button" class="secondary block-action" data-action="merge" data-block-id="{block_id}" aria-label="Merge block {index} with next block">Merge next</button>
 <button type="button" class="secondary block-action" data-action="split" data-block-id="{block_id}" aria-label="Split block {index}">Split</button>
 <button type="button" class="secondary block-action" data-action="toggle-excluded" data-block-id="{block_id}" data-current-status="{review_status}" aria-label="{include_label} block {index}">{include_label}</button>
@@ -369,7 +371,7 @@ def _structure_page(model: dict[str, Any]) -> str:
     progress = model["progress"]
     blocks = document.get("blocks", [])
     page_count = int(model["project"].get("source", {}).get("page_count") or 1)
-    cards = "".join(_block_card(block, index, can_edit=can_edit) for index, block in enumerate(blocks, 1))
+    cards = "".join(_block_card(block, index, total=len(blocks), can_edit=can_edit) for index, block in enumerate(blocks, 1))
     visuals = "".join(_complex_visual_card(visual, can_edit=can_edit) for visual in document.get("review", {}).get("complex_visuals", []))
     body = f'''<h1>Structure</h1>{_status_banner(status, document.get("review", {}).get("issues", [])) if not can_edit else ''}<div class="review-toolbar"><p><strong>{_status_label(status)}</strong> · Reviewed {progress['reviewed']} / {progress['total']}</p>{'<button id="undo-action" type="button" class="secondary">Undo last action</button>' if can_edit else ''}</div>
 {f'<section class="complex-warning" aria-labelledby="complex-heading"><h2 id="complex-heading">Complex visuals</h2>{visuals}</section>' if visuals else ''}
@@ -731,7 +733,7 @@ def create_app(config: WebAppConfig):
         require_editable_document()
         try:
             data = await request.json()
-            if action in {"up", "down"}:
+            if action in {"start", "up", "down", "end"}:
                 move_block(current(), block_id, action)
             elif action == "merge":
                 merge_with_next(current(), block_id)

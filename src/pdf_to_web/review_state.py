@@ -71,7 +71,14 @@ def _prepare(document: dict[str, Any]) -> dict[str, Any]:
 def ensure_review_document(project_dir: Path) -> dict[str, Any]:
     path = review_path(project_dir)
     if path.is_file():
-        return _read_document(path)
+        document = _read_document(path)
+        if not document.get("footnotes"):
+            from .normalize import _extract_footnotes
+
+            _extract_footnotes(document)
+            if document.get("footnotes"):
+                _atomic_write(path, document)
+        return document
     document = _prepare(_read_document(original_path(project_dir)))
     path.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write(path, document)
@@ -196,10 +203,16 @@ def update_block(project_dir: Path, block_id: str, changes: dict[str, Any]) -> d
 def move_block(project_dir: Path, block_id: str, direction: str) -> dict[str, Any]:
     document = ensure_review_document(project_dir)
     siblings, index, _block = _find_location(document.get("blocks", []), block_id)
-    target = index - 1 if direction == "up" else index + 1 if direction == "down" else -1
+    targets = {"start": 0, "up": index - 1, "down": index + 1, "end": len(siblings) - 1}
+    if direction not in targets:
+        raise ValueError(f"Unsupported move direction: {direction}")
+    target = targets[direction]
     if target < 0 or target >= len(siblings):
         raise ValueError(f"Block cannot move {direction}")
-    siblings[index], siblings[target] = siblings[target], siblings[index]
+    if target == index:
+        return document
+    block = siblings.pop(index)
+    siblings.insert(target, block)
     return save_review_document(project_dir, document)
 
 

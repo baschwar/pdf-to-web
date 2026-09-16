@@ -242,6 +242,28 @@ class NormalizeTests(unittest.TestCase):
         self.assertEqual(reference["footnote_id"], document["footnotes"][0]["id"])
         self.assertEqual(reference["source_block"], "odl-1")
 
+    def test_numbered_footnote_list_moves_to_document_model(self):
+        document = normalize_document(
+            {
+                "number of pages": 1,
+                "kids": [
+                    {"type": "paragraph", "id": 1, "page number": 1, "content": "Claims one 1 and two 2."},
+                    {
+                        "type": "list",
+                        "id": 2,
+                        "page number": 1,
+                        "numbering style": "arabic numbers",
+                        "list items": [
+                            {"type": "list item", "id": 11, "page number": 1, "content": "1 First note."},
+                            {"type": "list item", "id": 12, "page number": 1, "content": "2 Second note."},
+                        ],
+                    },
+                ],
+            }
+        )
+        self.assertEqual([note["text"] for note in document["footnotes"]], ["First note.", "Second note."])
+        self.assertTrue(document["blocks"][1]["export_as_footnote_body"])
+
     def test_unmatched_note_is_preserved_for_review(self):
         document = normalize_document(
             {

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.1] - 2026-09-16
+
+### Added
+
+- Move to start and Move to end review actions, with unavailable boundary moves
+  disabled.
+
+### Fixed
+
+- Ordered footnote lists with matching same-page references are promoted to
+  document-level endnotes, including existing review documents.
+
 ## [0.3.0] - 2026-09-16
 
 ### Added

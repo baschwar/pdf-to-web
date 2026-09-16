@@ -80,6 +80,12 @@ class ReviewStateTests(unittest.TestCase):
         undo_last(self.project)
         self.assertEqual(len(ensure_review_document(self.project)["blocks"]), 3)
 
+    def test_move_to_start_and_end(self):
+        move_block(self.project, "p1", "end")
+        self.assertEqual(ensure_review_document(self.project)["blocks"][-1]["id"], "p1")
+        move_block(self.project, "p1", "start")
+        self.assertEqual(ensure_review_document(self.project)["blocks"][0]["id"], "p1")
+
     def test_list_text_edit_builds_exportable_items(self):
         update_block(self.project, "u1", {"type": "list", "content": "One\nTwo", "review_status": "needs_review"})
         block = ensure_review_document(self.project)["blocks"][3]
