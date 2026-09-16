@@ -34,6 +34,31 @@ document.getElementById('choose-project')?.addEventListener('click', async () =>
 });
 
 document.querySelectorAll('.open-project').forEach((button) => button.addEventListener('click', () => openProject(button.dataset.projectToken)));
+document.querySelectorAll('.remove-project').forEach((button) => button.addEventListener('click', async () => {
+  const output = document.getElementById('project-message');
+  try {
+    await api('/api/projects/remove-recent', { method: 'POST', headers: csrfHeaders(), body: JSON.stringify({ selection_token: button.dataset.projectToken }) });
+    window.location.reload();
+  } catch (error) { output.textContent = error.message; }
+}));
+
+document.getElementById('new-project-form')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const output = document.getElementById('project-message');
+  const button = form.querySelector('button[type="submit"]');
+  try {
+    button.disabled = true;
+    output.textContent = 'Choose a PDF in the file window. Conversion may take a few minutes.';
+    const values = Object.fromEntries(new FormData(form));
+    await api('/api/projects/create', { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(values) });
+    output.textContent = 'Project created. Opening document…';
+    window.location.assign('/document');
+  } catch (error) {
+    output.textContent = error.message;
+    button.disabled = false;
+  }
+});
 
 async function selectSourceBlock(card) {
   const page = card.dataset.page;
@@ -69,6 +94,25 @@ document.querySelectorAll('.block-card').forEach((card) => {
   card.addEventListener('click', () => selectSourceBlock(card));
   card.addEventListener('focusin', () => selectSourceBlock(card));
 });
+
+const reviewAdvanceKey = 'pdf-to-web-review-next-block';
+const pendingBlockId = sessionStorage.getItem(reviewAdvanceKey);
+if (pendingBlockId) {
+  sessionStorage.removeItem(reviewAdvanceKey);
+  if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+  window.addEventListener('load', () => setTimeout(() => {
+    const pendingCard = document.getElementById(pendingBlockId);
+    if (!pendingCard) return;
+    pendingCard.focus({ preventScroll: true });
+    pendingCard.scrollIntoView({ block: 'center' });
+  }, 50), { once: true });
+}
+
+function nextReviewBlockId(card) {
+  const cards = Array.from(document.querySelectorAll('.block-card'));
+  return cards.slice(cards.indexOf(card) + 1)
+    .find((item) => item.classList.contains('status-unreviewed') || item.classList.contains('status-needs_review'))?.id || '';
+}
 
 document.querySelectorAll('.block-form').forEach((form) => form.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -108,6 +152,13 @@ document.querySelectorAll('.block-action').forEach((button) => button.addEventLi
   }
   try {
     await api(`/api/blocks/${encodeURIComponent(blockId)}/${action}`, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(body) });
+    if (['approve', 'flag', 'exclude', 'include'].includes(action)) {
+      const nextId = nextReviewBlockId(button.closest('.block-card'));
+      if (nextId) {
+        sessionStorage.setItem(reviewAdvanceKey, nextId);
+        if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+      }
+    }
     announce('Review action saved.');
     window.location.reload();
   } catch (error) { announce(error.message); alert(error.message); }

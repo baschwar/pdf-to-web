@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from pdf_to_web.errors import PdfToWebError
 from pdf_to_web.extraction import run_extraction
-from pdf_to_web.project import create_project
+from pdf_to_web.project import create_project, save_project
 
 
 class ExtractionTests(unittest.TestCase):
@@ -15,7 +15,10 @@ class ExtractionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary) / "project"
             create_project(project)
-            (project / "source" / "original.pdf").write_bytes(b"%PDF-1.4\n%%EOF\n")
+            state = json.loads((project / "project.json").read_text(encoding="utf-8"))
+            (project / "source" / "named-source.pdf").write_bytes(b"%PDF-1.4\n%%EOF\n")
+            state["source"]["path"] = "source/named-source.pdf"
+            save_project(project, state)
             with (
                 patch(
                     "pdf_to_web.extraction.find_supported_java",

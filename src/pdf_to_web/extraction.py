@@ -18,7 +18,7 @@ def run_extraction(
 ) -> list[Path]:
     project_dir = project_dir.expanduser().resolve()
     data = load_project(project_dir)
-    source = project_dir / "source" / "original.pdf"
+    source = project_dir / str(data.get("source", {}).get("path") or "")
     if not source.is_file():
         raise PdfToWebError("Import a source PDF before running extraction")
     java, _ = find_supported_java()

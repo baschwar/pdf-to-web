@@ -112,11 +112,11 @@ def import_pdf(project_dir: Path, source_pdf: Path) -> dict[str, Any]:
     if not source_pdf.is_file() or source_pdf.suffix.lower() != ".pdf":
         raise PdfToWebError(f"Source is not a readable PDF file: {source_pdf}")
 
-    destination = project_dir / "source" / "original.pdf"
+    destination = project_dir / "source" / source_pdf.name
     shutil.copy2(source_pdf, destination)
     analysis = analyze_pdf(destination)
     data["source"] = {
-        "path": "source/original.pdf",
+        "path": str(destination.relative_to(project_dir)),
         "original_filename": source_pdf.name,
         **analysis,
     }

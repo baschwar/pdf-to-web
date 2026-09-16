@@ -49,7 +49,7 @@ class WebAppTests(unittest.TestCase):
         path = original_path(self.project)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(document), encoding="utf-8")
-        self.config = WebAppConfig(project=self.project, recent_projects=(self.project,), port=54321, bootstrap_token="bootstrap", session_token="session", csrf_token="csrf")
+        self.config = WebAppConfig(project=self.project, recent_projects=(self.project,), projects_root=Path(self.tmp.name) / "projects", recent_store=Path(self.tmp.name) / "recent.json", port=54321, bootstrap_token="bootstrap", session_token="session", csrf_token="csrf")
         self.client = TestClient(create_app(self.config), base_url="http://127.0.0.1:54321")
 
     def bootstrap(self):
@@ -63,6 +63,7 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/health").status_code, 200)
         self.assertEqual(self.client.get("/").status_code, 401)
         self.bootstrap()
+        self.assertEqual(self.client.cookies.get("pdf_to_web_session"), "session")
         self.assertEqual(self.client.get("/bootstrap/bootstrap").status_code, 403)
         for route, heading in (("/", "Projects"), ("/document", "Document"), ("/structure", "Structure"), ("/preview", "Preview"), ("/export", "Export")):
             response = self.client.get(route)
@@ -72,6 +73,11 @@ class WebAppTests(unittest.TestCase):
         placeholder = self.client.get("/api/preview/MEDIA_URL_REQUIRED")
         self.assertEqual(placeholder.status_code, 200)
         self.assertEqual(placeholder.headers["content-type"], "image/svg+xml")
+
+        source = self.client.get("/source.pdf")
+        self.assertEqual(source.status_code, 200)
+        self.assertIn("inline", source.headers["content-disposition"])
+        self.assertIn("fixture.pdf", source.headers["content-disposition"])
 
     @mock.patch("pdf_to_web.web.source_page_size", return_value=(612.0, 792.0))
     def test_structure_exposes_source_region_and_page_dimensions(self, page_size):
@@ -95,6 +101,54 @@ class WebAppTests(unittest.TestCase):
         self.assertNotIn(str(self.project.parent), json.dumps(picked.json()))
         opened = self.client.post("/api/projects/open", headers=self.headers(), json={"selection_token": picked.json()["selection"]["token"]})
         self.assertEqual(opened.status_code, 200)
+
+    def test_recent_projects_persist_across_app_restart_and_can_be_removed(self):
+        self.bootstrap()
+        first_page = self.client.get("/")
+        self.assertIn("Web fixture", first_page.text)
+        self.assertIn(str(self.project.resolve()), first_page.text)
+        self.assertIn("Last opened", first_page.text)
+
+        reopened_config = WebAppConfig(
+            project=None,
+            recent_store=self.config.recent_store,
+            projects_root=self.config.projects_root,
+            port=54322,
+            bootstrap_token="restart-bootstrap",
+            session_token="restart-session",
+            csrf_token="restart-csrf",
+        )
+        restarted = TestClient(create_app(reopened_config), base_url="http://127.0.0.1:54322")
+        restarted.get("/bootstrap/restart-bootstrap", follow_redirects=False)
+        restarted_page = restarted.get("/")
+        self.assertIn("Web fixture", restarted_page.text)
+        token = next(iter(restarted.app.state.project_selections))
+        removed = restarted.post(
+            "/api/projects/remove-recent",
+            headers={"origin": "http://127.0.0.1:54322", CSRF_HEADER: "restart-csrf"},
+            json={"selection_token": token},
+        )
+        self.assertEqual(removed.status_code, 200)
+        self.assertNotIn("Web fixture", restarted.get("/").text)
+
+    @mock.patch("pdf_to_web.web.normalize_project")
+    @mock.patch("pdf_to_web.web.run_extraction")
+    @mock.patch("pdf_to_web.web.import_pdf")
+    @mock.patch("pdf_to_web.web.choose_pdf_file", return_value=Path("/tmp/source.pdf"))
+    def test_project_creation_runs_browser_workflow(self, choose, intake, extract, normalize):
+        self.bootstrap()
+        result = self.client.post(
+            "/api/projects/create", headers=self.headers(), json={"title": "New Report"}
+        )
+        self.assertEqual(result.status_code, 200, result.text)
+        created = (self.config.projects_root / "new-report").resolve()
+        self.assertTrue((created / "project.json").is_file())
+        intake.assert_called_once_with(created, Path("/tmp/source.pdf"))
+        extract.assert_called_once_with(created, False)
+        normalize.assert_called_once_with(created)
+        self.assertEqual(self.client.app.state.get_active_project(), created)
+        stored = json.loads(self.config.recent_store.read_text())
+        self.assertEqual(stored["projects"][0]["path"], str(created))
 
     def test_edit_persistence_type_level_exclusion_and_reorder(self):
         self.bootstrap()

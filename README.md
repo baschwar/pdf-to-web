@@ -41,16 +41,33 @@ defaults live in `project.json`.
 
 ## Local review application
 
-Launch the Phase 2 review interface for an existing project:
+Launch the local review interface:
 
 ```sh
-pdf-to-web serve --project /path/to/my-report
+pdf-to-web serve
 ```
 
-The command prints and opens a one-use bootstrap URL, binds only to
-`127.0.0.1`, and keeps all project data local. Use `--no-browser` to print the
-URL without opening it automatically. Docker is not required to run, review,
-preview, or export a project.
+The Projects screen can create a project, import its source PDF, run extraction
+and normalization, open an existing project, and reopen recent projects. New
+projects are stored under `~/Documents/PDF to Web Projects`. The command prints
+and opens a one-use bootstrap URL, binds only to `127.0.0.1`, and keeps all
+project data local. Use `--project /path/to/my-report` to open a known project at
+startup or `--no-browser` to print the URL without opening it automatically.
+Docker is not required to run, review, preview, or export a project.
+
+Chrome, Safari, Firefox, and Edge are supported for the localhost review app.
+Normal startup opens the one-use `/bootstrap/...` URL in the system default
+browser, sets the local session cookie, and redirects to `http://127.0.0.1:8765/`.
+With `--no-browser`, open the clearly printed bootstrap URL in the browser you
+want to test.
+
+Recent-project configuration contains only project title, canonical local path,
+and last-opened timestamp. On macOS it is stored at
+`~/Library/Application Support/PDF to Web/recent-projects.json`; Windows uses
+`%LOCALAPPDATA%/PDF to Web/recent-projects.json`, and Linux uses
+`$XDG_CONFIG_HOME/pdf-to-web/recent-projects.json` (falling back to
+`~/.config/pdf-to-web`). Set `PDF_TO_WEB_CONFIG_DIR` to override the directory.
+The app does not scan the filesystem for projects.
 
 The Semantic HTML preview uses only Python dependencies. The optional WordPress
 Preview additionally requires Node.js 18.12 or newer and the local packages

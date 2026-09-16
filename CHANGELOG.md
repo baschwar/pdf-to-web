@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.0] - 2026-09-16
+
+### Added
+
+- Browser-first project creation, PDF import, and persistent recent-project
+  management with Open and Remove actions.
+- Automatic advancement to the next unresolved review block after review-state
+  actions.
+- First-class default-browser startup and desktop-browser testing workflow.
+
+### Changed
+
+- Imported PDFs retain their original filenames.
+- Source PDFs are served inline with their original filenames.
+
 ## [0.2.0] - 2026-09-16
 
 ### Added

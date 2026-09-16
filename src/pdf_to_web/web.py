@@ -21,8 +21,16 @@ from .errors import PdfToWebError
 from .export import export_project
 from .exporters import gutenberg as gutenberg_exporter
 from .exporters import html as html_exporter
-from .normalize import extraction_summary
-from .project import load_project, save_project
+from .extraction import run_extraction
+from .normalize import extraction_summary, normalize_project
+from .project import create_project, import_pdf, load_project, save_project, slugify
+from .recent_projects import (
+    RecentProject,
+    default_recent_projects_path,
+    load_recent_projects,
+    remember_project,
+    remove_recent_project,
+)
 from .review_state import (
     BLOCK_TYPES,
     ensure_review_document,
@@ -55,6 +63,8 @@ LOOPBACK_CLIENTS = {"127.0.0.1", "::1", "localhost", "testclient"}
 class WebAppConfig:
     project: Path | None = None
     recent_projects: tuple[Path, ...] = ()
+    projects_root: Path = field(default_factory=lambda: Path.home() / "Documents" / "PDF to Web Projects")
+    recent_store: Path = field(default_factory=default_recent_projects_path)
     host: str = "127.0.0.1"
     port: int = 8765
     bootstrap_token: str = field(default_factory=lambda: secrets.token_urlsafe(32))
@@ -140,6 +150,33 @@ def choose_project_folder() -> Path:
     return Path(selected).expanduser().resolve()
 
 
+def choose_pdf_file() -> Path:
+    if sys.platform == "darwin":
+        script = 'POSIX path of (choose file with prompt "Select a PDF to convert" of type {"com.adobe.pdf"})'
+        result = subprocess.run(
+            ["osascript", "-e", script], capture_output=True, text=True, timeout=300, check=False
+        )
+        if result.returncode != 0:
+            raise ValueError("No PDF was selected.")
+        return Path(result.stdout.strip()).expanduser().resolve()
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("Native file selection is unavailable on this system") from exc
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        selected = filedialog.askopenfilename(
+            title="Select a PDF to convert", filetypes=(("PDF files", "*.pdf"),)
+        )
+    finally:
+        root.destroy()
+    if not selected:
+        raise ValueError("No PDF was selected.")
+    return Path(selected).expanduser().resolve()
+
+
 def static_path(name: str) -> Path:
     root = (Path(__file__).parent / "static").resolve()
     path = (root / name).resolve()
@@ -219,16 +256,27 @@ def _status_banner(status: str, issues: list[dict[str, Any]]) -> str:
 <p>{len(issues)} unresolved diagnostic issue{'s' if len(issues) != 1 else ''}.</p>{f'<ul>{messages}</ul>' if messages else ''}</section>'''
 
 
-def _projects_page(config: WebAppConfig, selections: list[ProjectSelection], selected: Path | None) -> str:
+def _projects_page(
+    config: WebAppConfig,
+    selections: list[tuple[ProjectSelection, RecentProject]],
+    selected: Path | None,
+) -> str:
     recent = "".join(
-        f'<li><button type="button" class="secondary open-project" data-project-token="{item.token}">{html.escape(item.path.name)}</button></li>'
-        for item in selections
+        f'''<li><div><strong>{html.escape(record.title)}</strong>
+<code>{html.escape(record.path)}</code><small>Last opened <time datetime="{html.escape(record.last_opened, quote=True)}">{html.escape(record.last_opened.replace("T", " ").replace("+00:00", " UTC"))}</time></small></div>
+<div class="recent-actions"><button type="button" class="open-project" data-project-token="{selection.token}">Open</button>
+<button type="button" class="secondary remove-project" data-project-token="{selection.token}" aria-label="Remove {html.escape(record.title, quote=True)} from recent projects">Remove</button></div></li>'''
+        for selection, record in selections
     ) or "<li>No recent projects are available.</li>"
     current = f"<p>Current project: <strong>{html.escape(selected.name)}</strong></p>" if selected else "<p>No project is open.</p>"
     body = f'''<h1>Projects</h1>{current}
-<section aria-labelledby="open-heading"><h2 id="open-heading">Open a project</h2>
-<button id="choose-project" type="button">Choose project folder</button>
-<h3>Recent projects</h3><ul class="project-list">{recent}</ul>
+<div class="project-actions"><section aria-labelledby="new-heading"><h2 id="new-heading">New project</h2>
+<p>Create a project and choose its source PDF. Conversion runs locally.</p>
+<form id="new-project-form"><label>Project name<input name="title" required maxlength="120" placeholder="Annual report"></label>
+<button type="submit">Choose PDF and create project</button></form></section>
+<section aria-labelledby="open-heading"><h2 id="open-heading">Open project</h2>
+<p>Open an existing PDF to Web project folder.</p><button id="choose-project" type="button" class="secondary">Choose project folder</button></section></div>
+<section aria-labelledby="recent-heading"><h2 id="recent-heading">Recent projects</h2><ul class="project-list">{recent}</ul>
 <p id="project-message" role="status" aria-live="polite"></p></section>'''
     return _page("Projects", "projects", body, selected=selected is not None)
 
@@ -293,7 +341,7 @@ def _block_card(block: dict[str, Any], index: int, *, can_edit: bool = True) -> 
 <button type="button" class="secondary block-action" data-action="toggle-excluded" data-block-id="{block_id}" data-current-status="{review_status}" aria-label="{include_label} block {index}">{include_label}</button>
 <button type="button" class="secondary block-action" data-action="approve" data-block-id="{block_id}" aria-label="Approve block {index}">Approve</button>
 <button type="button" class="secondary block-action" data-action="flag" data-block-id="{block_id}" aria-label="Mark block {index} as needs review">Needs review</button></footer>''' if can_edit else '<footer><strong>Inspection only while conversion is blocked.</strong></footer>'
-    return f'''<article class="block-card status-{html.escape(review_status)}" id="block-{block_id}" data-page="{page}" data-bbox="{bbox_value}" data-block-index="{index}" data-source-type="{html.escape(source_type, quote=True)}" aria-labelledby="block-{block_id}-heading">
+    return f'''<article class="block-card status-{html.escape(review_status)}" id="block-{block_id}" tabindex="-1" data-page="{page}" data-bbox="{bbox_value}" data-block-index="{index}" data-source-type="{html.escape(source_type, quote=True)}" aria-labelledby="block-{block_id}-heading">
 <header><div><span class="order">{index}</span> <h3 id="block-{block_id}-heading">{html.escape(block_type.replace("_", " ").title())}{f' H{level}' if block_type == 'heading' else ''}</h3></div><span>Page {page} · {_status_label(review_status)}</span></header>
 <p class="source-provenance">OpenDataLoader source: {html.escape(source_type)}{f' · Source region available' if bbox_value else ''}</p>{f'<p class="block-issue">{html.escape(issue_text)}</p>' if issue_text else ''}{table}{editor}
 {actions}</article>'''
@@ -372,15 +420,23 @@ def create_app(config: WebAppConfig):
     app = FastAPI(title=APP_NAME)
     active_project = config.project.expanduser().resolve() if config.project else None
     selections: dict[str, ProjectSelection] = {}
-    recent = [path.expanduser().resolve() for path in config.recent_projects]
-    if active_project and active_project not in recent:
-        recent.insert(0, active_project)
+    recent = load_recent_projects(config.recent_store)
 
     def issue(path: Path) -> ProjectSelection:
         load_project(path)
         selection = ProjectSelection(secrets.token_urlsafe(32), path.resolve())
         selections[selection.token] = selection
         return selection
+
+    def remember(path: Path) -> None:
+        nonlocal recent
+        recent = remember_project(config.recent_store, path, recent)
+
+    for path in reversed(config.recent_projects):
+        if (path.expanduser().resolve() / "project.json").is_file():
+            remember(path)
+    if active_project:
+        remember(active_project)
 
     def require_session(session: str | None) -> None:
         if session != config.session_token:
@@ -433,7 +489,7 @@ def create_app(config: WebAppConfig):
     @app.get("/", response_class=HTMLResponse)
     async def projects(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
         require_session(session)
-        project_selections = [issue(path) for path in recent if (path / "project.json").is_file()]
+        project_selections = [(issue(record.project_path), record) for record in recent]
         return _projects_page(config, project_selections, active_project)
 
     @app.post("/api/picker/project")
@@ -456,11 +512,48 @@ def create_app(config: WebAppConfig):
                 raise ValueError("Project selection token is invalid or expired")
             load_project(selection.path)
             active_project = selection.path
-            if active_project not in recent:
-                recent.insert(0, active_project)
+            remember(active_project)
             ensure_review_document(active_project)
             return {"status": "ok", "project": {"name": active_project.name}}
         except Exception as exc:
+            return error_response(exc)
+
+    @app.post("/api/projects/remove-recent")
+    async def remove_recent(request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
+        nonlocal recent
+        require_change(request, session, csrf)
+        try:
+            data = await request.json()
+            selection = selections.get(str(data.get("selection_token", "")))
+            if selection is None:
+                raise ValueError("Project selection token is invalid or expired")
+            recent = remove_recent_project(config.recent_store, selection.path, recent)
+            return {"status": "ok"}
+        except Exception as exc:
+            return error_response(exc)
+
+    @app.post("/api/projects/create")
+    async def new_project(request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
+        nonlocal active_project
+        require_change(request, session, csrf)
+        project_dir: Path | None = None
+        try:
+            data = await request.json()
+            title = str(data.get("title", "")).strip()
+            if not title:
+                raise ValueError("Enter a project name.")
+            source_pdf = choose_pdf_file()
+            project_dir = config.projects_root.expanduser().resolve() / slugify(title)
+            create_project(project_dir, title)
+            import_pdf(project_dir, source_pdf)
+            run_extraction(project_dir, False)
+            normalize_project(project_dir)
+            active_project = project_dir
+            remember(project_dir)
+            return {"status": "ok", "project": {"name": project_dir.name}}
+        except Exception as exc:
+            if project_dir is not None and (project_dir / "project.json").is_file():
+                remember(project_dir)
             return error_response(exc)
 
     @app.get("/document", response_class=HTMLResponse)
@@ -487,11 +580,17 @@ def create_app(config: WebAppConfig):
     async def source_pdf(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
         require_session(session)
         root = current()
-        source = load_project(root).get("source", {}).get("path")
+        source_data = load_project(root).get("source", {})
+        source = source_data.get("path")
         path = safe_project_file(root, str(source or ""))
         if not path.is_file() or path.suffix.lower() != ".pdf":
             raise HTTPException(status_code=404, detail="Source PDF is unavailable")
-        return FileResponse(path, media_type="application/pdf", filename="source.pdf")
+        return FileResponse(
+            path,
+            media_type="application/pdf",
+            filename=str(source_data.get("original_filename") or path.name),
+            content_disposition_type="inline",
+        )
 
     @app.get("/source-page/{page}.png")
     async def source_page(page: int, session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
@@ -707,7 +806,7 @@ def run_server(project: Path | None, host: str, port: int, *, open_browser: bool
         raise PdfToWebError("Install FastAPI and Uvicorn to run the review application") from exc
     config = WebAppConfig(project=project, host=host, port=port, recent_projects=(project,) if project else ())
     url = browser_url(config)
-    print(url, flush=True)
+    print(f"Open PDF to Web: {url}", flush=True)
     if open_browser:
         threading.Thread(
             target=open_browser_when_ready,

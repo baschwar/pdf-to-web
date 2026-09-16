@@ -9,6 +9,8 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from .errors import PdfToWebError
+from .project import load_project
 from .wordpress_preview import preview_available
 
 
@@ -177,7 +179,10 @@ def run_checks(project_dir: Path | None = None) -> list[Check]:
     )
 
     if project_dir:
-        source = target / "source" / "original.pdf"
+        try:
+            source = target / str(load_project(target).get("source", {}).get("path") or "")
+        except PdfToWebError:
+            source = target / "source"
         checks.append(
             Check(
                 "Source PDF",
