@@ -128,6 +128,7 @@ def _normalize_element(element: dict[str, Any], index: int) -> dict[str, Any]:
             "source_page": element.get("page number", element.get("page")),
             "bounding_box": element.get("bounding box", element.get("bbox")),
             "confidence": element.get("confidence"),
+            "source_order": index,
             "raw": element,
         },
     }
@@ -169,6 +170,132 @@ def _normalize_element(element: dict[str, Any], index: int) -> dict[str, Any]:
     if references:
         block["footnote_references"] = references
     return block
+
+
+def _geometry(block: dict[str, Any]) -> tuple[float, float, float, float] | None:
+    bbox = block.get("provenance", {}).get("bounding_box")
+    if not isinstance(bbox, list) or len(bbox) != 4:
+        return None
+    try:
+        x0, y0, x1, y1 = (float(value) for value in bbox)
+    except (TypeError, ValueError):
+        return None
+    if x1 <= x0 or y1 <= y0:
+        return None
+    return x0, y0, x1, y1
+
+
+def _add_reading_order_issue(block: dict[str, Any], message: str) -> None:
+    review = block.setdefault("review", {})
+    if review.get("status") in {None, "unreviewed", "auto_detected"}:
+        review["status"] = "needs_review"
+    issues = review.setdefault("issues", [])
+    if not any(issue.get("code") == "reading_order_needs_review" for issue in issues):
+        issues.append({"code": "reading_order_needs_review", "message": message})
+
+
+def _heading_table_score(heading: dict[str, Any], table: dict[str, Any]) -> float | None:
+    heading_box, table_box = _geometry(heading), _geometry(table)
+    if not heading_box or not table_box:
+        return None
+    if heading.get("provenance", {}).get("source_page") != table.get("provenance", {}).get("source_page"):
+        return None
+    hx0, hy0, hx1, _hy1 = heading_box
+    tx0, _ty0, tx1, ty1 = table_box
+    gap = hy0 - ty1
+    heading_width = hx1 - hx0
+    overlap = max(0.0, min(hx1, tx1) - max(hx0, tx0))
+    overlap_ratio = overlap / heading_width
+    # PDF coordinates grow upward. Require a nearby label immediately above a
+    # substantially wider table; this deliberately rejects column fragments.
+    if gap < -1.0 or gap > 24.0 or overlap_ratio < 0.8 or (tx1 - tx0) < heading_width * 2:
+        return None
+    return round(min(0.99, 0.90 + 0.05 * overlap_ratio + 0.04 * (1 - max(gap, 0) / 24)), 3)
+
+
+def _mark_visual_order(block: dict[str, Any], visual_order: int, confidence: float) -> None:
+    provenance = block.setdefault("provenance", {})
+    provenance["visual_order"] = visual_order
+    provenance["visual_order_reason"] = "heading_table_association"
+    provenance["visual_order_confidence"] = confidence
+
+
+def reconcile_visual_reading_order(document: dict[str, Any]) -> bool:
+    """Apply only high-confidence, local heading/table reading-order repairs."""
+    state = document.setdefault("reading_order", {})
+    if state.get("visual_reconciliation_version") == 1:
+        return False
+    state["visual_reconciliation_version"] = 1
+    blocks = document.get("blocks", [])
+    changed = False
+    adjustments: list[dict[str, Any]] = []
+
+    for list_block in list(blocks):
+        if list_block.get("type") != "list":
+            continue
+        labels = list_block.get("children", [])
+        if len(labels) < 2 or any(item.get("type") != "list_item" for item in labels):
+            continue
+        label_texts = [str(item.get("content", "")).strip() for item in labels]
+        section_labels = all(re.fullmatch(r"[A-Z][A-Z ]{1,30}\s+\d{1,3}", text) for text in label_texts)
+        if list_block.get("ordered") and not section_labels:
+            continue
+        if any(len(str(item.get("content", "")).strip()) > 80 for item in labels):
+            continue
+        pages = {item.get("provenance", {}).get("source_page") for item in labels}
+        if len(pages) != 1 or None in pages:
+            continue
+        page = next(iter(pages))
+        page_tables = [
+            block for block in blocks
+            if block.get("type") == "table" and block.get("provenance", {}).get("source_page") == page
+        ]
+        for item in labels:
+            page_tables.extend(child for child in item.get("children", []) if child.get("type") == "table")
+        unique_tables = {str(table.get("id")): table for table in page_tables}
+        pairs: list[tuple[dict[str, Any], dict[str, Any], float]] = []
+        ambiguous = False
+        for label in labels:
+            candidates = sorted(
+                ((score, table) for table in unique_tables.values() if (score := _heading_table_score(label, table)) is not None),
+                key=lambda item: item[0], reverse=True,
+            )
+            if len(candidates) > 1 and candidates[0][0] - candidates[1][0] < 0.02:
+                ambiguous = True
+                _add_reading_order_issue(label, "Multiple nearby tables could belong to this label; reading order was preserved.")
+                continue
+            if candidates:
+                pairs.append((label, candidates[0][1], candidates[0][0]))
+        if ambiguous or len(pairs) != len(labels) or len({id(table) for _, table, _ in pairs}) != len(labels):
+            if pairs and not ambiguous:
+                _add_reading_order_issue(list_block, "The page contains an incomplete heading/table pattern; reading order was preserved.")
+            continue
+        table_boxes = [_geometry(table) for _, table, _ in pairs]
+        left_edges = [box[0] for box in table_boxes if box]
+        if max(left_edges) - min(left_edges) > 24:
+            _add_reading_order_issue(list_block, "Table regions do not form one stable page column; reading order was preserved.")
+            continue
+
+        involved = {id(list_block), *(id(table) for _, table, _ in pairs)}
+        insertion = min(index for index, block in enumerate(blocks) if id(block) in involved)
+        ordered: list[dict[str, Any]] = []
+        for label, table, confidence in sorted(pairs, key=lambda pair: _geometry(pair[0])[1], reverse=True):
+            label["type"] = "heading"
+            label["level"] = 2
+            label["children"] = [child for child in label.get("children", []) if child is not table]
+            ordered.extend((label, table))
+            adjustments.append({"heading_id": label.get("id"), "table_id": table.get("id"), "confidence": confidence})
+        blocks[:] = [block for block in blocks if id(block) not in involved]
+        blocks[insertion:insertion] = ordered
+        for visual_order, block in enumerate(blocks):
+            if any(block is member for member in ordered):
+                confidence = next(pair[2] for pair in pairs if block is pair[0] or block is pair[1])
+                _mark_visual_order(block, visual_order, confidence)
+        changed = True
+
+    state["visual_reconciliation_applied"] = changed
+    state["adjustments"] = adjustments
+    return changed
 
 
 def _raw_footnote_references(element: dict[str, Any]) -> list[dict[str, Any]]:
@@ -620,6 +747,7 @@ def normalize_document(raw: dict[str, Any]) -> dict[str, Any]:
         "blocks": _walk(item for item in elements if isinstance(item, dict)),
     }
     _clean_list_markers(document["blocks"])
+    reconcile_visual_reading_order(document)
     _associate_image_captions(document["blocks"])
     _extract_footnotes(document)
     _mark_automatic_page_artifacts(document["blocks"])

@@ -85,6 +85,19 @@ class ReviewStateTests(unittest.TestCase):
         self.assertEqual(ensure_review_document(self.project)["blocks"][-1]["id"], "p1")
         move_block(self.project, "p1", "start")
         self.assertEqual(ensure_review_document(self.project)["blocks"][0]["id"], "p1")
+        self.assertTrue(ensure_review_document(self.project)["review_session"]["manual_order_override"])
+
+    def test_revised_legacy_review_order_is_not_automatically_reconciled(self):
+        current = ensure_review_document(self.project)
+        current["review_session"]["revision"] = 1
+        current["blocks"][1]["provenance"]["bounding_box"] = [20, 200, 80, 220]
+        current["blocks"][2]["type"] = "table"
+        current["blocks"][2]["rows"] = [[{"content": "Data"}]]
+        current["blocks"][2]["provenance"]["bounding_box"] = [20, 100, 500, 199]
+        (self.project / "review" / "current.json").write_text(json.dumps(current), encoding="utf-8")
+        reopened = ensure_review_document(self.project)
+        self.assertNotIn("reading_order", reopened)
+        self.assertEqual([block["id"] for block in reopened["blocks"][:3]], ["h1", "p1", "p2"])
 
     def test_list_text_edit_builds_exportable_items(self):
         update_block(self.project, "u1", {"type": "list", "content": "One\nTwo", "review_status": "needs_review"})

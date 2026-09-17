@@ -13,10 +13,68 @@ from pdf_to_web.normalize import (
     apply_source_title,
     extraction_summary,
     normalize_document,
+    reconcile_visual_reading_order,
 )
 
 
 class NormalizeTests(unittest.TestCase):
+    def _program_plan_document(self):
+        def provenance(order, bbox):
+            return {"source_page": 1, "bounding_box": bbox, "source_order": order, "raw": {"id": order}}
+
+        tables = [
+            {"id": f"t{year}", "type": "table", "rows": [[{"content": f"Year {year} course"}]], "provenance": provenance(year + 10, [36, 600 - year * 120, 576, 690 - year * 120])}
+            for year in range(1, 5)
+        ]
+        labels = [
+            {"id": f"y{year}", "type": "list_item", "content": f"YEAR {year}", "children": [tables[year - 1]] if year == 3 else [], "provenance": provenance(year, [36, 692 - year * 120, 82, 706 - year * 120])}
+            for year in range(1, 5)
+        ]
+        return {
+            "metadata": {"title": "Program"},
+            "blocks": [
+                {"id": "title", "type": "heading", "level": 1, "content": "Program", "provenance": provenance(0, [100, 730, 400, 750])},
+                {"id": "years", "type": "list", "ordered": False, "children": labels, "provenance": provenance(1, [36, 90, 82, 706])},
+                tables[0], tables[1], tables[3],
+            ],
+        }
+
+    def test_visual_order_restores_multiple_scrambled_heading_table_pairs(self):
+        document = self._program_plan_document()
+        self.assertTrue(reconcile_visual_reading_order(document))
+        self.assertEqual([block["id"] for block in document["blocks"]], ["title", "y1", "t1", "y2", "t2", "y3", "t3", "y4", "t4"])
+        self.assertEqual([block["type"] for block in document["blocks"][1::2]], ["heading"] * 4)
+        self.assertEqual(document["blocks"][1]["provenance"]["source_order"], 1)
+        self.assertEqual(document["blocks"][1]["provenance"]["visual_order_reason"], "heading_table_association")
+        self.assertEqual(document["blocks"][6]["rows"][0][0]["content"], "Year 3 course")
+
+    def test_visual_order_is_idempotent_and_keeps_title_first(self):
+        document = self._program_plan_document()
+        reconcile_visual_reading_order(document)
+        first_order = [block["id"] for block in document["blocks"]]
+        self.assertFalse(reconcile_visual_reading_order(document))
+        self.assertEqual([block["id"] for block in document["blocks"]], first_order)
+        self.assertEqual(document["blocks"][0]["id"], "title")
+
+    def test_ambiguous_heading_table_layout_is_flagged_not_reordered(self):
+        document = self._program_plan_document()
+        duplicate = json.loads(json.dumps(document["blocks"][2]))
+        duplicate["id"] = "t1-duplicate"
+        duplicate["provenance"]["bounding_box"] = [36, 479, 576, 569]
+        document["blocks"].append(duplicate)
+        original = [block["id"] for block in document["blocks"]]
+        self.assertFalse(reconcile_visual_reading_order(document))
+        self.assertEqual([block["id"] for block in document["blocks"]], original)
+        issues = document["blocks"][1]["children"][0]["review"]["issues"]
+        self.assertEqual(issues[0]["code"], "reading_order_needs_review")
+
+    def test_column_misalignment_prevents_global_y_sort(self):
+        document = self._program_plan_document()
+        document["blocks"][3]["provenance"]["bounding_box"] = [320, 360, 860, 450]
+        original = [block["id"] for block in document["blocks"]]
+        self.assertFalse(reconcile_visual_reading_order(document))
+        self.assertEqual([block["id"] for block in document["blocks"]], original)
+
     def test_heading_hierarchy_demotes_extra_h1_and_clamps_jumps(self):
         document = {
             "blocks": [

@@ -72,9 +72,12 @@ def ensure_review_document(project_dir: Path) -> dict[str, Any]:
     path = review_path(project_dir)
     if path.is_file():
         document = _read_document(path)
-        from .normalize import _clean_list_markers, apply_source_title
+        from .normalize import _clean_list_markers, apply_source_title, reconcile_visual_reading_order
 
         changed = apply_source_title(document, project_dir)
+        session = document.get("review_session", {})
+        if not session.get("manual_order_override") and int(session.get("revision", 0)) == 0:
+            changed = reconcile_visual_reading_order(document) or changed
         before = json.dumps(document.get("blocks", []), sort_keys=True)
         _clean_list_markers(document.get("blocks", []))
         changed = changed or before != json.dumps(document.get("blocks", []), sort_keys=True)
@@ -221,6 +224,7 @@ def move_block(project_dir: Path, block_id: str, direction: str) -> dict[str, An
         return document
     block = siblings.pop(index)
     siblings.insert(target, block)
+    document.setdefault("review_session", {})["manual_order_override"] = True
     return save_review_document(project_dir, document)
 
 

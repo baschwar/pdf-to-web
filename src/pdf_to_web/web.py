@@ -335,6 +335,7 @@ def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool
     source_type = str(provenance.get("source_type") or "Unknown")
     bbox = provenance.get("bounding_box")
     bbox_value = html.escape(json.dumps(bbox), quote=True) if isinstance(bbox, list) and len(bbox) == 4 else ""
+    inferred_order = provenance.get("visual_order_reason") == "heading_table_association"
     table = ""
     if block_type == "table":
         stats = table_summary(block)
@@ -360,7 +361,7 @@ def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool
 <button type="button" class="secondary block-action" data-action="flag" data-block-id="{block_id}" aria-label="Mark block {index} as needs review">Needs review</button></footer>''' if can_edit else '<footer><strong>Inspection only while conversion is blocked.</strong></footer>'
     return f'''<article class="block-card status-{html.escape(review_status)}" id="block-{block_id}" tabindex="-1" data-page="{page}" data-bbox="{bbox_value}" data-block-index="{index}" data-source-type="{html.escape(source_type, quote=True)}" aria-labelledby="block-{block_id}-heading">
 <header><div><span class="order">{index}</span> <h3 id="block-{block_id}-heading">{html.escape(block_type.replace("_", " ").title())}{f' H{level}' if block_type == 'heading' else ''}</h3></div><span>Page {page} · {_status_label(review_status)}</span></header>
-<p class="source-provenance">OpenDataLoader source: {html.escape(source_type)}{f' · Source region available' if bbox_value else ''}</p>{f'<p class="block-issue">{html.escape(issue_text)}</p>' if issue_text else ''}{table}{editor}
+<p class="source-provenance">OpenDataLoader source: {html.escape(source_type)}{f' · Source region available' if bbox_value else ''}{' · Reading order inferred from layout' if inferred_order else ''}</p>{f'<p class="block-issue">{html.escape(issue_text)}</p>' if issue_text else ''}{table}{editor}
 {actions}</article>'''
 
 

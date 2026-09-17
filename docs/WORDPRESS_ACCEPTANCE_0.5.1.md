@@ -63,3 +63,12 @@ for the required direct Gutenberg paste test.
 - Retest list nesting and marker rendering using the regenerated CITI HTML.
   Upload/media mapping itself remains a later workflow and is not required to
   judge the ordered-list regression.
+
+## v0.5.3 Reading-Order Retest Notes
+
+- Regenerated `02-generic-table-nested-content-program-plan.html` after shared
+  normalization restored the visual sequence `YEAR 1` through `YEAR 4`, with
+  each heading immediately followed by its associated table.
+- The project export-validation gate passes Semantic HTML, generic Gutenberg,
+  WSUWP Gutenberg, both local Gutenberg previews, WXR, and cross-export
+  equivalence. A live WordPress paste/save retest remains manual.

@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.5.3] - 2026-09-16
+
+### Added
+
+- Normalization records raw source order separately from high-confidence visual
+  reading order and exposes inferred heading/table associations in Structure.
+- Ambiguous heading/table and inconsistent page-region patterns are flagged for
+  reading-order review instead of being silently rearranged.
+
+### Fixed
+
+- Visually stacked heading/table groups are restored when PDF object order puts
+  copied tables after their labels, including the four-year program-plan case.
+- Manual block moves persist as an explicit override and are never replaced by
+  automatic visual reconciliation on reload.
+
 ## [0.5.2] - 2026-09-16
 
 ### Added
