@@ -1,9 +1,32 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
-from pdf_to_web.normalize import apply_readiness, extraction_summary, normalize_document
+from pdf_to_web.normalize import apply_readiness, apply_source_title, extraction_summary, normalize_document
 
 
 class NormalizeTests(unittest.TestCase):
+    @mock.patch(
+        "pdf_to_web.normalize.recover_source_title_region",
+        return_value=("Recovered title", [100.0, 700.0, 300.0, 720.0]),
+    )
+    def test_recovered_title_retains_and_backfills_source_region(self, _recover):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            (project / "project.json").write_text(
+                json.dumps({"schema_version": "pdf-to-web-project-v1", "title": "Project", "source": {}})
+            )
+            document = {"metadata": {"title": "Project"}, "blocks": []}
+            self.assertTrue(apply_source_title(document, project))
+            title = document["blocks"][0]
+            self.assertEqual(title["provenance"]["bounding_box"], [100.0, 700.0, 300.0, 720.0])
+
+            del title["provenance"]["bounding_box"]
+            self.assertTrue(apply_source_title(document, project))
+            self.assertEqual(title["provenance"]["bounding_box"], [100.0, 700.0, 300.0, 720.0])
+
     def test_known_and_unknown_elements_preserve_provenance(self):
         raw = {
             "file name": "sample.pdf",

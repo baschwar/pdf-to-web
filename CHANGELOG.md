@@ -14,6 +14,8 @@
   normalized into semantic list structure.
 - Gutenberg footnotes use a trusted Custom HTML block so anchor IDs survive
   WordPress paste and save round trips.
+- Recovered first-page titles retain their measured PDF source region for
+  highlighting in Structure, including existing reviewed projects.
 
 ## [0.3.5] - 2026-09-16
 

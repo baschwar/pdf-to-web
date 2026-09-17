@@ -239,7 +239,7 @@ def _clean_list_markers(blocks: list[dict[str, Any]]) -> None:
         _clean_list_markers(children)
 
 
-def recover_source_title(project_dir: Path) -> str | None:
+def recover_source_title_region(project_dir: Path) -> tuple[str, list[float] | None] | None:
     project = load_project(project_dir)
     source = project_dir / str(project.get("source", {}).get("path") or "")
     if not source.is_file():
@@ -247,7 +247,28 @@ def recover_source_title(project_dir: Path) -> str | None:
     try:
         from pypdf import PdfReader
 
-        text = PdfReader(source).pages[0].extract_text() or ""
+        page = PdfReader(source).pages[0]
+        regions: list[tuple[str, list[float]]] = []
+
+        def collect_region(text: str, _cm: list[float], tm: list[float], font: Any, size: float) -> None:
+            value = " ".join(text.split())
+            if not value or font is None:
+                return
+            first_char = int(font.get("/FirstChar", 0))
+            widths = font.get("/Widths") or []
+            if hasattr(widths, "get_object"):
+                widths = widths.get_object()
+            width = 0.0
+            for char in value:
+                index = ord(char) - first_char
+                width += float(widths[index]) if 0 <= index < len(widths) else 500.0
+            x, baseline = float(tm[4]), float(tm[5])
+            font_size = float(size)
+            regions.append(
+                (value, [x, baseline - font_size * 0.25, x + width * font_size / 1000, baseline + font_size])
+            )
+
+        text = page.extract_text(visitor_text=collect_region) or ""
     except Exception:
         return None
     for line in (part.strip() for part in text.splitlines()):
@@ -255,8 +276,14 @@ def recover_source_title(project_dir: Path) -> str | None:
             continue
         if re.search(r"\bupdated\b", line, re.IGNORECASE):
             continue
-        return line
+        matching = [bbox for value, bbox in regions if value == line]
+        return line, matching[0] if matching else None
     return None
+
+
+def recover_source_title(project_dir: Path) -> str | None:
+    recovered = recover_source_title_region(project_dir)
+    return recovered[0] if recovered else None
 
 
 def apply_source_title(document: dict[str, Any], project_dir: Path) -> bool:
@@ -264,11 +291,21 @@ def apply_source_title(document: dict[str, Any], project_dir: Path) -> bool:
     metadata = document.setdefault("metadata", {})
     current = str(metadata.get("title") or "")
     fallback_titles = {"", "Untitled document", str(project.get("title") or "")}
-    title = recover_source_title(project_dir)
-    if not title or current not in fallback_titles:
+    recovered = recover_source_title_region(project_dir)
+    if not recovered:
+        return False
+    title, bounding_box = recovered
+    blocks = document.setdefault("blocks", [])
+    existing = next((block for block in blocks if block.get("id") == "recovered-document-title"), None)
+    if existing:
+        provenance = existing.setdefault("provenance", {})
+        if bounding_box and provenance.get("bounding_box") != bounding_box:
+            provenance["bounding_box"] = bounding_box
+            return True
+        return False
+    if current not in fallback_titles:
         return False
     metadata["title"] = title
-    blocks = document.setdefault("blocks", [])
     if not any(block.get("type") == "heading" and int(block.get("level", 2)) == 1 for block in blocks):
         blocks.insert(
             0,
@@ -277,7 +314,11 @@ def apply_source_title(document: dict[str, Any], project_dir: Path) -> bool:
                 "type": "heading",
                 "level": 1,
                 "content": title,
-                "provenance": {"source_type": "recovered first-page header", "source_page": 1},
+                "provenance": {
+                    "source_type": "recovered first-page header",
+                    "source_page": 1,
+                    "bounding_box": bounding_box,
+                },
                 "review": {
                     "status": "needs_review",
                     "issues": [{"code": "recovered_document_title", "message": "Document title recovered from the first-page PDF header."}],
