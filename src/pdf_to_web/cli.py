@@ -10,6 +10,7 @@ from .doctor import run_checks
 from .corpus import run_corpus
 from .errors import PdfToWebError
 from .export import export_project
+from .export_validation import validate_export_corpus, validate_project_exports
 from .extraction import run_extraction
 from .normalize import normalize_project
 from .project import create_project, import_pdf
@@ -59,6 +60,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     export.add_argument("--project", required=True, type=_project_path)
     export.add_argument("--profile", choices=("generic", "wsuwp"))
+
+    validate_exports = commands.add_parser(
+        "validate-exports", help="Generate and validate every supported publication output"
+    )
+    validate_exports.add_argument("--project", required=True, type=_project_path)
+
+    validate_corpus = commands.add_parser(
+        "validate-export-corpus", help="Validate immediate document projects and generate a corpus matrix"
+    )
+    validate_corpus.add_argument("project_root", type=_project_path)
+    validate_corpus.add_argument("--output", type=_project_path)
 
     fixtures = commands.add_parser(
         "wordpress-fixtures", help="Generate repeatable WXR round-trip fixtures"
@@ -112,6 +124,18 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "export":
             for path in export_project(args.project, args.target, args.profile):
                 print(path)
+        elif args.command == "validate-exports":
+            paths = validate_project_exports(args.project)
+            for path in paths:
+                print(path)
+            report = json.loads(paths[0].read_text(encoding="utf-8"))
+            return 0 if report["result"] == "PASS" else 1
+        elif args.command == "validate-export-corpus":
+            paths = validate_export_corpus(args.project_root, args.output)
+            for path in paths:
+                print(path)
+            report = json.loads(paths[0].read_text(encoding="utf-8"))
+            return 0 if report["result"] == "PASS" else 1
         elif args.command == "wordpress-fixtures":
             for path in write_wordpress_fixtures(args.output):
                 print(path)

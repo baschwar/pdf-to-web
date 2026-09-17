@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.1] - 2026-09-16
+
+### Added
+
+- `validate-exports` generates Semantic HTML, generic and WSUWP Gutenberg,
+  local Gutenberg previews, and WXR validation from the reviewed document.
+- Machine-readable and Markdown export-validation reports include structural,
+  internal-anchor, hyperlink, and cross-export semantic-equivalence results.
+- WXR validation now inspects each embedded `content:encoded` Gutenberg payload
+  instead of accepting XML well-formedness alone.
+- A documented real-PDF feature matrix and manual WordPress acceptance
+  checklist define the release boundary before Phase 3.
+
+### Changed
+
+- Export validators detect broken or malformed internal links, duplicate or
+  empty IDs, literal list bullets, unbalanced Gutenberg blocks, and content
+  missing from any supported publication output.
+
 ## [0.5.0] - 2026-09-16
 
 ### Added

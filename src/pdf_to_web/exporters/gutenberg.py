@@ -33,11 +33,19 @@ def _list_markup(block: dict[str, Any]) -> str:
     for child in block.get("children", []):
         if is_excluded(child) or is_footnote_body(child):
             continue
-        nested = "".join(
-            _list_markup(item)
-            for item in child.get("children", [])
-            if item.get("type") == "list"
-        )
+        nested_parts: list[str] = []
+        for item in child.get("children", []):
+            if is_excluded(item) or is_footnote_body(item):
+                continue
+            if item.get("type") == "list":
+                nested_parts.append(_list_markup(item))
+            elif item.get("type") == "table":
+                nested_parts.append(_table_markup(item))
+            elif item.get("type") in {"paragraph", "caption", "callout", "quote"}:
+                nested_parts.append(f"<p>{render_inline(item)}</p>")
+            else:
+                nested_parts.append(html.escape(str(item.get("content", ""))))
+        nested = "".join(nested_parts)
         items.append(f"<li>{render_inline(child)}{nested}</li>")
     return f'<{tag} class="wp-block-list">{"".join(items)}</{tag}>'
 
@@ -47,7 +55,7 @@ def _render_list(block: dict[str, Any]) -> str:
     return _wrap("list", _list_markup(block), attrs)
 
 
-def _render_table(block: dict[str, Any]) -> str:
+def _table_markup(block: dict[str, Any]) -> str:
     rows = block.get("rows", [])
     body = []
     for row_index, row in enumerate(rows):
@@ -64,12 +72,15 @@ def _render_table(block: dict[str, Any]) -> str:
         body.append("<tr>" + "".join(cells) + "</tr>")
     caption = block.get("caption")
     caption_markup = f"<figcaption>{html.escape(str(caption))}</figcaption>" if caption else ""
-    markup = (
+    return (
         '<figure class="wp-block-table"><table><tbody>'
         + "".join(body)
         + f"</tbody></table>{caption_markup}</figure>"
     )
-    return _wrap("table", markup)
+
+
+def _render_table(block: dict[str, Any]) -> str:
+    return _wrap("table", _table_markup(block))
 
 
 def render_block(block: dict[str, Any]) -> str:

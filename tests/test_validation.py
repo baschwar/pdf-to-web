@@ -26,6 +26,18 @@ class ExportValidationTests(unittest.TestCase):
         self.assertEqual(result["images"], 1)
         self.assertEqual(result["captions"], 2)
         self.assertEqual(result["serialization_errors"], [])
+        self.assertEqual(result["h1_count"], 1)
+
+    def test_semantic_html_requires_one_h1(self):
+        result = validate_semantic_html(self.document, "<main><p>No title</p></main>")
+        self.assertFalse(result["valid"])
+        self.assertIn("Expected exactly one document H1; found 0", result["serialization_errors"])
+
+    def test_gutenberg_fails_for_broken_internal_anchor(self):
+        markup = '<!-- wp:paragraph -->\n<p><a href="#missing">Reference</a></p>\n<!-- /wp:paragraph -->'
+        result = validate_gutenberg(self.document, markup)
+        self.assertFalse(result["valid"])
+        self.assertIn("Missing internal target: #missing", result["serialization_errors"])
 
     def test_gutenberg_summary_has_no_silent_drops(self):
         markup = render_gutenberg(self.document)

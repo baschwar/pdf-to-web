@@ -33,11 +33,23 @@ pdf-to-web import /path/to/report.pdf --project /path/to/my-report
 pdf-to-web extract --project /path/to/my-report
 pdf-to-web normalize --project /path/to/my-report
 pdf-to-web export all --project /path/to/my-report
+pdf-to-web validate-exports --project /path/to/my-report
+pdf-to-web validate-export-corpus /path/to/projects --output /path/to/reports
 ```
 
 Use `--profile wsuwp` with the Gutenberg or all export command to exercise the
 WSUWP profile. Project-level profile, hero, section, and WordPress publication
 defaults live in `project.json`.
+
+`validate-exports` generates the complete publication set through the existing
+exporters and writes `output/reports/export-validation.json` plus
+`output/reports/export-validation.md`. The gate checks HTML structure, internal
+anchors, Gutenberg block balance, local Gutenberg preview conversion, WXR
+metadata and embedded content, and semantic content preservation across the
+reviewed model and each output. External URLs are preserved syntactically; core
+validation never depends on network access.
+`validate-export-corpus` runs that gate for each immediate document-project
+folder and generates a corpus-level JSON and Markdown result matrix.
 
 ## Local review application
 
