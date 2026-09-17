@@ -6,6 +6,7 @@ from collections import Counter
 from itertools import count
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import unquote
 
 from .errors import PdfToWebError
 from .project import load_project, utc_now
@@ -239,6 +240,52 @@ def _clean_list_markers(blocks: list[dict[str, Any]]) -> None:
         _clean_list_markers(children)
 
 
+def _select_source_title(
+    text: str, regions: list[tuple[str, list[float], float]]
+) -> tuple[str, list[float] | None] | None:
+    candidates: list[tuple[float, int, str, list[float] | None]] = []
+    for order, line in enumerate(part.strip() for part in text.splitlines()):
+        if not line or line.isdigit() or len(line) > 200 or PAGE_NUMBER_PATTERN.search(line):
+            continue
+        if re.search(r"\bupdated\b", line, re.IGNORECASE):
+            continue
+        minimum_match = max(8, len(line) // 4)
+        matching = [
+            (bbox, size)
+            for value, bbox, size in regions
+            if len(value) >= minimum_match and value in line
+        ]
+        size = max((item[1] for item in matching), default=0.0)
+        boxes = [bbox for bbox, font_size in matching if abs(font_size - size) < 0.1]
+        bbox = (
+            [min(box[0] for box in boxes), min(box[1] for box in boxes), max(box[2] for box in boxes), max(box[3] for box in boxes)]
+            if boxes else None
+        )
+        repeated = re.fullmatch(r"(.+?)\1+", line)
+        candidates.append((size, order, repeated.group(1) if repeated else line, bbox))
+    if not candidates:
+        return None
+    title_size = max(item[0] for item in candidates)
+    start = next(index for index, item in enumerate(candidates) if abs(item[0] - title_size) < 0.1)
+    selected = [candidates[start]]
+    for candidate in candidates[start + 1 : start + 4]:
+        if (
+            len(selected[0][2]) > 60
+            or len(candidate[2]) > 60
+            or candidate[1] != selected[-1][1] + 1
+            or abs(candidate[0] - title_size) >= 0.1
+        ):
+            break
+        selected.append(candidate)
+    title = " ".join(item[2] for item in selected)
+    boxes = [item[3] for item in selected if item[3]]
+    bbox = (
+        [min(box[0] for box in boxes), min(box[1] for box in boxes), max(box[2] for box in boxes), max(box[3] for box in boxes)]
+        if boxes else None
+    )
+    return title, bbox
+
+
 def recover_source_title_region(project_dir: Path) -> tuple[str, list[float] | None] | None:
     project = load_project(project_dir)
     source = project_dir / str(project.get("source", {}).get("path") or "")
@@ -248,7 +295,7 @@ def recover_source_title_region(project_dir: Path) -> tuple[str, list[float] | N
         from pypdf import PdfReader
 
         page = PdfReader(source).pages[0]
-        regions: list[tuple[str, list[float]]] = []
+        regions: list[tuple[str, list[float], float]] = []
 
         def collect_region(text: str, _cm: list[float], tm: list[float], font: Any, size: float) -> None:
             value = " ".join(text.split())
@@ -265,20 +312,13 @@ def recover_source_title_region(project_dir: Path) -> tuple[str, list[float] | N
             x, baseline = float(tm[4]), float(tm[5])
             font_size = float(size)
             regions.append(
-                (value, [x, baseline - font_size * 0.25, x + width * font_size / 1000, baseline + font_size])
+                (value, [x, baseline - font_size * 0.25, x + width * font_size / 1000, baseline + font_size], font_size)
             )
 
         text = page.extract_text(visitor_text=collect_region) or ""
     except Exception:
         return None
-    for line in (part.strip() for part in text.splitlines()):
-        if not line or len(line) > 200 or PAGE_NUMBER_PATTERN.search(line):
-            continue
-        if re.search(r"\bupdated\b", line, re.IGNORECASE):
-            continue
-        matching = [bbox for value, bbox in regions if value == line]
-        return line, matching[0] if matching else None
-    return None
+    return _select_source_title(text, regions)
 
 
 def recover_source_title(project_dir: Path) -> str | None:
@@ -303,10 +343,20 @@ def apply_source_title(document: dict[str, Any], project_dir: Path) -> bool:
             provenance["bounding_box"] = bounding_box
             return True
         return False
-    if current not in fallback_titles:
+    if current not in fallback_titles and current != title:
         return False
+    changed = current != title
     metadata["title"] = title
-    if not any(block.get("type") == "heading" and int(block.get("level", 2)) == 1 for block in blocks):
+    def matches_title(block: dict[str, Any]) -> bool:
+        if block.get("type") != "heading" or int(block.get("level", 2)) != 1:
+            return False
+        content = str(block.get("content", "")).strip()
+        return content == title or (
+            min(len(content), len(title)) >= 20
+            and (content.startswith(title) or title.startswith(content))
+        )
+
+    if not any(matches_title(block) for block in blocks):
         blocks.insert(
             0,
             {
@@ -325,7 +375,140 @@ def apply_source_title(document: dict[str, Any], project_dir: Path) -> bool:
                 },
             },
         )
-    return True
+        changed = True
+    return changed
+
+
+def _normalize_heading_hierarchy(document: dict[str, Any]) -> None:
+    previous_level: int | None = None
+    seen_h1 = False
+    for block in _flatten(document.get("blocks", [])):
+        if block.get("type") != "heading":
+            continue
+        level = max(1, min(6, int(block.get("level", 2))))
+        issue: dict[str, str] | None = None
+        if level == 1 and seen_h1:
+            level = 2
+            issue = {
+                "code": "additional_h1_demoted",
+                "message": "An additional H1 was changed to H2; verify the source heading hierarchy.",
+            }
+        elif previous_level is not None and level > previous_level + 1:
+            level = previous_level + 1
+            issue = {
+                "code": "heading_level_jump_corrected",
+                "message": "A skipped heading level was corrected; verify the source heading hierarchy.",
+            }
+        block["level"] = level
+        seen_h1 = seen_h1 or level == 1
+        previous_level = level
+        if issue:
+            review = block.setdefault("review", {})
+            if review.get("status") in {None, "unreviewed", "auto_detected"}:
+                review["status"] = "needs_review"
+            issues = review.setdefault("issues", [])
+            if not any(existing.get("code") == issue["code"] for existing in issues):
+                issues.append(issue)
+
+
+def _bbox_overlap(first: Any, second: Any) -> float:
+    if not isinstance(first, list) or not isinstance(second, list) or len(first) != 4 or len(second) != 4:
+        return 0.0
+    ax0, ay0, ax1, ay1 = map(float, first)
+    bx0, by0, bx1, by1 = map(float, second)
+    width = max(0.0, min(max(ax0, ax1), max(bx0, bx1)) - max(min(ax0, ax1), min(bx0, bx1)))
+    height = max(0.0, min(max(ay0, ay1), max(by0, by1)) - max(min(ay0, ay1), min(by0, by1)))
+    return width * height
+
+
+def _apply_link_annotations(document: dict[str, Any], annotations: list[dict[str, Any]]) -> None:
+    blocks = list(_flatten(document.get("blocks", [])))
+    retained: list[dict[str, Any]] = []
+    ranges: dict[str, list[tuple[int, int, str]]] = {}
+    for annotation in annotations:
+        page = annotation.get("source_page")
+        bbox = annotation.get("bounding_box")
+        url = str(annotation.get("url") or "")
+        if not url:
+            continue
+        candidates = [
+            block for block in blocks
+            if block.get("provenance", {}).get("source_page") == page
+            and _bbox_overlap(block.get("provenance", {}).get("bounding_box"), bbox) > 0
+        ]
+        visible_variants = tuple(dict.fromkeys((url, unquote(url))))
+        content_matches = [
+            block for block in candidates
+            if any(visible in str(block.get("content", "")) for visible in visible_variants)
+        ]
+        block = max(
+            content_matches or candidates,
+            key=lambda item: _bbox_overlap(item.get("provenance", {}).get("bounding_box"), bbox),
+            default=None,
+        )
+        record = dict(annotation)
+        record["source_block"] = block.get("id") if block else None
+        record["inline_preserved"] = False
+        if block:
+            content = str(block.get("content", ""))
+            for visible in visible_variants:
+                start = content.find(visible)
+                if start >= 0:
+                    ranges.setdefault(str(block.get("id")), []).append((start, start + len(visible), url))
+                    record["visible_text"] = visible
+                    record["inline_preserved"] = True
+                    break
+            block.setdefault("source_links", []).append(record)
+        retained.append(record)
+    for block in blocks:
+        matches = sorted(set(ranges.get(str(block.get("id")), [])))
+        if not matches:
+            continue
+        content = str(block.get("content", ""))
+        runs: list[dict[str, str]] = []
+        cursor = 0
+        for start, end, url in matches:
+            if start < cursor:
+                continue
+            if start > cursor:
+                runs.append({"type": "text", "text": content[cursor:start]})
+            runs.append({"type": "link", "text": content[start:end], "url": url})
+            cursor = end
+        if cursor < len(content):
+            runs.append({"type": "text", "text": content[cursor:]})
+        block["runs"] = runs
+    if retained:
+        document["source_links"] = retained
+
+
+def apply_source_links(document: dict[str, Any], project_dir: Path) -> None:
+    project = load_project(project_dir)
+    source = project_dir / str(project.get("source", {}).get("path") or "")
+    if not source.is_file():
+        return
+    annotations: list[dict[str, Any]] = []
+    try:
+        from pypdf import PdfReader
+
+        for page_number, page in enumerate(PdfReader(source).pages, start=1):
+            for reference in page.get("/Annots") or []:
+                annotation = reference.get_object()
+                if str(annotation.get("/Subtype")) != "/Link":
+                    continue
+                action = annotation.get("/A") or {}
+                url = action.get("/URI")
+                rect = annotation.get("/Rect")
+                if url and rect and len(rect) == 4:
+                    annotations.append(
+                        {
+                            "url": str(url),
+                            "source_page": page_number,
+                            "bounding_box": [float(value) for value in rect],
+                        }
+                    )
+    except Exception:
+        return
+    _apply_link_annotations(document, annotations)
 
 
 def normalize_document(raw: dict[str, Any]) -> dict[str, Any]:
@@ -857,6 +1040,8 @@ def normalize_project(project_dir: Path) -> Path:
     document = normalize_document(raw)
     project = load_project(project_dir)
     apply_source_title(document, project_dir)
+    _normalize_heading_hierarchy(document)
+    apply_source_links(document, project_dir)
     document["metadata"]["source_embedded_text_character_count"] = project.get(
         "source", {}
     ).get("embedded_text_character_count", 0)

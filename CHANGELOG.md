@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.5.0] - 2026-09-16
+
+### Added
+
+- PDF link annotations are retained in normalized documents and become inline
+  links when their visible URL can be matched without guessing.
+- Corpus reports now include titles, content-type counts, footnotes, links,
+  unknown blocks, export status, and classified findings.
+
+### Fixed
+
+- Title recovery ignores page numbers, favors prominent text, joins short
+  multi-line titles, and collapses repeated text from designed PDFs.
+- Recovered titles are represented by the matching H1 even when another source
+  heading was labeled H1; later H1s and skipped heading levels are corrected
+  and flagged for review.
+- Link annotations can match nested list items instead of stopping at an empty
+  parent list.
+- Mixed byte and text output from an extraction timeout no longer masks the
+  actionable timeout error.
+
 ## [0.4.1] - 2026-09-16
 
 ### Added

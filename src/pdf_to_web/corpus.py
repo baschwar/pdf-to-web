@@ -24,6 +24,15 @@ def _flatten(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return flattened
 
 
+def _link_count(blocks: list[dict[str, Any]]) -> int:
+    return sum(
+        run.get("type") == "link"
+        for block in blocks
+        for run in block.get("runs", [])
+        if isinstance(run, dict)
+    )
+
+
 def run_corpus(sample_dir: Path, output_root: Path) -> Path:
     sample_dir = sample_dir.expanduser().resolve()
     pdfs = sorted(sample_dir.glob("*.pdf"))
@@ -109,12 +118,57 @@ def run_corpus(sample_dir: Path, output_root: Path) -> Path:
                         }.items()
                     )
                 )
+                result["title_detected"] = str(document.get("metadata", {}).get("title") or "")
+                result["review_status"] = document.get("review", {}).get("status")
+                result["headings"] = sum(block.get("type") == "heading" for block in normalized_blocks)
+                result["lists"] = sum(block.get("type") == "list" for block in normalized_blocks)
                 result["tables"] = sum(block.get("type") == "table" for block in normalized_blocks)
                 result["images"] = sum(block.get("type") == "image" for block in normalized_blocks)
+                result["footnotes"] = len(document.get("footnotes", []))
+                result["links"] = _link_count(normalized_blocks)
+                result["source_link_annotations"] = len(document.get("source_links", []))
+                result["unmatched_source_links"] = sum(
+                    not link.get("inline_preserved")
+                    for link in document.get("source_links", [])
+                    if isinstance(link, dict)
+                )
+                result["unknown_blocks"] = sum(block.get("type") == "unknown" for block in normalized_blocks)
                 result["complex_visual_flags"] = document.get("review", {}).get(
                     "complex_visuals", []
                 )
                 result["review_issues"] = document.get("review", {}).get("issues", [])
+                result["issues_discovered"] = []
+                if result["unmatched_source_links"]:
+                    result["issues_discovered"].append(
+                        {
+                            "classification": "extraction issue",
+                            "code": "unmatched_source_links",
+                            "message": f"{result['unmatched_source_links']} PDF link annotations could not be matched to reliable visible text.",
+                        }
+                    )
+                for issue in result["review_issues"]:
+                    code = str(issue.get("code") or "review_issue")
+                    classification = (
+                        "unsupported source complexity"
+                        if code.startswith("complex_visual")
+                        else "extraction issue"
+                        if code in {"incomplete_text_recovery", "incomplete_page_coverage"}
+                        else "normalization issue"
+                    )
+                    result["issues_discovered"].append(
+                        {"classification": classification, **issue}
+                    )
+                result["export_status"] = {
+                    "html": "pass" if result.get("html", {}).get("valid") else "fail",
+                    "gutenberg": (
+                        "pass" if result.get("gutenberg", {}).get("valid") else "skipped"
+                        if not result.get("gutenberg", {}).get("generated") else "fail"
+                    ),
+                    "wxr": (
+                        "pass" if result.get("wxr", {}).get("valid") else "skipped"
+                        if not result.get("wxr", {}).get("generated") else "fail"
+                    ),
+                }
             except Exception as exc:
                 result.update(
                     {
@@ -123,6 +177,13 @@ def run_corpus(sample_dir: Path, output_root: Path) -> Path:
                         "status": "conversion_blocked",
                         "review_issues": [
                             {
+                                "code": "extraction_failed",
+                                "message": str(exc),
+                            }
+                        ],
+                        "issues_discovered": [
+                            {
+                                "classification": "extraction issue",
                                 "code": "extraction_failed",
                                 "message": str(exc),
                             }
@@ -169,37 +230,37 @@ def run_corpus(sample_dir: Path, output_root: Path) -> Path:
         "",
         f"Generated: {report['generated_at']}",
         "",
-        "| PDF | Mode | Readiness | HTML | Gutenberg | WXR | Text recovery | Complex visuals |",
-        "| --- | --- | --- | --- | --- | --- | ---: | ---: |",
+        "| PDF | Mode | Review | Title | Blocks | H | Lists | Tables | Images | Notes | Links | Unknown | Visuals | Exports |",
+        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
     for result in results:
         lines.append(
-            "| {filename} | {mode} | {status} | {html} | {gutenberg} | {wxr} | {recovery} | {visuals} |".format(
+            "| {filename} | {mode} | {status} | {title} | {blocks} | {headings} | {lists} | {tables} | {images} | {footnotes} | {links} | {unknown} | {visuals} | {exports} |".format(
                 filename=result["filename"].replace("|", "\\|"),
                 mode=result["mode"],
                 status=result.get("status", "failed"),
-                html="pass" if result.get("html", {}).get("valid") else "fail",
-                gutenberg=(
-                    "pass"
-                    if result.get("gutenberg", {}).get("valid")
-                    else "skipped"
-                    if not result.get("gutenberg", {}).get("generated")
-                    else "fail"
-                ),
-                wxr=(
-                    "pass"
-                    if result.get("wxr", {}).get("valid")
-                    else "skipped"
-                    if not result.get("wxr", {}).get("generated")
-                    else "fail"
-                ),
-                recovery=(
-                    f"{result['text_recovery_ratio']:.1%}"
-                    if result.get("text_recovery_ratio") is not None
-                    else "n/a"
-                ),
+                title=str(result.get("title_detected") or "missing").replace("|", "\\|"),
+                blocks=result.get("block_count", 0),
+                headings=result.get("headings", 0),
+                lists=result.get("lists", 0),
+                tables=result.get("tables", 0),
+                images=result.get("images", 0),
+                footnotes=result.get("footnotes", 0),
+                links=result.get("links", 0),
+                unknown=result.get("unknown_blocks", 0),
                 visuals=len(result.get("complex_visual_flags", [])),
+                exports="/".join(result.get("export_status", {}).values()) or "failed",
             )
         )
+    lines.extend(["", "## Findings", ""])
+    for result in results:
+        issues = result.get("issues_discovered", [])
+        if not issues:
+            continue
+        summary = "; ".join(
+            f"{issue.get('classification')}: {issue.get('code')}"
+            for issue in issues
+        )
+        lines.append(f"- **{result['filename']} ({result['mode']}):** {summary}")
     (run_dir / "corpus-summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return json_path

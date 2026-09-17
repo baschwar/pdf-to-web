@@ -78,9 +78,9 @@ def run_extraction(
         )
         log_path.write_text(completed.stdout + completed.stderr, encoding="utf-8")
     except subprocess.TimeoutExpired as exc:
-        partial = (exc.stdout or "") + (exc.stderr or "")
-        if isinstance(partial, bytes):
-            partial = partial.decode(errors="replace")
+        stdout = exc.stdout.decode(errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+        stderr = exc.stderr.decode(errors="replace") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+        partial = stdout + stderr
         log_path.write_text(str(partial), encoding="utf-8")
         data["extraction"]["status"] = "failed"
         data["extraction"]["last_error"] = (

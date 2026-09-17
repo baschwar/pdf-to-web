@@ -4,10 +4,118 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from pdf_to_web.normalize import apply_readiness, apply_source_title, extraction_summary, normalize_document
+from pdf_to_web.normalize import (
+    _apply_link_annotations,
+    _normalize_heading_hierarchy,
+    _select_source_title,
+    apply_readiness,
+    apply_source_title,
+    extraction_summary,
+    normalize_document,
+)
 
 
 class NormalizeTests(unittest.TestCase):
+    def test_heading_hierarchy_demotes_extra_h1_and_clamps_jumps(self):
+        document = {
+            "blocks": [
+                {"id": "title", "type": "heading", "level": 1, "content": "Title"},
+                {"id": "jump", "type": "heading", "level": 3, "content": "Section"},
+                {"id": "extra", "type": "heading", "level": 1, "content": "Appendix"},
+            ]
+        }
+        _normalize_heading_hierarchy(document)
+        self.assertEqual([block["level"] for block in document["blocks"]], [1, 2, 2])
+        self.assertEqual(document["blocks"][1]["review"]["issues"][0]["code"], "heading_level_jump_corrected")
+        self.assertEqual(document["blocks"][2]["review"]["issues"][0]["code"], "additional_h1_demoted")
+
+    def test_title_selection_skips_page_number_and_joins_title_lines(self):
+        text = "1\nRegistering for Your CITI Account and\nEnrolling in CITI Trainings\n1. First step"
+        regions = [
+            ("1", [550, 50, 560, 61], 11),
+            ("Registering for", [198, 708, 286, 726], 14),
+            ("Your CITI Account and", [286, 708, 414, 726], 14),
+            ("Enrolling in CITI Trainings", [233, 691, 380, 709], 14),
+            ("First step", [72, 650, 130, 664], 11),
+        ]
+        title, bbox = _select_source_title(text, regions)
+        self.assertEqual(title, "Registering for Your CITI Account and Enrolling in CITI Trainings")
+        self.assertEqual(bbox, [198, 691, 414, 726])
+
+    def test_title_selection_collapses_repeated_designed_text(self):
+        text = "Body copy first.\nHeart Failure ManagementHeart Failure ManagementHeart Failure Management"
+        regions = [
+            ("Body copy first.", [0, 20, 200, 40], 20),
+            ("Heart Failure Management", [7, 35, 630, 100], 52),
+            ("rt", [100, 35, 130, 100], 52),
+        ]
+        title, _ = _select_source_title(text, regions)
+        self.assertEqual(title, "Heart Failure Management")
+
+    def test_pdf_link_annotation_becomes_inline_link_run(self):
+        document = {
+            "blocks": [
+                {
+                    "id": "p1",
+                    "type": "paragraph",
+                    "content": "Visit https://example.edu/help for assistance.",
+                    "provenance": {"source_page": 2, "bounding_box": [20, 100, 500, 140]},
+                }
+            ]
+        }
+        _apply_link_annotations(
+            document,
+            [{"url": "https://example.edu/help", "source_page": 2, "bounding_box": [50, 105, 220, 130]}],
+        )
+        block = document["blocks"][0]
+        self.assertEqual([run["type"] for run in block["runs"]], ["text", "link", "text"])
+        self.assertEqual(block["runs"][1]["url"], "https://example.edu/help")
+        self.assertTrue(document["source_links"][0]["inline_preserved"])
+
+    def test_unmatched_pdf_link_is_reported_without_inventing_visible_text(self):
+        document = {
+            "blocks": [
+                {
+                    "id": "p1",
+                    "type": "paragraph",
+                    "content": "Read the policy.",
+                    "provenance": {"source_page": 1, "bounding_box": [20, 100, 500, 140]},
+                }
+            ]
+        }
+        _apply_link_annotations(
+            document,
+            [{"url": "https://example.edu/policy", "source_page": 1, "bounding_box": [50, 105, 220, 130]}],
+        )
+        self.assertNotIn("runs", document["blocks"][0])
+        self.assertFalse(document["source_links"][0]["inline_preserved"])
+
+    def test_link_prefers_nested_block_containing_visible_url(self):
+        url = "https://example.edu/help"
+        child = {
+            "id": "li1",
+            "type": "list_item",
+            "content": f"Help: {url}",
+            "provenance": {"source_page": 1, "bounding_box": [40, 110, 300, 130]},
+        }
+        document = {
+            "blocks": [
+                {
+                    "id": "list1",
+                    "type": "list",
+                    "content": "",
+                    "children": [child],
+                    "provenance": {"source_page": 1, "bounding_box": [20, 80, 500, 160]},
+                }
+            ]
+        }
+        _apply_link_annotations(
+            document,
+            [{"url": url, "source_page": 1, "bounding_box": [50, 112, 220, 128]}],
+        )
+        self.assertEqual(document["source_links"][0]["source_block"], "li1")
+        self.assertEqual(child["runs"][1]["type"], "link")
+
     @mock.patch(
         "pdf_to_web.normalize.recover_source_title_region",
         return_value=("Recovered title", [100.0, 700.0, 300.0, 720.0]),
@@ -26,6 +134,47 @@ class NormalizeTests(unittest.TestCase):
             del title["provenance"]["bounding_box"]
             self.assertTrue(apply_source_title(document, project))
             self.assertEqual(title["provenance"]["bounding_box"], [100.0, 700.0, 300.0, 720.0])
+
+    @mock.patch(
+        "pdf_to_web.normalize.recover_source_title_region",
+        return_value=("Metadata title", [100.0, 700.0, 300.0, 720.0]),
+    )
+    def test_recovered_title_adds_matching_h1_when_metadata_already_matches(self, _recover):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            (project / "project.json").write_text(
+                json.dumps({"schema_version": "pdf-to-web-project-v1", "title": "Project", "source": {}})
+            )
+            document = {
+                "metadata": {"title": "Metadata title"},
+                "blocks": [{"id": "section", "type": "heading", "level": 1, "content": "Section"}],
+            }
+            self.assertTrue(apply_source_title(document, project))
+            self.assertEqual(document["blocks"][0]["content"], "Metadata title")
+
+    @mock.patch(
+        "pdf_to_web.normalize.recover_source_title_region",
+        return_value=("A sufficiently long recovered title", [100.0, 700.0, 300.0, 720.0]),
+    )
+    def test_recovered_title_does_not_duplicate_longer_matching_h1(self, _recover):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            (project / "project.json").write_text(
+                json.dumps({"schema_version": "pdf-to-web-project-v1", "title": "Project", "source": {}})
+            )
+            document = {
+                "metadata": {"title": "Project"},
+                "blocks": [
+                    {
+                        "id": "title",
+                        "type": "heading",
+                        "level": 1,
+                        "content": "A sufficiently long recovered title with its final words",
+                    }
+                ],
+            }
+            self.assertTrue(apply_source_title(document, project))
+            self.assertEqual(len(document["blocks"]), 1)
 
     def test_known_and_unknown_elements_preserve_provenance(self):
         raw = {

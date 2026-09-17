@@ -27,7 +27,9 @@ class ExtractionTests(unittest.TestCase):
                 patch("pdf_to_web.extraction.java_environment", return_value={}),
                 patch(
                     "pdf_to_web.extraction.subprocess.run",
-                    side_effect=subprocess.TimeoutExpired(["java"], 1, output="partial"),
+                    side_effect=subprocess.TimeoutExpired(
+                        ["java"], 1, output="partial", stderr=b" bytes"
+                    ),
                 ),
             ):
                 with self.assertRaisesRegex(PdfToWebError, "exceeded the 1-second"):
@@ -37,7 +39,7 @@ class ExtractionTests(unittest.TestCase):
             self.assertIn("timeout", data["extraction"]["last_error"])
             self.assertEqual(
                 (project / "extraction" / "opendataloader.log").read_text(encoding="utf-8"),
-                "partial",
+                "partial bytes",
             )
 
 

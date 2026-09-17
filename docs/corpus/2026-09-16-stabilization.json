@@ -1,0 +1,43 @@
+{
+  "schema_version": "pdf-to-web-stabilization-v1",
+  "date": "2026-09-16",
+  "version": "0.5.0",
+  "source_run": "sample_runs/20260917T042813Z",
+  "document_count": 6,
+  "mode_runs": 12,
+  "categories_covered": [
+    "simple policy or handbook page",
+    "multi-column publication or report",
+    "table-heavy document",
+    "image-heavy brochure or designed publication",
+    "multiple footnotes or endnotes",
+    "nested lists",
+    "hyperlinks",
+    "repeated headers, footers, and page numbers",
+    "title embedded in a header or container",
+    "complex visual"
+  ],
+  "documents": [
+    {"filename": "All-Policy-Vaccination-Admission-Policy.pdf", "completed_mode": "heuristic", "title": "Vaccination & Health Screening Admission Policy", "blocks": 40, "headings": 6, "lists": 7, "tables": 1, "images": 0, "footnotes": 2, "source_link_annotations": 2, "inline_links": 0, "complex_visuals": 0, "exports": "pass"},
+    {"filename": "Forrest-Alisha-NURS-495-Practicum-deliverable-PDF1.pdf", "completed_mode": "heuristic and structure-tree", "title": "Question-Persuade-Refer (QPR) and its effectiveness. Should we implement it in", "blocks": 43, "headings": 3, "lists": 4, "tables": 0, "images": 0, "footnotes": 0, "source_link_annotations": 0, "inline_links": 0, "complex_visuals": 0, "exports": "pass"},
+    {"filename": "Instructions for CITI Training_20230608.pdf", "completed_mode": "heuristic and structure-tree", "title": "Registering for Your CITI Account and Enrolling in CITI Trainings", "blocks": 147, "headings": 7, "lists": 27, "tables": 0, "images": 21, "footnotes": 0, "source_link_annotations": 8, "inline_links": 4, "complex_visuals": 0, "exports": "pass"},
+    {"filename": "NURS-495-Practicum-Project-_Ayaka-Kawanishi.pdf", "completed_mode": "heuristic", "title": "Heart Failure Management", "blocks": 43, "headings": 7, "lists": 0, "tables": 0, "images": 19, "footnotes": 0, "source_link_annotations": 6, "inline_links": 6, "complex_visuals": 1, "exports": "pass"},
+    {"filename": "bacc-to-phd-4-year-sample-program.pdf", "completed_mode": "heuristic and structure-tree", "title": "PhD in Nursing Systems Science Post-Baccalaureate 4-Year Sample Program Fall 2026 Cohort", "blocks": 24, "headings": 3, "lists": 3, "tables": 4, "images": 0, "footnotes": 0, "source_link_annotations": 0, "inline_links": 0, "complex_visuals": 0, "exports": "pass"},
+    {"filename": "bloodborne-pathogen-training.pdf", "completed_mode": "heuristic and structure-tree", "title": "WSU Guidelines for Bloodborne Pathogen Occupational Exposure Management / Medical Services", "blocks": 42, "headings": 4, "lists": 4, "tables": 2, "images": 0, "footnotes": 0, "source_link_annotations": 3, "inline_links": 3, "complex_visuals": 0, "exports": "pass"}
+  ],
+  "bugs_fixed": [
+    "prominent and multi-line title selection",
+    "repeated designed-title collapse",
+    "nested list link annotation matching",
+    "PDF link annotation retention",
+    "single-H1 and skipped-level heading normalization",
+    "mixed byte and text timeout diagnostics",
+    "expanded corpus JSON and Markdown reporting"
+  ],
+  "wordpress": {
+    "previous_policy_paste_saved_without_invalid_blocks": true,
+    "automated_preview_and_wxr_tests": "pass",
+    "custom_html_footnote_live_roundtrip": "pending",
+    "blocker": "Docker Desktop was not running; live WSU content was not modified"
+  }
+}
