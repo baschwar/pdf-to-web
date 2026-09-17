@@ -70,6 +70,7 @@ class WebAppTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertIn(f"<h1>{heading}</h1>", response.text)
             self.assertIn("PDF to Web v", response.text)
+        self.assertIn('name="wrap_in_section"', self.client.get("/export").text)
         placeholder = self.client.get("/api/preview/MEDIA_URL_REQUIRED")
         self.assertEqual(placeholder.status_code, 200)
         self.assertEqual(placeholder.headers["content-type"], "image/svg+xml")
@@ -221,7 +222,7 @@ class WebAppTests(unittest.TestCase):
             response = self.client.get("/api/preview/wordpress?profile=wsuwp")
         self.assertEqual(response.status_code, 200)
         self.assertIn("Reviewed Gutenberg preview text", render.call_args.args[0])
-        self.assertIn("<!-- wp:wsuwp/section", render.call_args.args[0])
+        self.assertNotIn("<!-- wp:wsuwp/section", render.call_args.args[0])
         self.assertIn("Unsupported preview blocks", response.text)
         self.assertIn("default-src 'none'", response.headers["content-security-policy"])
 

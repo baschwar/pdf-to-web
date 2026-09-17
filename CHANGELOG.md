@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0] - 2026-09-16
+
+### Added
+
+- First-page PDF header title recovery as reviewed document metadata and an H1
+  block.
+- Optional WSU Section wrapping on the Export screen.
+
+### Fixed
+
+- Hard bullet glyphs and confidently identified flattened sub-bullets are
+  normalized into semantic list structure.
+- Gutenberg footnotes use a trusted Custom HTML block so anchor IDs survive
+  WordPress paste and save round trips.
+
 ## [0.3.5] - 2026-09-16
 
 ### Changed

@@ -49,6 +49,10 @@ class GutenbergTests(unittest.TestCase):
         self.assertIn('"imageSrc":"https://example.edu/hero.png"', output)
         self.assertNotIn('"imageId"', output)
 
+    def test_wsu_section_is_opt_in(self):
+        output = render_document(self.document, "wsuwp", {})
+        self.assertNotIn("wp:wsuwp/section", output)
+
     def test_production_fixture_contains_expected_wsu_nesting(self):
         sample = (FIXTURES / "wsuwp" / "production-sample.html").read_text(encoding="utf-8")
         self.assertLess(sample.index("<!-- wp:wsuwp/section"), sample.index("<!-- wp:heading -->"))
@@ -134,7 +138,8 @@ class GutenbergTests(unittest.TestCase):
         }
         output = render_document(document)
         self.assertIn('<a href="#fn-1" id="fnref-1">1</a>', output)
-        self.assertIn("<h2 class=\"wp-block-heading\">Footnotes</h2>", output)
+        self.assertIn('<!-- wp:html -->', output)
+        self.assertIn('<h2 id="footnotes-heading">Footnotes</h2>', output)
         self.assertIn('<li id="fn-1">Footnote text.', output)
         self.assertIn('aria-label="Back to footnote reference 1"', output)
         self.assertNotIn("1. Footnote text.</p>", output)

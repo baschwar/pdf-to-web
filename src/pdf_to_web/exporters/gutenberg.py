@@ -124,10 +124,12 @@ def _render_footnotes(document: dict[str, Any]) -> list[str]:
         text = html.escape(str(footnote.get("text", "")))
         backlinks = render_footnote_backlinks(footnote)
         items.append(f'<li id="{footnote_id}">{text} {backlinks}</li>')
-    return [
-        _wrap("heading", '<h2 class="wp-block-heading">Footnotes</h2>'),
-        _wrap("list", f'<ol class="wp-block-list">{"".join(items)}</ol>', {"ordered": True}),
-    ]
+    markup = (
+        '<section class="footnotes" aria-labelledby="footnotes-heading">'
+        '<h2 id="footnotes-heading">Footnotes</h2>'
+        f'<ol>{"".join(items)}</ol></section>'
+    )
+    return [_wrap("html", markup)]
 
 
 def _wsu_hero(document: dict[str, Any], config: dict[str, Any]) -> str:
@@ -156,9 +158,12 @@ def render_document(
             if blocks and blocks[0].get("type") == "heading" and blocks[0].get("content") == title:
                 blocks = blocks[1:]
         section = dict(config.get("section_defaults") or {})
-        rendered.append(f"<!-- wp:wsuwp/section{_attrs(section, escape_hyphens=True)} -->")
+        wrap_in_section = bool(config.get("wrap_in_section")) or bool(section)
+        if wrap_in_section:
+            rendered.append(f"<!-- wp:wsuwp/section{_attrs(section, escape_hyphens=True)} -->")
         rendered.extend(content for block in blocks if (content := render_block(block)))
-        rendered.append("<!-- /wp:wsuwp/section -->")
+        if wrap_in_section:
+            rendered.append("<!-- /wp:wsuwp/section -->")
     elif profile == "generic":
         rendered.extend(content for block in blocks if (content := render_block(block)))
     else:

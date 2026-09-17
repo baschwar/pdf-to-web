@@ -17,6 +17,8 @@ PAGE_NUMBER_PATTERN = re.compile(
 )
 FOOTNOTE_SOURCE_TYPES = {"footnote", "endnote", "note"}
 FOOTNOTE_START_RE = re.compile(r"^\s*(?:\[(?P<bracket>[A-Za-z0-9]+)\]|(?P<plain>[A-Za-z0-9]{1,3}))[.)]?\s+(?P<text>.+)$", re.DOTALL)
+LIST_MARKER_RE = re.compile(r"^\s*(?:[•◦▪‣⁃·]|o(?=\s))\s*")
+INLINE_SUBITEM_RE = re.compile(r"^(?P<parent>.+?)\s+o\s+(?P<child>[A-Z].+)$")
 
 TYPE_MAP = {
     "heading": "heading",
@@ -202,6 +204,89 @@ def _walk(
     return blocks
 
 
+def _clean_list_markers(blocks: list[dict[str, Any]]) -> None:
+    for block in blocks:
+        children = block.get("children", [])
+        if block.get("type") == "list":
+            for child in children:
+                if child.get("type") != "list_item":
+                    continue
+                content = LIST_MARKER_RE.sub("", str(child.get("content", "")), count=1).strip()
+                match = INLINE_SUBITEM_RE.match(content)
+                has_nested_list = any(item.get("type") == "list" for item in child.get("children", []))
+                if match and not has_nested_list:
+                    child["content"] = match.group("parent").strip()
+                    child.setdefault("children", []).append(
+                        {
+                            "id": f"{child.get('id', 'list-item')}-subitem-1",
+                            "type": "list",
+                            "content": "",
+                            "ordered": False,
+                            "children": [
+                                {
+                                    "id": f"{child.get('id', 'list-item')}-subitem-1-item-1",
+                                    "type": "list_item",
+                                    "content": match.group("child").strip(),
+                                    "children": [],
+                                    "provenance": dict(child.get("provenance", {})),
+                                }
+                            ],
+                            "provenance": dict(child.get("provenance", {})),
+                        }
+                    )
+                else:
+                    child["content"] = content
+        _clean_list_markers(children)
+
+
+def recover_source_title(project_dir: Path) -> str | None:
+    project = load_project(project_dir)
+    source = project_dir / str(project.get("source", {}).get("path") or "")
+    if not source.is_file():
+        return None
+    try:
+        from pypdf import PdfReader
+
+        text = PdfReader(source).pages[0].extract_text() or ""
+    except Exception:
+        return None
+    for line in (part.strip() for part in text.splitlines()):
+        if not line or len(line) > 200 or PAGE_NUMBER_PATTERN.search(line):
+            continue
+        if re.search(r"\bupdated\b", line, re.IGNORECASE):
+            continue
+        return line
+    return None
+
+
+def apply_source_title(document: dict[str, Any], project_dir: Path) -> bool:
+    project = load_project(project_dir)
+    metadata = document.setdefault("metadata", {})
+    current = str(metadata.get("title") or "")
+    fallback_titles = {"", "Untitled document", str(project.get("title") or "")}
+    title = recover_source_title(project_dir)
+    if not title or current not in fallback_titles:
+        return False
+    metadata["title"] = title
+    blocks = document.setdefault("blocks", [])
+    if not any(block.get("type") == "heading" and int(block.get("level", 2)) == 1 for block in blocks):
+        blocks.insert(
+            0,
+            {
+                "id": "recovered-document-title",
+                "type": "heading",
+                "level": 1,
+                "content": title,
+                "provenance": {"source_type": "recovered first-page header", "source_page": 1},
+                "review": {
+                    "status": "needs_review",
+                    "issues": [{"code": "recovered_document_title", "message": "Document title recovered from the first-page PDF header."}],
+                },
+            },
+        )
+    return True
+
+
 def normalize_document(raw: dict[str, Any]) -> dict[str, Any]:
     elements = raw.get("kids")
     if not isinstance(elements, list):
@@ -220,6 +305,7 @@ def normalize_document(raw: dict[str, Any]) -> dict[str, Any]:
         "metadata": metadata,
         "blocks": _walk(item for item in elements if isinstance(item, dict)),
     }
+    _clean_list_markers(document["blocks"])
     _associate_image_captions(document["blocks"])
     _extract_footnotes(document)
     _mark_automatic_page_artifacts(document["blocks"])
@@ -729,6 +815,7 @@ def normalize_project(project_dir: Path) -> Path:
         raise PdfToWebError(f"Could not load OpenDataLoader JSON: {exc}") from exc
     document = normalize_document(raw)
     project = load_project(project_dir)
+    apply_source_title(document, project_dir)
     document["metadata"]["source_embedded_text_character_count"] = project.get(
         "source", {}
     ).get("embedded_text_character_count", 0)

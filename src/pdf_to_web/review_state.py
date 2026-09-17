@@ -72,12 +72,20 @@ def ensure_review_document(project_dir: Path) -> dict[str, Any]:
     path = review_path(project_dir)
     if path.is_file():
         document = _read_document(path)
+        from .normalize import _clean_list_markers, apply_source_title
+
+        changed = apply_source_title(document, project_dir)
+        before = json.dumps(document.get("blocks", []), sort_keys=True)
+        _clean_list_markers(document.get("blocks", []))
+        changed = changed or before != json.dumps(document.get("blocks", []), sort_keys=True)
         if not document.get("footnotes"):
             from .normalize import _extract_footnotes
 
             _extract_footnotes(document)
             if document.get("footnotes"):
-                _atomic_write(path, document)
+                changed = True
+        if changed:
+            _atomic_write(path, document)
         return document
     document = _prepare(_read_document(original_path(project_dir)))
     path.parent.mkdir(parents=True, exist_ok=True)

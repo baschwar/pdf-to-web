@@ -407,7 +407,7 @@ def _export_page(model: dict[str, Any]) -> str:
 <section aria-labelledby="readiness-heading"><h2 id="readiness-heading">Export readiness</h2><ul><li>{progress['needs_review']} blocks need review</li><li>{progress['unreviewed']} blocks are unreviewed</li><li>{unknown} unknown blocks remain</li><li>{complex_count} complex visual warnings remain</li></ul></section>
 <form id="export-form" data-conversion-blocked="{str(blocked).lower()}"><div class="form-grid"><label>Format<select name="target"><option value="html">Semantic HTML</option><option value="gutenberg">Gutenberg</option><option value="wordpress-xml">WXR/XML</option></select></label>
 <label>WordPress profile<select name="profile"><option value="generic">Generic Gutenberg</option><option value="wsuwp">WSUWP</option></select></label>
-<label>Content type<select name="post_type"><option value="page">Page</option><option value="post">Post</option></select></label></div><p>WordPress exports are created as Drafts.</p>
+<label>Content type<select name="post_type"><option value="page">Page</option><option value="post">Post</option></select></label></div><label><input type="checkbox" name="wrap_in_section" value="true"> Wrap content in a WSU Section block</label><p>WordPress exports are created as Drafts.</p>
 <button type="submit">Export reviewed document</button><p class="blocked-export-note"{"" if blocked else " hidden"}>Conversion-blocked projects may export diagnostic HTML only.</p></form><div id="export-result" role="status" aria-live="polite"></div>'''
     return _page("Export", "export", body)
 
@@ -785,6 +785,7 @@ def create_app(config: WebAppConfig):
             project.setdefault("export", {})["wordpress_profile"] = profile
             wordpress = project["export"].setdefault("wordpress", {})
             wordpress.update({"post_type": post_type, "status": "draft"})
+            project["export"]["wrap_in_section"] = str(data.get("wrap_in_section", "")).lower() == "true"
             save_project(current(), project)
             paths = export_project(current(), target, profile)
             return {

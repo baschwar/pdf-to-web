@@ -63,6 +63,27 @@ class NormalizeTests(unittest.TestCase):
         nested = document["blocks"][0]["children"][0]["children"][0]
         self.assertEqual(nested["type"], "list")
         self.assertFalse(nested["ordered"])
+        self.assertEqual(nested["children"][0]["content"], "Child")
+
+    def test_hard_list_markers_are_removed_and_flat_subitems_are_nested(self):
+        document = normalize_document(
+            {
+                "kids": [
+                    {
+                        "type": "list",
+                        "numbering style": "unordered",
+                        "list items": [
+                            {"type": "list item", "id": 1, "content": "• COVID-19 o Boosters may be required."},
+                            {"type": "list item", "id": 2, "content": "• Influenza"},
+                        ],
+                    }
+                ]
+            }
+        )
+        first, second = document["blocks"][0]["children"]
+        self.assertEqual(first["content"], "COVID-19")
+        self.assertEqual(first["children"][0]["children"][0]["content"], "Boosters may be required.")
+        self.assertEqual(second["content"], "Influenza")
 
     def test_summary_flags_incomplete_page_coverage(self):
         document = normalize_document(
