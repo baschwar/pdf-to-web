@@ -11,6 +11,7 @@ from pdf_to_web.normalize import (
     _select_source_title,
     apply_readiness,
     apply_source_title,
+    apply_source_supplemental_regions,
     extraction_summary,
     normalize_document,
     reconcile_visual_reading_order,
@@ -18,6 +19,28 @@ from pdf_to_web.normalize import (
 
 
 class NormalizeTests(unittest.TestCase):
+    @mock.patch(
+        "pdf_to_web.normalize.recover_source_supplemental_regions",
+        return_value={
+            "subtitle": ("Post-Baccalaureate 4-Year Sample Program Fall 2026 Cohort", [300, 690, 570, 730]),
+            "footer_note": ("*Please note this is a sample plan.", [36, 45, 440, 56]),
+            "revision": ("Revised 09/25", [490, 45, 576, 56]),
+        },
+    )
+    def test_supplemental_header_and_footer_regions_are_recovered_once(self, _recover):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            document = {"blocks": [{"id": "recovered-document-title", "type": "heading", "level": 1, "content": "Title"}]}
+            self.assertTrue(apply_source_supplemental_regions(document, project))
+            self.assertFalse(apply_source_supplemental_regions(document, project))
+            self.assertEqual([block["id"] for block in document["blocks"]], [
+                "recovered-document-title", "recovered-document-subtitle",
+                "recovered-document-note", "recovered-document-revision",
+            ])
+            self.assertEqual(document["blocks"][1]["level"], 2)
+            self.assertEqual(document["blocks"][2]["runs"][0]["type"], "emphasis")
+            self.assertEqual(document["blocks"][-1]["content"], "Revised 09/25")
+
     def _program_plan_document(self):
         def provenance(order, bbox):
             return {"source_page": 1, "bounding_box": bbox, "source_order": order, "raw": {"id": order}}

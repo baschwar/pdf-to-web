@@ -527,7 +527,7 @@ def recover_source_title_region(project_dir: Path) -> tuple[str, list[float] | N
                 index = ord(char) - first_char
                 width += float(widths[index]) if 0 <= index < len(widths) else 500.0
             x, baseline = float(tm[4]), float(tm[5])
-            font_size = float(size)
+            font_size = float(size) * (float(tm[0]) ** 2 + float(tm[1]) ** 2) ** 0.5
             regions.append(
                 (value, [x, baseline - font_size * 0.25, x + width * font_size / 1000, baseline + font_size], font_size)
             )
@@ -536,6 +536,63 @@ def recover_source_title_region(project_dir: Path) -> tuple[str, list[float] | N
     except Exception:
         return None
     return _select_source_title(text, regions)
+
+
+def recover_source_supplemental_regions(project_dir: Path) -> dict[str, tuple[str, list[float]]]:
+    project = load_project(project_dir)
+    source = project_dir / str(project.get("source", {}).get("path") or "")
+    if not source.is_file():
+        return {}
+    try:
+        from pypdf import PdfReader
+
+        page = PdfReader(source).pages[0]
+        page_width = float(page.mediabox.width)
+        lines: list[tuple[str, float, float, float]] = []
+
+        def collect(text: str, _cm: list[float], tm: list[float], _font: Any, size: float) -> None:
+            value = " ".join(text.split())
+            if value:
+                effective_size = float(size) * (float(tm[0]) ** 2 + float(tm[1]) ** 2) ** 0.5
+                lines.append((value, float(tm[4]), float(tm[5]), effective_size))
+
+        text = page.extract_text(visitor_text=collect) or ""
+    except Exception:
+        return {}
+
+    recovered: dict[str, tuple[str, list[float]]] = {}
+    title = recover_source_title_region(project_dir)
+    if title and title[1]:
+        title_box = title[1]
+        subtitle_lines = [
+            item for item in lines
+            if item[2] < title_box[1] and item[2] >= title_box[1] - 55
+            and 0 < item[3] < max(line[3] for line in lines if line[2] >= title_box[1])
+        ]
+        if subtitle_lines:
+            subtitle_size = max(item[3] for item in subtitle_lines)
+            selected = [item for item in subtitle_lines if abs(item[3] - subtitle_size) < 0.2]
+            selected.sort(key=lambda item: (-item[2], item[1]))
+            subtitle = " ".join(item[0] for item in selected)
+            subtitle = re.sub(r"\b(\d{3})\s+(\d)\b", r"\1\2", subtitle)
+            if subtitle and len(subtitle) <= 160:
+                recovered["subtitle"] = (
+                    subtitle,
+                    [min(item[1] for item in selected), min(item[2] - item[3] * 0.25 for item in selected), page_width - 36, max(item[2] + item[3] for item in selected)],
+                )
+
+    footer_match = re.search(
+        r"(?P<note>\*?Please note\b.+?)(?P<revision>Revised\s+[^\n]+)$", text, re.IGNORECASE | re.MULTILINE
+    )
+    if footer_match:
+        note = " ".join(footer_match.group("note").split())
+        revision = " ".join(footer_match.group("revision").split())
+        footer_line = next((item for item in lines if "Please note" in item[0] and "Revised" in item[0]), None)
+        baseline = footer_line[2] if footer_line else 47.0
+        font_size = footer_line[3] if footer_line else 9.0
+        recovered["footer_note"] = (note, [36.0, baseline - font_size * 0.25, page_width * 0.72, baseline + font_size])
+        recovered["revision"] = (revision, [page_width * 0.80, baseline - font_size * 0.25, page_width - 36.0, baseline + font_size])
+    return recovered
 
 
 def recover_source_title(project_dir: Path) -> str | None:
@@ -556,10 +613,15 @@ def apply_source_title(document: dict[str, Any], project_dir: Path) -> bool:
     existing = next((block for block in blocks if block.get("id") == "recovered-document-title"), None)
     if existing:
         provenance = existing.setdefault("provenance", {})
+        changed = False
+        if provenance.get("source_type") == "recovered first-page header" and str(existing.get("content", "")) != title:
+            existing["content"] = title
+            metadata["title"] = title
+            changed = True
         if bounding_box and provenance.get("bounding_box") != bounding_box:
             provenance["bounding_box"] = bounding_box
-            return True
-        return False
+            changed = True
+        return changed
     if current not in fallback_titles and current != title:
         return False
     changed = current != title
@@ -593,6 +655,40 @@ def apply_source_title(document: dict[str, Any], project_dir: Path) -> bool:
             },
         )
         changed = True
+    return changed
+
+
+def apply_source_supplemental_regions(document: dict[str, Any], project_dir: Path) -> bool:
+    recovered = recover_source_supplemental_regions(project_dir)
+    if not recovered:
+        return False
+    blocks = document.setdefault("blocks", [])
+    changed = False
+    subtitle = recovered.get("subtitle")
+    if subtitle and not any(block.get("id") == "recovered-document-subtitle" for block in blocks):
+        title_index = next((index for index, block in enumerate(blocks) if block.get("id") == "recovered-document-title"), -1)
+        blocks.insert(title_index + 1, {
+            "id": "recovered-document-subtitle", "type": "heading", "level": 2,
+            "content": subtitle[0],
+            "provenance": {"source_type": "recovered first-page subtitle", "source_page": 1, "bounding_box": subtitle[1]},
+            "review": {"status": "needs_review", "issues": [{"code": "recovered_document_subtitle", "message": "Document subtitle recovered from the first-page PDF header."}]},
+        })
+        changed = True
+    for key, block_id, label in (
+        ("footer_note", "recovered-document-note", "Document note"),
+        ("revision", "recovered-document-revision", "Revision date"),
+    ):
+        value = recovered.get(key)
+        if value and not any(block.get("id") == block_id for block in blocks):
+            recovered_block = {
+                "id": block_id, "type": "paragraph", "content": value[0],
+                "provenance": {"source_type": "recovered meaningful footer", "source_page": 1, "bounding_box": value[1]},
+                "review": {"status": "needs_review", "issues": [{"code": "recovered_meaningful_footer", "message": f"{label} recovered from the PDF footer."}]},
+            }
+            if key == "footer_note":
+                recovered_block["runs"] = [{"type": "emphasis", "text": value[0]}]
+            blocks.append(recovered_block)
+            changed = True
     return changed
 
 
@@ -1258,6 +1354,7 @@ def normalize_project(project_dir: Path) -> Path:
     document = normalize_document(raw)
     project = load_project(project_dir)
     apply_source_title(document, project_dir)
+    apply_source_supplemental_regions(document, project_dir)
     _normalize_heading_hierarchy(document)
     apply_source_links(document, project_dir)
     document["metadata"]["source_embedded_text_character_count"] = project.get(

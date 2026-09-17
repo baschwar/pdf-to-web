@@ -79,3 +79,10 @@ for the required direct Gutenberg paste test.
   attributes that exactly match the serialized `<ol>` marker type.
 - Empty source paragraphs are no longer exported as blank editor insertion
   points. Retest the regenerated file for invalid-list warnings in WordPress.
+
+## v0.5.5 Header and Footer Retest Notes
+
+- Regenerated `02-generic-table-nested-content-program-plan.html` with the
+  source title as H1 and its smaller multi-line subtitle as H2.
+- Recovered the italic sample-plan note and `Revised 09/25` once at the end of
+  the document. The complete project export-validation gate passes.

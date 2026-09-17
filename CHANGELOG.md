@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.5] - 2026-09-17
+
+### Fixed
+
+- PDF title recovery now reads effective font scale from the text matrix, so a
+  smaller multi-line subtitle is preserved as H2 instead of merged into H1.
+- Meaningful sample-plan notes and revision dates omitted by extraction are
+  recovered once from the first-page footer and retained at the document end.
+
 ## [0.5.4] - 2026-09-17
 
 ### Fixed
