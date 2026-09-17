@@ -27,6 +27,25 @@ class GutenbergTests(unittest.TestCase):
         self.assertIn("<!-- wp:table -->", output)
         self.assertIn("Access &amp; Equity – 2026", output)
 
+    def test_ordered_list_types_match_wordpress_serialized_html(self):
+        document = {
+            "blocks": [
+                {"type": "list", "ordered": True, "marker_style": "decimal", "children": [{"type": "list_item", "content": "One"}]},
+                {"type": "list", "ordered": True, "marker_style": "lower-alpha", "children": [{"type": "list_item", "content": "Alpha"}]},
+                {"type": "list", "ordered": True, "marker_style": "upper-roman", "children": [{"type": "list_item", "content": "Roman"}]},
+            ]
+        }
+        output = render_document(document)
+        self.assertIn('<!-- wp:list {"ordered":true} -->\n<ol class="wp-block-list">', output)
+        self.assertIn('<!-- wp:list {"ordered":true,"type":"a"} -->\n<ol type="a" class="wp-block-list">', output)
+        self.assertIn('<!-- wp:list {"ordered":true,"type":"I"} -->\n<ol type="I" class="wp-block-list">', output)
+        self.assertNotIn('"type":"decimal"', output)
+        self.assertNotIn('"type":"lower-alpha"', output)
+
+    def test_empty_paragraphs_are_not_exported_as_editor_spacers(self):
+        output = render_document({"blocks": [{"type": "paragraph", "content": "  "}]})
+        self.assertEqual(output, "\n")
+
     def test_wsu_profile_with_image_id_and_sections(self):
         config = json.loads(
             (FIXTURES / "wsuwp" / "config-with-image-id.json").read_text(encoding="utf-8")

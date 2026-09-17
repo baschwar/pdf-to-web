@@ -72,3 +72,10 @@ for the required direct Gutenberg paste test.
 - The project export-validation gate passes Semantic HTML, generic Gutenberg,
   WSUWP Gutenberg, both local Gutenberg previews, WXR, and cross-export
   equivalence. A live WordPress paste/save retest remains manual.
+
+## v0.5.4 List-Block Retest Notes
+
+- Regenerated `01-generic-text-nested-list-links-citi.html` with WordPress list
+  attributes that exactly match the serialized `<ol>` marker type.
+- Empty source paragraphs are no longer exported as blank editor insertion
+  points. Retest the regenerated file for invalid-list warnings in WordPress.

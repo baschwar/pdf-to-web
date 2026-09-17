@@ -55,8 +55,9 @@ def _list_markup(block: dict[str, Any]) -> str:
 
 def _render_list(block: dict[str, Any]) -> str:
     attrs = {"ordered": True} if block.get("ordered") else {}
-    if block.get("marker_style"):
-        attrs["type"] = block["marker_style"]
+    style_types = {"lower-alpha": "a", "upper-alpha": "A", "lower-roman": "i", "upper-roman": "I"}
+    if block.get("ordered") and block.get("marker_style") in style_types:
+        attrs["type"] = style_types[block["marker_style"]]
     return _wrap("list", _list_markup(block), attrs)
 
 
@@ -158,6 +159,8 @@ def render_block(block: dict[str, Any]) -> str:
             "heading", f'<h{level} class="wp-block-heading">{render_inline(block)}</h{level}>', attrs
         )
     if block_type in {"paragraph", "caption", "callout"}:
+        if not str(block.get("content", "")).strip() and not block.get("runs") and not block.get("footnote_references"):
+            return ""
         return _wrap("paragraph", f"<p>{render_inline(block)}</p>")
     if block_type == "list":
         return _render_list(block)

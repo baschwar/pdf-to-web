@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.4] - 2026-09-17
+
+### Fixed
+
+- Ordered-list Gutenberg attributes now use the same HTML marker values as the
+  serialized list (`a`, `A`, `i`, or `I`), preventing WordPress from marking
+  alphabetic, Roman, and decimal lists as invalid blocks.
+- Empty normalized paragraphs are omitted from Gutenberg output instead of
+  appearing as blank editor insertion points between lists and images.
+
 ## [0.5.3] - 2026-09-16
 
 ### Added
