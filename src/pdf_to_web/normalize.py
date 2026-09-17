@@ -20,6 +20,20 @@ FOOTNOTE_SOURCE_TYPES = {"footnote", "endnote", "note"}
 FOOTNOTE_START_RE = re.compile(r"^\s*(?:\[(?P<bracket>[A-Za-z0-9]+)\]|(?P<plain>[A-Za-z0-9]{1,3}))[.)]?\s+(?P<text>.+)$", re.DOTALL)
 LIST_MARKER_RE = re.compile(r"^\s*(?:[•◦▪‣⁃·]|o(?=\s))\s*")
 INLINE_SUBITEM_RE = re.compile(r"^(?P<parent>.+?)\s+o\s+(?P<child>[A-Z].+)$")
+ORDERED_MARKER_RE = re.compile(
+    r"^\s*(?P<marker>(?:\d+|[A-Za-z]|[ivxlcdmIVXLCDM]+))[.)]\s+"
+)
+
+
+def _source_marker_style(value: Any) -> str | None:
+    style = str(value or "").lower()
+    if style in {"arabic numbers", "arabic", "decimal", "number", "numbers"}:
+        return "decimal"
+    if style in {"english letters", "letters", "alpha", "alphabetic"}:
+        return "lower-alpha"
+    if style in {"roman numbers", "roman", "roman numerals"}:
+        return "lower-roman"
+    return None
 
 TYPE_MAP = {
     "heading": "heading",
@@ -136,6 +150,10 @@ def _normalize_element(element: dict[str, Any], index: int) -> dict[str, Any]:
     elif block_type == "list":
         style = str(element.get("numbering style", "")).lower()
         block["ordered"] = style not in {"", "bullet", "unordered", "none"}
+        if block["ordered"]:
+            marker_style = _source_marker_style(style)
+            if marker_style:
+                block["marker_style"] = marker_style
     elif block_type == "image":
         block["src"] = element.get("source") or element.get("src")
         block["alt"] = ""
@@ -209,10 +227,35 @@ def _clean_list_markers(blocks: list[dict[str, Any]]) -> None:
     for block in blocks:
         children = block.get("children", [])
         if block.get("type") == "list":
+            ordered = bool(block.get("ordered"))
+            style = str(block.get("marker_style") or "")
+            if ordered and not style:
+                source_style = _source_marker_style(
+                    block.get("provenance", {}).get("raw", {}).get("numbering style")
+                )
+                if source_style:
+                    style = source_style
+                    block["marker_style"] = source_style
             for child in children:
                 if child.get("type") != "list_item":
                     continue
-                content = LIST_MARKER_RE.sub("", str(child.get("content", "")), count=1).strip()
+                original = str(child.get("content", ""))
+                content = LIST_MARKER_RE.sub("", original, count=1).strip()
+                if ordered:
+                    match = ORDERED_MARKER_RE.match(original)
+                    if match:
+                        marker = match.group("marker")
+                        inferred = _ordered_marker_style(marker, style)
+                        if not style:
+                            style = inferred
+                            block["marker_style"] = inferred
+                        elif style.startswith("lower-") and inferred.startswith("upper-"):
+                            style = inferred
+                            block["marker_style"] = inferred
+                        if _marker_styles_agree(style, inferred):
+                            prefix_length = match.end()
+                            content = original[prefix_length:].strip()
+                            _strip_run_prefix(child, prefix_length)
                 match = INLINE_SUBITEM_RE.match(content)
                 has_nested_list = any(item.get("type") == "list" for item in child.get("children", []))
                 if match and not has_nested_list:
@@ -238,6 +281,53 @@ def _clean_list_markers(blocks: list[dict[str, Any]]) -> None:
                 else:
                     child["content"] = content
         _clean_list_markers(children)
+
+
+def _ordered_marker_style(marker: str, hinted: str = "") -> str:
+    if marker.isdigit():
+        return "decimal"
+    if "roman" in hinted and re.fullmatch(r"[ivxlcdm]+", marker):
+        return "lower-roman"
+    if "roman" in hinted and re.fullmatch(r"[IVXLCDM]+", marker):
+        return "upper-roman"
+    if len(marker) > 1 and re.fullmatch(r"[ivxlcdm]+", marker):
+        return "lower-roman"
+    if len(marker) > 1 and re.fullmatch(r"[IVXLCDM]+", marker):
+        return "upper-roman"
+    return "upper-alpha" if marker.isupper() else "lower-alpha"
+
+
+def _marker_styles_agree(configured: str, inferred: str) -> bool:
+    if configured == inferred:
+        return True
+    return (configured, inferred) in {
+        ("lower-alpha", "upper-alpha"),
+        ("lower-roman", "upper-roman"),
+    }
+
+
+def _strip_run_prefix(block: dict[str, Any], prefix_length: int) -> None:
+    runs = block.get("runs")
+    if not isinstance(runs, list):
+        return
+    remaining = prefix_length
+    cleaned: list[dict[str, Any]] = []
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        current = dict(run)
+        text = str(current.get("text", ""))
+        if remaining:
+            removed = min(remaining, len(text))
+            text = text[removed:]
+            remaining -= removed
+            if not remaining:
+                stripped = text.lstrip()
+                text = stripped
+        current["text"] = text
+        if text:
+            cleaned.append(current)
+    block["runs"] = cleaned
 
 
 def _select_source_title(

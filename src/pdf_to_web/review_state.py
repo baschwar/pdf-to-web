@@ -99,7 +99,7 @@ def ensure_review_document(project_dir: Path) -> dict[str, Any]:
 def load_reviewed_document(project_dir: Path, *, initialize: bool = False) -> dict[str, Any]:
     path = review_path(project_dir)
     if path.is_file():
-        return _read_document(path)
+        return ensure_review_document(project_dir)
     return ensure_review_document(project_dir) if initialize else _read_document(original_path(project_dir))
 
 

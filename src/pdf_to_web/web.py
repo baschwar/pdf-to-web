@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import copy
 import json
 import os
 import secrets
@@ -57,6 +58,20 @@ CSRF_COOKIE = "pdf_to_web_csrf"
 CSRF_HEADER = "x-csrf-token"
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost"}
 LOOPBACK_CLIENTS = {"127.0.0.1", "::1", "localhost", "testclient"}
+
+
+def _document_with_local_preview_media(document: dict[str, Any]) -> dict[str, Any]:
+    preview = copy.deepcopy(document)
+    stack = list(preview.get("blocks", []))
+    while stack:
+        block = stack.pop()
+        stack.extend(block.get("children", []))
+        if block.get("type") != "image" or block.get("wordpress_url"):
+            continue
+        source = Path(str(block.get("src") or ""))
+        if source.name == str(source) or source.parts[:1] == ("images",):
+            block["wordpress_url"] = f"/api/preview/images/{quote(source.name)}"
+    return preview
 
 
 @dataclass
@@ -681,7 +696,9 @@ def create_app(config: WebAppConfig):
                     "WordPress Preview is unavailable while Gutenberg export is blocked"
                 )
             config_data = load_project(root).get("export", {})
-            markup = gutenberg_exporter.render_document(document, profile, config_data)
+            markup = gutenberg_exporter.render_document(
+                _document_with_local_preview_media(document), profile, config_data
+            )
             preview = render_gutenberg_preview(markup)
             if preview.unsupported_blocks:
                 names = "".join(
@@ -800,6 +817,10 @@ def create_app(config: WebAppConfig):
             save_project(current(), project)
             paths = export_project(current(), target, profile)
             files = [str(path.relative_to(current())) for path in paths]
+            media_manifest_path = current() / "output" / "wordpress" / "reports" / "media-manifest.json"
+            media = None
+            if target in {"gutenberg", "wordpress-xml"} and media_manifest_path.is_file():
+                media = json.loads(media_manifest_path.read_text(encoding="utf-8"))["summary"]
             return {
                 "status": "ok",
                 "files": files,
@@ -808,6 +829,7 @@ def create_app(config: WebAppConfig):
                     for path in files
                 ],
                 "project_root": str(current()),
+                "media": media,
                 "review": ensure_review_document(current()).get("review", {}),
             }
         except Exception as exc:

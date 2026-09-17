@@ -19,7 +19,7 @@ Do not record credentials, private URLs, or secrets in this document.
 
 | Case | Source project / fixture | Export filename | Recognition and structure | Save/reopen | Frontend | Result / notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| Text, nested lists, links | `instructions-for-citi-training-20230608--heuristic` | `gutenberg/01-generic-text-nested-list-links-citi.html` | NOT TESTED: headings, nested lists, separate explanatory paragraphs, links, no duplicate bullets, no invalid blocks | NOT TESTED | NOT TESTED | NOT TESTED |
+| Text, nested lists, links | `instructions-for-citi-training-20230608--heuristic` | `gutenberg/01-generic-text-nested-list-links-citi.html` | Initial FAIL: semantic and literal ordered-list markers were both displayed. Regenerated in v0.5.2 with decimal, lower-alpha, and lower-Roman semantic nesting and no literal prefixes. Retest NOT TESTED. | NOT TESTED | NOT TESTED | FAIL (initial); RETEST NOT TESTED |
 | Table and nested content | `bacc-to-phd-4-year-sample-program--heuristic` | `gutenberg/02-generic-table-nested-content-program-plan.html` | NOT TESTED: recognized table, all rows/cells, nested table content, no duplication, no invalid blocks | NOT TESTED | NOT TESTED | NOT TESTED |
 | Footnotes and anchors | `all-policy-vaccination-admission-policy--heuristic` | `gutenberg/03-generic-footnotes-vaccination-policy.html` | NOT TESTED: Custom HTML valid, reference links, backlinks, IDs, no duplicate IDs, footnotes at end | NOT TESTED | NOT TESTED | NOT TESTED |
 | WSUWP profile | `wsu-block-contract` fixture | `gutenberg/04-wsuwp-hero-section-core-blocks.html` | NOT TESTED: `wsuwp/hero`, `wsuwp/section`, nested core blocks, no invalid blocks | NOT TESTED | NOT TESTED | NOT TESTED |
@@ -52,3 +52,14 @@ Record the WordPress URL, plugin/version context, tester, date, and observed
 result here when production-authoritative testing is performed. The optional
 `wxr/wsuwp-page.xml` fixture is included for diagnostics but is not a substitute
 for the required direct Gutenberg paste test.
+
+## v0.5.2 Retest Notes
+
+- The CITI acceptance bundle now includes 21 extracted files under
+  `media/citi-assets/` and corresponding JSON/Markdown manifests under
+  `media/citi-reports/`.
+- Images without configured WordPress URLs appear as deliberate replacement
+  placeholders. They are not treated as successfully published images.
+- Retest list nesting and marker rendering using the regenerated CITI HTML.
+  Upload/media mapping itself remains a later workflow and is not required to
+  judge the ordered-list regression.

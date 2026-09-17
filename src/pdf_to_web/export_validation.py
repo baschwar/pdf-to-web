@@ -61,7 +61,8 @@ def model_semantics(document: dict[str, Any]) -> dict[str, Any]:
         elif block_type == "table":
             tables.append([_text(table_cell(cell)[0]) for row in block.get("rows", []) for cell in row])
         elif block_type == "image":
-            images.append([_text(block.get("alt")), _text(block.get("caption"))])
+            if not block.get("decorative"):
+                images.append([_text(block.get("alt")), _text(block.get("caption"))])
         for nested in _walk([block]):
             for run in nested.get("runs", []):
                 if isinstance(run, dict) and run.get("type") == "link":
@@ -97,6 +98,8 @@ class _SnapshotParser(HTMLParser):
             self._figures.append("image" if "wp-block-image" in classes or self._table is None and "wp-block-table" not in classes else "table")
         if tag == "img":
             self.snapshot["images"].append([_text(values.get("alt")), ""])
+        if values.get("data-pdf-to-web-media") == "unresolved":
+            self.snapshot["images"].append([_text(values.get("data-alt")), _text(values.get("data-caption"))])
 
     def handle_data(self, data: str) -> None:
         for index, (tag, parts, _) in enumerate(self._capture):

@@ -4,8 +4,9 @@ import html
 import json
 import re
 from typing import Any
+from urllib.parse import urlparse
 
-from .common import image_src, is_excluded, is_footnote_body, render_footnote_backlinks, render_inline, table_cell
+from .common import is_excluded, is_footnote_body, render_footnote_backlinks, render_inline, table_cell
 
 
 def _attrs(values: dict[str, Any], escape_hyphens: bool = False) -> str:
@@ -29,6 +30,8 @@ def _wrap(name: str, markup: str, attrs: dict[str, Any] | None = None) -> str:
 def _list_markup(block: dict[str, Any]) -> str:
     ordered = bool(block.get("ordered"))
     tag = "ol" if ordered else "ul"
+    style_types = {"lower-alpha": "a", "upper-alpha": "A", "lower-roman": "i", "upper-roman": "I"}
+    type_attr = f' type="{style_types[block["marker_style"]]}"' if ordered and block.get("marker_style") in style_types else ""
     items: list[str] = []
     for child in block.get("children", []):
         if is_excluded(child) or is_footnote_body(child):
@@ -47,12 +50,71 @@ def _list_markup(block: dict[str, Any]) -> str:
                 nested_parts.append(html.escape(str(item.get("content", ""))))
         nested = "".join(nested_parts)
         items.append(f"<li>{render_inline(child)}{nested}</li>")
-    return f'<{tag} class="wp-block-list">{"".join(items)}</{tag}>'
+    return f'<{tag}{type_attr} class="wp-block-list">{"".join(items)}</{tag}>'
 
 
 def _render_list(block: dict[str, Any]) -> str:
     attrs = {"ordered": True} if block.get("ordered") else {}
+    if block.get("marker_style"):
+        attrs["type"] = block["marker_style"]
     return _wrap("list", _list_markup(block), attrs)
+
+
+def _wordpress_image_values(block: dict[str, Any]) -> tuple[str | None, int | None]:
+    media = block.get("wordpress_media") if isinstance(block.get("wordpress_media"), dict) else {}
+    url = block.get("wordpress_url") or media.get("url")
+    if url and not (
+        urlparse(str(url)).scheme in {"http", "https"}
+        or str(url).startswith("/api/preview/images/")
+    ):
+        url = None
+    if not url:
+        candidate = str(block.get("src") or "")
+        if urlparse(candidate).scheme in {"http", "https"}:
+            url = candidate
+    attachment = block.get(
+        "wordpress_attachment_id", media.get("attachment_id", block.get("image_id"))
+    )
+    try:
+        attachment_id = int(attachment) if attachment is not None else None
+    except (TypeError, ValueError):
+        attachment_id = None
+    return (str(url) if url else None), attachment_id
+
+
+def _render_image(block: dict[str, Any]) -> str:
+    url, attachment_id = _wordpress_image_values(block)
+    alt_text = "" if block.get("decorative") else str(block.get("alt", ""))
+    caption = str(block.get("caption") or "")
+    if not url:
+        if block.get("decorative"):
+            block_id = html.escape(str(block.get("id", "")), quote=True)
+            return f'<!-- pdf-to-web: decorative unresolved image omitted; block {block_id} -->'
+        block_id = html.escape(str(block.get("id", "")), quote=True)
+        alt = html.escape(alt_text, quote=True)
+        caption_attr = html.escape(caption, quote=True)
+        visible = "Image requires upload"
+        if caption:
+            visible += f": {html.escape(caption)}"
+        elif alt_text:
+            visible += f": {html.escape(alt_text)}"
+        placeholder = (
+            f'<figure class="pdf-to-web-unresolved-media" data-pdf-to-web-media="unresolved" '
+            f'data-block-id="{block_id}" data-alt="{alt}" data-caption="{caption_attr}">'
+            f'<div role="note"><strong>{visible}</strong></div></figure>'
+        )
+        return _wrap("html", placeholder)
+    attrs = {"id": attachment_id} if attachment_id is not None else {}
+    escaped_url = html.escape(url, quote=True)
+    alt = html.escape(alt_text, quote=True)
+    markup = f'<figure class="wp-block-image"><img src="{escaped_url}" alt="{alt}"'
+    if attachment_id is not None:
+        markup += f' class="wp-image-{attachment_id}"'
+    markup += ">"
+    if caption:
+        markup += f"<figcaption>{html.escape(caption)}</figcaption>"
+    markup += "</figure>"
+    return _wrap("image", markup, attrs)
 
 
 def _table_markup(block: dict[str, Any]) -> str:
@@ -100,16 +162,7 @@ def render_block(block: dict[str, Any]) -> str:
     if block_type == "list":
         return _render_list(block)
     if block_type == "image":
-        attrs = {"id": block["image_id"]} if block.get("image_id") is not None else {}
-        alt = "" if block.get("decorative") else html.escape(str(block.get("alt", "")), quote=True)
-        markup = f'<figure class="wp-block-image"><img src="{image_src(block)}" alt="{alt}"'
-        if block.get("image_id") is not None:
-            markup += f' class="wp-image-{int(block["image_id"])}"'
-        markup += ">"
-        if block.get("caption"):
-            markup += f"<figcaption>{html.escape(str(block['caption']))}</figcaption>"
-        markup += "</figure>"
-        return _wrap("image", markup, attrs)
+        return _render_image(block)
     if block_type == "quote":
         return _wrap(
             "quote", f'<blockquote class="wp-block-quote"><p>{render_inline(block)}</p></blockquote>'

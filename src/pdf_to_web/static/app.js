@@ -314,6 +314,12 @@ exportForm?.addEventListener('submit', async (event) => {
     const projectPath = document.createElement('code');
     projectPath.textContent = data.project_root;
     location.append(projectPath);
+    const media = document.createElement('p');
+    if (data.media) {
+      const unresolved = document.createElement('strong');
+      unresolved.textContent = `${data.media.unresolved} image${data.media.unresolved === 1 ? '' : 's'} require upload.`;
+      media.append(unresolved, ` ${data.media.copied_assets} extracted asset${data.media.copied_assets === 1 ? '' : 's'} included.`);
+    }
     const files = document.createElement('ul');
     const downloads = data.downloads || data.files.map((path) => ({ path, url: `/download/${path.split('/').map(encodeURIComponent).join('/')}` }));
     downloads.forEach((file) => {
@@ -327,7 +333,7 @@ exportForm?.addEventListener('submit', async (event) => {
       item.append(link, document.createElement('br'), path);
       files.append(item);
     });
-    output.replaceChildren(heading, location, files);
+    output.replaceChildren(heading, location, ...(data.media ? [media] : []), files);
     announce('Export complete.');
   } catch (error) { output.textContent = error.message; announce(error.message); }
 });

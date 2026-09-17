@@ -51,6 +51,14 @@ validation never depends on network access.
 `validate-export-corpus` runs that gate for each immediate document-project
 folder and generates a corpus-level JSON and Markdown result matrix.
 
+WordPress exports distinguish local extracted assets from publishable media.
+Configured HTTP(S) URLs generate normal image blocks, with attachment IDs only
+when explicitly supplied. Unresolved meaningful images generate visible
+replacement placeholders instead of broken URLs. Their extracted files and
+metadata are written to `output/wordpress/assets/` and
+`output/wordpress/reports/media-manifest.{json,md}` for later Media Library
+mapping. Direct upload is intentionally outside the current scope.
+
 ## Local review application
 
 Launch the local review interface:

@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.2] - 2026-09-16
+
+### Added
+
+- WordPress exports copy extracted local images into
+  `output/wordpress/assets/` and generate JSON and Markdown media manifests.
+- Export results report unresolved image counts and provide downloads for
+  extracted assets and media manifests.
+- Normalized ordered lists retain decimal, alphabetic, and Roman marker style.
+
+### Fixed
+
+- Literal ordered-list prefixes are removed when source list semantics and
+  marker evidence agree, preventing duplicate markers in WordPress.
+- Gutenberg and WXR no longer emit local image paths as publishable URLs;
+  unresolved meaningful images use an editor-visible replacement placeholder.
+- Local Semantic and WordPress previews continue to render extracted images
+  without requiring WordPress media mappings.
+
 ## [0.5.1] - 2026-09-16
 
 ### Added

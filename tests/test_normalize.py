@@ -6,6 +6,7 @@ from unittest import mock
 
 from pdf_to_web.normalize import (
     _apply_link_annotations,
+    _clean_list_markers,
     _normalize_heading_hierarchy,
     _select_source_title,
     apply_readiness,
@@ -256,6 +257,39 @@ class NormalizeTests(unittest.TestCase):
         self.assertEqual(first["content"], "COVID-19")
         self.assertEqual(first["children"][0]["children"][0]["content"], "Boosters may be required.")
         self.assertEqual(second["content"], "Influenza")
+
+    def test_ordered_markers_are_removed_only_from_matching_semantic_lists(self):
+        raw = {
+            "kids": [
+                {"type": "list", "numbering style": "arabic numbers", "list items": [{"type": "list item", "content": "1. Main"}, {"type": "list item", "content": "2) Next"}]},
+                {"type": "list", "numbering style": "english letters", "list items": [{"type": "list item", "content": "a. Alpha"}, {"type": "list item", "content": "B) Upper"}]},
+                {"type": "list", "numbering style": "roman numbers", "list items": [{"type": "list item", "content": "i. Roman"}, {"type": "list item", "content": "II) Upper Roman"}]},
+                {"type": "paragraph", "content": "1. Ordinary numbered paragraph"},
+                {"type": "paragraph", "content": "A. Ordinary lettered paragraph"},
+            ]
+        }
+        document = normalize_document(raw)
+        self.assertEqual([item["content"] for item in document["blocks"][0]["children"]], ["Main", "Next"])
+        self.assertEqual([item["content"] for item in document["blocks"][1]["children"]], ["Alpha", "Upper"])
+        self.assertEqual([item["content"] for item in document["blocks"][2]["children"]], ["Roman", "Upper Roman"])
+        self.assertEqual(document["blocks"][0]["marker_style"], "decimal")
+        self.assertEqual(document["blocks"][1]["marker_style"], "upper-alpha")
+        self.assertEqual(document["blocks"][2]["marker_style"], "upper-roman")
+        self.assertEqual(document["blocks"][3]["content"], "1. Ordinary numbered paragraph")
+        self.assertEqual(document["blocks"][4]["content"], "A. Ordinary lettered paragraph")
+
+    def test_nested_ordered_lists_keep_style_paragraphs_and_links(self):
+        blocks = [{"type": "list", "ordered": True, "marker_style": "decimal", "children": [{"type": "list_item", "content": "1. Main", "runs": [{"type": "text", "text": "1. Visit "}, {"type": "link", "text": "WSU", "url": "https://wsu.edu"}], "children": [{"type": "paragraph", "content": "Explanation"}, {"type": "list", "ordered": True, "marker_style": "lower-alpha", "children": [{"type": "list_item", "content": "a. Substep", "children": [{"type": "list", "ordered": True, "marker_style": "lower-roman", "children": [{"type": "list_item", "content": "i. Detail", "children": []}]}]}]}]}]}]
+        _clean_list_markers(blocks)
+        main = blocks[0]["children"][0]
+        nested = main["children"][1]
+        roman = nested["children"][0]["children"][0]
+        self.assertEqual(main["content"], "Main")
+        self.assertEqual(main["runs"][0]["text"], "Visit ")
+        self.assertEqual(main["runs"][1], {"type": "link", "text": "WSU", "url": "https://wsu.edu"})
+        self.assertEqual(main["children"][0]["content"], "Explanation")
+        self.assertEqual(nested["children"][0]["content"], "Substep")
+        self.assertEqual(roman["children"][0]["content"], "Detail")
 
     def test_summary_flags_incomplete_page_coverage(self):
         document = normalize_document(

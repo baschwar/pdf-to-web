@@ -234,6 +234,25 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("Unsupported preview blocks", response.text)
         self.assertIn("default-src 'none'", response.headers["content-security-policy"])
 
+    def test_local_image_preview_and_export_media_summary(self):
+        self.bootstrap()
+        image_dir = self.project / "extraction" / "raw" / "images"
+        image_dir.mkdir(parents=True, exist_ok=True)
+        (image_dir / "screen.png").write_bytes(b"image-data")
+        document = json.loads(original_path(self.project).read_text())
+        document["blocks"].append({"id": "image", "type": "image", "src": "images/screen.png", "alt": "Login screen", "caption": "Sign in", "decorative": False, "provenance": {"source_page": 1}})
+        original_path(self.project).write_text(json.dumps(document))
+        semantic = self.client.get("/api/preview/html")
+        self.assertIn('src="images/screen.png"', semantic.text)
+        self.assertEqual(self.client.get("/api/preview/images/screen.png").status_code, 200)
+        with mock.patch("pdf_to_web.web.render_gutenberg_preview", return_value=WordPressPreview("<p>preview</p>", ("core/image",), ()) ) as render:
+            self.client.get("/api/preview/wordpress")
+        self.assertIn('src="/api/preview/images/screen.png"', render.call_args.args[0])
+        result = self.client.post("/api/export", headers=self.headers(), json={"target": "gutenberg", "profile": "generic", "post_type": "page"})
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json()["media"]["unresolved"], 1)
+        self.assertTrue(any(item["path"].endswith("media-manifest.md") for item in result.json()["downloads"]))
+
     def test_preview_page_has_distinct_sandboxed_modes(self):
         self.bootstrap()
         response = self.client.get("/preview")

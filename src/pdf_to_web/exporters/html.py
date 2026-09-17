@@ -8,6 +8,8 @@ from .common import image_src, is_excluded, is_footnote_body, render_footnotes_l
 
 def _list(block: dict[str, Any]) -> str:
     tag = "ol" if block.get("ordered") else "ul"
+    style_types = {"lower-alpha": "a", "upper-alpha": "A", "lower-roman": "i", "upper-roman": "I"}
+    type_attr = f' type="{style_types[block["marker_style"]]}"' if block.get("ordered") and block.get("marker_style") in style_types else ""
     items: list[str] = []
     for child in block.get("children", []):
         if is_excluded(child) or is_footnote_body(child):
@@ -19,7 +21,7 @@ def _list(block: dict[str, Any]) -> str:
             items.append(f"<li>{render_inline(child)}{nested}</li>")
         else:
             items.append(f"<li>{_block(child)}</li>")
-    return f"<{tag}>{''.join(items)}</{tag}>"
+    return f"<{tag}{type_attr}>{''.join(items)}</{tag}>"
 
 
 def _table(block: dict[str, Any]) -> str:
