@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.5.6] - 2026-09-17
+
+### Added
+
+- WordPress media exports include a single `media-upload.zip` and editable
+  `media-mapping.csv`, correlated by stable document block ID.
+- The Export screen imports a completed mapping CSV, validates WordPress URLs
+  and attachment IDs, and saves media mappings into the reviewed document.
+- Regenerated Gutenberg and WXR exports use mapped URLs, attachment IDs, alt
+  text, and captions in proper WordPress Image blocks.
+- `docs/FUTURE_FEATURES.md` records authenticated REST media upload and direct
+  draft publishing as deferred work.
+
+### Security
+
+- Manual media mapping remains entirely local and requires no WordPress
+  credentials or predicted upload paths.
+
 ## [0.5.5] - 2026-09-17
 
 ### Fixed

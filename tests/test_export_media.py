@@ -1,6 +1,8 @@
+import csv
 import json
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 from pdf_to_web.export import export_project
@@ -66,6 +68,13 @@ class WordPressMediaExportTests(unittest.TestCase):
             self.assertEqual(first["wordpress_status"], "unresolved")
             self.assertTrue((project / first["asset_path"]).is_file())
             self.assertTrue((project / "output" / "wordpress" / "reports" / "media-manifest.md").is_file())
+            mapping = project / "output" / "wordpress" / "reports" / "media-mapping.csv"
+            with mapping.open(encoding="utf-8", newline="") as stream:
+                rows = list(csv.DictReader(stream))
+            self.assertEqual({row["block_id"] for row in rows}, {"local-1", "local-2", "resolved-id", "resolved-url", "invalid-config"})
+            package = project / "output" / "wordpress" / "media-upload.zip"
+            with zipfile.ZipFile(package) as archive:
+                self.assertEqual(set(archive.namelist()), {"photo.png", "photo-2.png"})
 
     def test_wxr_never_serializes_local_image_paths(self):
         with tempfile.TemporaryDirectory() as directory:

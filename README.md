@@ -59,6 +59,19 @@ metadata are written to `output/wordpress/assets/` and
 `output/wordpress/reports/media-manifest.{json,md}` for later Media Library
 mapping. Direct upload is intentionally outside the current scope.
 
+For a credential-free Media Library workflow, export Gutenberg or WXR and use
+the generated `output/wordpress/media-upload.zip` plus
+`output/wordpress/reports/media-mapping.csv`. Upload the ZIP contents through
+WordPress, enter each resulting attachment ID and full media URL in the CSV,
+and import that CSV on PDF to Web's Export screen. The stable `block_id` column
+correlates each WordPress attachment with its source figure even when WordPress
+renames the uploaded file. Regenerate Gutenberg or WXR after import to replace
+the upload placeholders with proper Image blocks. Rows without a URL are left
+unresolved; decorative images are excluded from the upload package.
+
+Authenticated WordPress media upload and direct draft publishing are deferred
+in `docs/FUTURE_FEATURES.md`.
+
 ## Local review application
 
 Launch the local review interface:

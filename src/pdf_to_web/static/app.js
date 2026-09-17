@@ -338,4 +338,18 @@ exportForm?.addEventListener('submit', async (event) => {
   } catch (error) { output.textContent = error.message; announce(error.message); }
 });
 
+document.getElementById('media-mapping-form')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const output = document.getElementById('media-mapping-result');
+  const file = new FormData(event.currentTarget).get('mapping');
+  try {
+    if (!(file instanceof File)) throw new Error('Choose a media mapping CSV.');
+    const data = await api('/api/media-mapping', {
+      method: 'POST', headers: csrfHeaders(), body: JSON.stringify({ csv: await file.text() })
+    });
+    output.textContent = `${data.mapped} image mapping${data.mapped === 1 ? '' : 's'} imported. Regenerate the Gutenberg or WXR export.`;
+    announce(output.textContent);
+  } catch (error) { output.textContent = error.message; announce(error.message); }
+});
+
 document.documentElement.dataset.appReady = 'true';

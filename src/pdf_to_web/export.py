@@ -5,6 +5,7 @@ import filecmp
 import json
 import re
 import shutil
+import zipfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -13,6 +14,7 @@ from .errors import PdfToWebError
 from .exporters import gutenberg, html, markdown, wxr
 from .normalize import load_normalized
 from .project import load_project, slugify
+from .media_mapping import MAPPING_FIELDS
 
 
 def _walk(blocks: list[dict[str, Any]]):
@@ -122,6 +124,36 @@ def _write_media_manifest(project_dir: Path, document: dict[str, Any]) -> tuple[
         lines.append(f"| {values['asset_filename']} | {values['source_page']} | {values['block_id']} | {values['wordpress_status']} | {values['alt_text']} | {values['caption']} | {values['wordpress_url']} | {values['wordpress_attachment_id']} |")
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     outputs.extend([json_path, md_path])
+    mapping_path = reports_dir / "media-mapping.csv"
+    with mapping_path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=MAPPING_FIELDS)
+        writer.writeheader()
+        for item in entries:
+            if item["decorative"]:
+                continue
+            writer.writerow({
+                "block_id": item["block_id"],
+                "asset_filename": item["asset_filename"],
+                "wordpress_attachment_id": item["wordpress_attachment_id"] or "",
+                "wordpress_url": item["wordpress_url"] or "",
+                "alt_text": item["alt_text"],
+                "caption": item["caption"],
+            })
+    outputs.append(mapping_path)
+    upload_assets = sorted(
+        {
+            project_dir / str(item["asset_path"])
+            for item in entries
+            if not item["decorative"] and item["asset_path"]
+        },
+        key=lambda path: path.name.lower(),
+    )
+    if upload_assets:
+        zip_path = project_dir / "output" / "wordpress" / "media-upload.zip"
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for asset in upload_assets:
+                archive.write(asset, arcname=asset.name)
+        outputs.append(zip_path)
     return outputs, manifest
 
 

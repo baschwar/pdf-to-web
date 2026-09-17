@@ -24,6 +24,7 @@ from .exporters import gutenberg as gutenberg_exporter
 from .exporters import html as html_exporter
 from .extraction import run_extraction
 from .normalize import extraction_summary, normalize_project
+from .media_mapping import apply_media_mapping
 from .project import create_project, import_pdf, load_project, save_project, slugify
 from .recent_projects import (
     RecentProject,
@@ -425,6 +426,10 @@ def _export_page(model: dict[str, Any]) -> str:
 <label>WordPress profile<select name="profile"><option value="generic">Generic Gutenberg</option><option value="wsuwp">WSUWP</option></select></label>
 <label>Content type<select name="post_type"><option value="page">Page</option><option value="post">Post</option></select></label></div><label><input type="checkbox" name="wrap_in_section" value="true"> Wrap content in a WSU Section block</label><p>WordPress exports are created as Drafts.</p>
 <button type="submit">Export reviewed document</button><p class="blocked-export-note"{"" if blocked else " hidden"}>Conversion-blocked projects may export diagnostic HTML only.</p></form><div id="export-result" role="status" aria-live="polite"></div>'''
+    body += '''<section aria-labelledby="media-mapping-heading"><h2 id="media-mapping-heading">Media mapping</h2>
+<p>After uploading the exported images to WordPress, fill in the attachment IDs and URLs in <code>media-mapping.csv</code>, then import it here.</p>
+<form id="media-mapping-form"><label>Completed media mapping CSV<input type="file" name="mapping" accept=".csv,text/csv" required></label>
+<button type="submit">Import media mapping</button></form><div id="media-mapping-result" role="status" aria-live="polite"></div></section>'''
     return _page("Export", "export", body)
 
 
@@ -833,6 +838,19 @@ def create_app(config: WebAppConfig):
                 "media": media,
                 "review": ensure_review_document(current()).get("review", {}),
             }
+        except Exception as exc:
+            return error_response(exc)
+
+    @app.post("/api/media-mapping")
+    async def import_media_mapping(request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
+        require_change(request, session, csrf)
+        require_editable_document()
+        try:
+            data = await request.json()
+            csv_text = str(data.get("csv") or "")
+            if not csv_text or len(csv_text.encode("utf-8")) > 2_000_000:
+                raise ValueError("Choose a media mapping CSV smaller than 2 MB")
+            return {"status": "ok", **apply_media_mapping(current(), csv_text)}
         except Exception as exc:
             return error_response(exc)
 

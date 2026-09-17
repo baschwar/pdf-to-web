@@ -71,6 +71,7 @@ class WebAppTests(unittest.TestCase):
             self.assertIn(f"<h1>{heading}</h1>", response.text)
             self.assertIn("PDF to Web v", response.text)
         self.assertIn('name="wrap_in_section"', self.client.get("/export").text)
+        self.assertIn('id="media-mapping-form"', self.client.get("/export").text)
         placeholder = self.client.get("/api/preview/MEDIA_URL_REQUIRED")
         self.assertEqual(placeholder.status_code, 200)
         self.assertEqual(placeholder.headers["content-type"], "image/svg+xml")
@@ -252,6 +253,16 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(result.status_code, 200, result.text)
         self.assertEqual(result.json()["media"]["unresolved"], 1)
         self.assertTrue(any(item["path"].endswith("media-manifest.md") for item in result.json()["downloads"]))
+        self.assertTrue(any(item["path"].endswith("media-mapping.csv") for item in result.json()["downloads"]))
+        self.assertTrue(any(item["path"].endswith("media-upload.zip") for item in result.json()["downloads"]))
+        mapping = "block_id,asset_filename,wordpress_attachment_id,wordpress_url,alt_text,caption\nimage,screen.png,91,https://example.edu/uploads/screen.png,Updated alt,Updated caption\n"
+        imported = self.client.post("/api/media-mapping", headers=self.headers(), json={"csv": mapping})
+        self.assertEqual(imported.status_code, 200, imported.text)
+        self.assertEqual(imported.json()["mapped"], 1)
+        regenerated = self.client.post("/api/export", headers=self.headers(), json={"target": "gutenberg", "profile": "generic", "post_type": "page"})
+        markup = (self.project / regenerated.json()["files"][0]).read_text()
+        self.assertIn('src="https://example.edu/uploads/screen.png"', markup)
+        self.assertIn('class="wp-image-91"', markup)
 
     def test_preview_page_has_distinct_sandboxed_modes(self):
         self.bootstrap()
