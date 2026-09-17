@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.1] - 2026-09-16
+
+### Added
+
+- Completed exports provide browser download links while retaining their
+  project-relative output paths.
+
+### Security
+
+- Export downloads are confined to files inside the active document project's
+  `output` directory.
+
 ## [0.4.0] - 2026-09-16
 
 ### Added

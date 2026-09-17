@@ -205,8 +205,16 @@ class WebAppTests(unittest.TestCase):
                 extension = {"html": ".html", "gutenberg": ".html", "wordpress-xml": ".xml"}[target]
                 self.assertTrue(result.json()["files"][0].endswith(f"fixture{extension}"))
                 self.assertEqual(result.json()["project_root"], str(self.project.resolve()))
+                download = result.json()["downloads"][0]
+                self.assertEqual(download["path"], result.json()["files"][0])
+                downloaded = self.client.get(download["url"])
+                self.assertEqual(downloaded.status_code, 200)
+                self.assertIn("attachment", downloaded.headers["content-disposition"])
                 output = self.project / result.json()["files"][0]
                 self.assertIn("Reviewed export text", output.read_text())
+
+        self.assertEqual(self.client.get("/download/project.json").status_code, 404)
+        self.assertEqual(self.client.get("/download/output/missing.html").status_code, 404)
 
     def test_wordpress_preview_consumes_actual_gutenberg_output(self):
         self.bootstrap()

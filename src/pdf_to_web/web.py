@@ -14,7 +14,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from . import __version__
 from .errors import PdfToWebError
@@ -579,6 +579,17 @@ def create_app(config: WebAppConfig):
         require_session(session)
         return _export_page(document_model(current()))
 
+    @app.get("/download/{relative_path:path}")
+    async def download_export(relative_path: str, session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+        require_session(session)
+        relative = Path(relative_path)
+        if not relative.parts or relative.parts[0] != "output":
+            raise HTTPException(status_code=404, detail="Export file is unavailable")
+        path = safe_project_file(current(), relative_path)
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Export file is unavailable")
+        return FileResponse(path, filename=path.name, content_disposition_type="attachment")
+
     @app.get("/source.pdf")
     async def source_pdf(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
         require_session(session)
@@ -788,9 +799,14 @@ def create_app(config: WebAppConfig):
             project["export"]["wrap_in_section"] = str(data.get("wrap_in_section", "")).lower() == "true"
             save_project(current(), project)
             paths = export_project(current(), target, profile)
+            files = [str(path.relative_to(current())) for path in paths]
             return {
                 "status": "ok",
-                "files": [str(path.relative_to(current())) for path in paths],
+                "files": files,
+                "downloads": [
+                    {"path": path, "url": f"/download/{quote(path, safe='/')}"}
+                    for path in files
+                ],
                 "project_root": str(current()),
                 "review": ensure_review_document(current()).get("review", {}),
             }

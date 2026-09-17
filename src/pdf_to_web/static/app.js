@@ -315,11 +315,16 @@ exportForm?.addEventListener('submit', async (event) => {
     projectPath.textContent = data.project_root;
     location.append(projectPath);
     const files = document.createElement('ul');
-    data.files.forEach((file) => {
+    const downloads = data.downloads || data.files.map((path) => ({ path, url: `/download/${path.split('/').map(encodeURIComponent).join('/')}` }));
+    downloads.forEach((file) => {
       const item = document.createElement('li');
+      const link = document.createElement('a');
+      link.href = file.url;
+      link.download = '';
+      link.textContent = `Download ${file.path.split('/').pop()}`;
       const path = document.createElement('code');
-      path.textContent = file;
-      item.append(path);
+      path.textContent = file.path;
+      item.append(link, document.createElement('br'), path);
       files.append(item);
     });
     output.replaceChildren(heading, location, files);
