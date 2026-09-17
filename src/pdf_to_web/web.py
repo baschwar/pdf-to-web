@@ -790,6 +790,7 @@ def create_app(config: WebAppConfig):
             return {
                 "status": "ok",
                 "files": [str(path.relative_to(current())) for path in paths],
+                "project_root": str(current()),
                 "review": ensure_review_document(current()).get("review", {}),
             }
         except Exception as exc:

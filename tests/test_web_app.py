@@ -201,6 +201,9 @@ class WebAppTests(unittest.TestCase):
             with self.subTest(target=target):
                 result = self.client.post("/api/export", headers=self.headers(), json={"target": target, "profile": "generic", "post_type": "page"})
                 self.assertEqual(result.status_code, 200, result.text)
+                extension = {"html": ".html", "gutenberg": ".html", "wordpress-xml": ".xml"}[target]
+                self.assertTrue(result.json()["files"][0].endswith(f"fixture{extension}"))
+                self.assertEqual(result.json()["project_root"], str(self.project.resolve()))
                 output = self.project / result.json()["files"][0]
                 self.assertIn("Reviewed export text", output.read_text())
 

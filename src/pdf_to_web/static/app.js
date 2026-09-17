@@ -305,7 +305,24 @@ exportForm?.addEventListener('submit', async (event) => {
   try {
     const values = Object.fromEntries(new FormData(event.currentTarget));
     const data = await api('/api/export', { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(values) });
-    output.innerHTML = `<p><strong>Export complete.</strong></p><ul>${data.files.map((file) => `<li><code>${file}</code></li>`).join('')}</ul>`;
+    const heading = document.createElement('p');
+    const strong = document.createElement('strong');
+    strong.textContent = 'Export complete.';
+    heading.append(strong);
+    const location = document.createElement('p');
+    location.append('Project folder: ');
+    const projectPath = document.createElement('code');
+    projectPath.textContent = data.project_root;
+    location.append(projectPath);
+    const files = document.createElement('ul');
+    data.files.forEach((file) => {
+      const item = document.createElement('li');
+      const path = document.createElement('code');
+      path.textContent = file;
+      item.append(path);
+      files.append(item);
+    });
+    output.replaceChildren(heading, location, files);
     announce('Export complete.');
   } catch (error) { output.textContent = error.message; announce(error.message); }
 });

@@ -33,7 +33,9 @@ def _publication_item(
     }
 
 
-def _write_manifest(project_dir: Path, item: dict[str, Any], profile: str) -> None:
+def _write_manifest(
+    project_dir: Path, item: dict[str, Any], profile: str, output_slug: str
+) -> None:
     report_dir = project_dir / "output" / "reports"
     report_dir.mkdir(parents=True, exist_ok=True)
     manifest = {
@@ -44,8 +46,8 @@ def _write_manifest(project_dir: Path, item: dict[str, Any], profile: str) -> No
                 "slug": item["slug"],
                 "post_type": item["post_type"],
                 "status": item["status"],
-                "gutenberg_file": f"output/wordpress/blocks/{item['slug']}.html",
-                "wxr_file": f"output/wordpress/wxr/{item['slug']}.xml",
+                "gutenberg_file": f"output/wordpress/blocks/{output_slug}.html",
+                "wxr_file": f"output/wordpress/wxr/{output_slug}.xml",
                 "media_status": "mapping_required",
             }
         ],
@@ -79,23 +81,25 @@ def export_project(project_dir: Path, target: str, profile: str | None = None) -
 
     gutenberg_content = gutenberg.render_document(document, selected_profile, config)
     item = _publication_item(document, gutenberg_content, config)
+    source_filename = str(project.get("source", {}).get("original_filename") or "")
+    output_slug = slugify(Path(source_filename).stem) if source_filename else item["slug"]
     outputs: list[Path] = []
 
     if target in {"markdown", "all"}:
-        path = project_dir / "output" / "markdown" / f"{item['slug']}.md"
+        path = project_dir / "output" / "markdown" / f"{output_slug}.md"
         path.write_text(markdown.render_document(document), encoding="utf-8")
         outputs.append(path)
     if target in {"html", "all"}:
-        path = project_dir / "output" / "html" / f"{item['slug']}.html"
+        path = project_dir / "output" / "html" / f"{output_slug}.html"
         path.write_text(html.render_document(document), encoding="utf-8")
         outputs.append(path)
     if target in {"gutenberg", "all"}:
-        path = project_dir / "output" / "wordpress" / "blocks" / f"{item['slug']}.html"
+        path = project_dir / "output" / "wordpress" / "blocks" / f"{output_slug}.html"
         path.write_text(gutenberg_content, encoding="utf-8")
         outputs.append(path)
     if target in {"wordpress-xml", "all"}:
-        path = project_dir / "output" / "wordpress" / "wxr" / f"{item['slug']}.xml"
+        path = project_dir / "output" / "wordpress" / "wxr" / f"{output_slug}.xml"
         path.write_text(wxr.render_wxr([item]), encoding="utf-8")
         outputs.append(path)
-    _write_manifest(project_dir, item, selected_profile)
+    _write_manifest(project_dir, item, selected_profile, output_slug)
     return outputs

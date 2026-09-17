@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.5] - 2026-09-16
+
+### Changed
+
+- Export artifact filenames use the hyphenated original PDF filename.
+- Export results identify the absolute document-project folder containing the
+  displayed relative output paths.
+
 ## [0.3.4] - 2026-09-16
 
 ### Fixed
