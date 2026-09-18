@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.12] - 2026-09-18
+
+### Changed
+
+- Disabled buttons now use an opaque dark-text-on-light-gray treatment with
+  enhanced text, border, and adjacent-background contrast.
+
 ## [0.5.11] - 2026-09-18
 
 ### Changed

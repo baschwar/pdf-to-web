@@ -112,6 +112,7 @@ class WebAppTests(unittest.TestCase):
         self.assertIn(".reading-order-header { position: sticky; top: var(--app-header-height);", app_styles.text)
         self.assertIn(".source-pane { position: sticky; top: calc(var(--app-header-height) + 1rem);", app_styles.text)
         self.assertIn(".blocks-pane button { width: auto;", app_styles.text)
+        self.assertIn("button:disabled { opacity: 1; color: #4b5563; background: #e5e7eb; border-color: #6b7280; }", app_styles.text)
         self.assertIn(".block-status.status-approved { color: #166534; background: #dcfce7; }", app_styles.text)
         app_script = self.client.get("/static/app.js")
         self.assertIn("function navigateSourcePage(page)", app_script.text)
