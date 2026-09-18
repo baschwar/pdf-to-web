@@ -4,6 +4,7 @@
 
 ### Added
 
+- A public-safe Structure review screenshot in the GitHub README.
 - Finder and Windows desktop launchers for an already configured checkout.
 - Third-party dependency and OpenDataLoader attribution documentation.
 - Platform-specific setup and Windows support-status documentation.

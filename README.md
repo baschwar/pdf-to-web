@@ -15,6 +15,8 @@ hybrid or external AI processing. Phase 2 adds a local FastAPI/PicoCSS review
 application over the same normalized document model and exporters used by the
 CLI.
 
+![PDF to Web Structure screen showing a selected heading outlined in the source PDF beside its reading-order review controls](docs/images/structure-review.png)
+
 ## Development setup
 
 macOS or Linux:
