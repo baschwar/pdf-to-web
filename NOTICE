@@ -1,0 +1,9 @@
+PDF to Web
+Copyright 2026 Brad Schwartz
+
+This product uses OpenDataLoader PDF as a separately installed extraction
+dependency. OpenDataLoader PDF is Copyright 2025-2026 Hancom, Inc. and is
+licensed under the Apache License 2.0. Its source code and authoritative
+notices are available at:
+
+https://github.com/opendataloader-project/opendataloader-pdf

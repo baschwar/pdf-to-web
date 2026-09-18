@@ -9,7 +9,7 @@ The package supports the required `core/paragraph`, `core/heading`, `core/list`,
 `core/image`, `core/quote`, and `core/table` handlers, along with additional text,
 media, layout, widget, dynamic, and selected theme blocks.
 
-The integration uses Node.js 18.12 or newer. `sanitize-html` 2.17.7 is also MIT
+The integration uses Node.js 20.19 or newer. `sanitize-html` 2.17.7 is also MIT
 licensed and is pinned to the first release that resolves the advisories found
 during the integration spike. `npm audit --omit=dev` reports zero known
 vulnerabilities for the locked dependency tree.

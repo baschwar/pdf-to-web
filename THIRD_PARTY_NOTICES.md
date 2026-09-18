@@ -1,7 +1,7 @@
 # Third-party notices
 
-PDF to Web is an independent MIT-licensed project. It uses the following
-principal third-party software.
+PDF to Web is an independent Apache-2.0-licensed project. It uses the
+following principal third-party software.
 
 ## Extraction engine
 

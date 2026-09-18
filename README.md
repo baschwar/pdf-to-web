@@ -211,4 +211,6 @@ still requires the exact deployed WSU block versions.
 
 ## License
 
-PDF to Web is released under the [MIT License](LICENSE).
+PDF to Web is released under the [Apache License 2.0](LICENSE). See
+[NOTICE](NOTICE) and [Third-party notices](THIRD_PARTY_NOTICES.md) for
+attribution information.

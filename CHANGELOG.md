@@ -10,6 +10,8 @@
 
 ### Changed
 
+- The project license changed from MIT to Apache License 2.0 beginning with
+  this release. Previously published revisions remain available under MIT.
 - The optional WordPress Preview now reports its effective Node.js 20.19
   minimum consistently with the locked dependency tree.
 
