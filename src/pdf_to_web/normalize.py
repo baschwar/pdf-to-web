@@ -472,6 +472,19 @@ def _clean_list_markers(blocks: list[dict[str, Any]]) -> None:
                 if source_style:
                     style = source_style
                     block["marker_style"] = source_style
+            first_item = next((child for child in children if child.get("type") == "list_item"), None)
+            if ordered and first_item is not None:
+                original_marker_text = str(
+                    first_item.get("provenance", {}).get("raw", {}).get("content")
+                    or first_item.get("content", "")
+                )
+                first_marker = ORDERED_MARKER_RE.match(original_marker_text)
+                if first_marker and first_marker.group("marker").isdigit():
+                    start = int(first_marker.group("marker"))
+                    if start == 1:
+                        block.pop("start", None)
+                    else:
+                        block["start"] = start
             for child in children:
                 if child.get("type") != "list_item":
                     continue

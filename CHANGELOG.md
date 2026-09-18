@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.19] - 2026-09-18
+
+### Fixed
+
+- Decimal ordered-list fragments and continuations now recover their actual
+  starting number from the first source list item's original marker.
+
 ## [0.5.18] - 2026-09-18
 
 ### Changed

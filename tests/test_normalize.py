@@ -57,6 +57,17 @@ class NormalizeTests(unittest.TestCase):
         self.assertEqual(len(document["blocks"]), 1)
         self.assertEqual(document["blocks"][0]["children"][0]["children"][0]["id"], "details")
 
+    def test_decimal_list_start_comes_from_original_first_item_marker(self):
+        blocks = [{
+            "id": "continued", "type": "list", "ordered": True, "marker_style": "decimal", "start": 2,
+            "children": [
+                {"id": "six", "type": "list_item", "content": "Step six", "children": [], "provenance": {"raw": {"content": "6. Step six"}}},
+            ],
+        }]
+        _clean_list_markers(blocks)
+        self.assertEqual(blocks[0]["start"], 6)
+        self.assertEqual(blocks[0]["children"][0]["content"], "Step six")
+
     @mock.patch(
         "pdf_to_web.normalize.recover_source_supplemental_regions",
         return_value={
