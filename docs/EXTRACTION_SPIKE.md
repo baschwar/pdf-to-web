@@ -81,7 +81,7 @@ prose, tables, posters, an infographic, and screenshot-heavy instructions. All
 | PDF | Heuristic result | Structure-tree result | Local assets |
 | --- | --- | --- | ---: |
 | Vaccination admission policy | 97.5% text recovery | 98.9% text recovery | 1 |
-| Forrest practicum poster | 100.3% recovery; review-ready baseline | Same output as heuristic | 0 |
+| QPR practicum poster | 100.3% recovery; review-ready baseline | Same output as heuristic | 0 |
 | CITI instructions | 96.4% text recovery | 97.9% text recovery | 21 |
 | Heart-failure infographic | 65.8% recovery; needs review | 17.1% recovery; conversion blocked | 19 |
 | Four-year sample program | 92.6% recovery; review-ready baseline | 93.4% recovery; review-ready baseline | 1 |

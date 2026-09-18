@@ -18,9 +18,9 @@ It calls the production exporters and does not reimplement serialization.
 | Document | Text | Lists | Tables | Links | Footnotes | Images | Furniture | Title | Columns | Complex visual |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Vaccination Admission Policy | Yes | Yes | No | Yes | Yes | Logo | Yes | Yes | No | No |
-| NURS 495 Practicum, Forrest | Yes | Yes | No | Yes | No | Yes | Yes | Yes | Yes | Yes |
+| NURS 495 QPR practicum project | Yes | Yes | No | Yes | No | Yes | Yes | Yes | Yes | Yes |
 | CITI Training Instructions | Yes | Yes | No | Yes | No | Yes | Yes | Yes | No | No |
-| NURS 495 Practicum, Kawanishi | Yes | Yes | No | Yes | No | Yes | Yes | Yes | Yes | Yes |
+| NURS 495 heart-failure practicum project | Yes | Yes | No | Yes | No | Yes | Yes | Yes | Yes | Yes |
 | Baccalaureate to PhD sample program | Yes | No | Yes | No | No | No | Yes | Yes | No | No |
 | Bloodborne Pathogen Training | Yes | Yes | No | Yes | No | Yes | Yes | Yes | No | No |
 

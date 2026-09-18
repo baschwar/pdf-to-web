@@ -54,7 +54,7 @@ to be exposed on a LAN or public interface.
 ## Real corpus findings
 
 - The policy document was a useful straightforward text and list case.
-- The Forrest research poster made reading order and full-page source context
+- The QPR research poster made reading order and full-page source context
   especially important.
 - The four-year sample program contained multiple real tables; compact table
   inspection is useful, while editing them as ordinary text would be unsafe.

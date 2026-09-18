@@ -9,6 +9,11 @@ build/
 dist/
 sample_files/
 sample_runs/
-build/
 tools/wordpress-roundtrip/node_modules/
 node_modules/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12

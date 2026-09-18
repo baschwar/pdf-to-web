@@ -13,7 +13,7 @@ CLI.
 ## Development setup
 
 ```sh
-cd /Users/bradschwartz/Documents/Codex/pdf-to-web
+cd pdf-to-web
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -e '.[test]'
@@ -161,3 +161,7 @@ editor, media sideloading, direct publishing, or a claim of automated WCAG
 conformance. The Phase 1B fixtures have been imported, edited, saved, and
 reopened in an isolated local WordPress instance. Production WSUWP compatibility
 still requires the exact deployed WSU block versions.
+
+## License
+
+PDF to Web is released under the [MIT License](LICENSE).
