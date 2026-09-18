@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.8] - 2026-09-18
+
+### Added
+
+- HTML export results now include a **Copy HTML** action beside the download
+  link, with clipboard fallback and accessible success or failure feedback.
+
 ## [0.5.7] - 2026-09-17
 
 ### Added

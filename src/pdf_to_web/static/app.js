@@ -299,6 +299,25 @@ function updateExportAvailability() {
 exportForm?.querySelector('[name="target"]')?.addEventListener('change', updateExportAvailability);
 updateExportAvailability();
 
+async function copyExportHtml(file) {
+  const response = await fetch(file.url);
+  if (!response.ok) throw new Error('Could not read the exported HTML file.');
+  const content = await response.text();
+  try {
+    await navigator.clipboard.writeText(content);
+  } catch (error) {
+    const field = document.createElement('textarea');
+    field.value = content;
+    field.className = 'visually-hidden';
+    field.setAttribute('readonly', '');
+    document.body.append(field);
+    field.select();
+    const copied = document.execCommand('copy');
+    field.remove();
+    if (!copied) throw error;
+  }
+}
+
 exportForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const output = document.getElementById('export-result');
@@ -328,9 +347,30 @@ exportForm?.addEventListener('submit', async (event) => {
       link.href = file.url;
       link.download = '';
       link.textContent = `Download ${file.path.split('/').pop()}`;
+      const actions = document.createElement('span');
+      actions.className = 'export-file-actions';
+      actions.append(link);
+      if (/\.html$/i.test(file.path)) {
+        const copyButton = document.createElement('button');
+        copyButton.type = 'button';
+        copyButton.className = 'secondary';
+        copyButton.textContent = 'Copy HTML';
+        copyButton.setAttribute('aria-label', `Copy ${file.path.split('/').pop()} HTML to clipboard`);
+        copyButton.addEventListener('click', async () => {
+          try {
+            await copyExportHtml(file);
+            copyButton.textContent = 'Copied';
+            announce('Exported HTML copied to clipboard.');
+          } catch (error) {
+            copyButton.textContent = 'Copy failed';
+            announce(error.message || 'Could not copy the exported HTML.');
+          }
+        });
+        actions.append(copyButton);
+      }
       const path = document.createElement('code');
       path.textContent = file.path;
-      item.append(link, document.createElement('br'), path);
+      item.append(actions, document.createElement('br'), path);
       files.append(item);
     });
     output.replaceChildren(heading, location, ...(data.media ? [media] : []), files);
