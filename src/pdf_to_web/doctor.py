@@ -72,6 +72,15 @@ def java_environment() -> dict[str, str]:
     return env
 
 
+def node_version_supported(version: str | None) -> bool:
+    if not version:
+        return False
+    parts = version.split(".")
+    if len(parts) < 2 or not parts[0].isdigit() or not parts[1].isdigit():
+        return False
+    return (int(parts[0]), int(parts[1])) >= (20, 19)
+
+
 def run_checks(project_dir: Path | None = None) -> list[Check]:
     checks: list[Check] = []
     version = sys.version_info
@@ -133,9 +142,7 @@ def run_checks(project_dir: Path | None = None) -> list[Check]:
             node_version = result.stdout.strip().lstrip("v")
         except (OSError, subprocess.SubprocessError):
             pass
-    node_major_text = node_version.split(".", 1)[0] if node_version else ""
-    node_major = int(node_major_text) if node_major_text.isdigit() else 0
-    wordpress_preview_ok = node_major >= 18 and preview_available()
+    wordpress_preview_ok = node_version_supported(node_version) and preview_available()
     checks.append(
         Check(
             "WordPress Preview",
@@ -145,7 +152,7 @@ def run_checks(project_dir: Path | None = None) -> list[Check]:
             else "optional local Gutenberg preview dependencies are unavailable",
             None
             if wordpress_preview_ok
-            else "Install Node.js 18.12 or newer and run npm install. Semantic Preview remains available.",
+            else "Install Node.js 20.19 or newer and run npm install. Semantic Preview remains available.",
         )
     )
 

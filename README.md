@@ -2,8 +2,13 @@
 
 PDF to Web is a local-first conversion tool that turns PDF publications into a
 reviewable normalized document, semantic HTML, Gutenberg block markup, and
-WordPress WXR/XML. OpenDataLoader PDF is the extraction engine. The normalized
-document remains independent of OpenDataLoader and every export format.
+WordPress WXR/XML. [OpenDataLoader PDF](https://github.com/opendataloader-project/opendataloader-pdf)
+is the Apache-2.0-licensed extraction engine on which this project builds. PDF
+to Web adds its own normalized document model, review workflow, source-aware
+editing, validation, and web and WordPress exporters; it is not a fork of
+OpenDataLoader. The normalized document remains independent of the extraction
+engine and every export format. See [Third-party notices](THIRD_PARTY_NOTICES.md)
+for the principal runtime and bundled dependencies.
 
 Extraction uses deterministic local processing and never enables OpenDataLoader
 hybrid or external AI processing. Phase 2 adds a local FastAPI/PicoCSS review
@@ -11,6 +16,8 @@ application over the same normalized document model and exporters used by the
 CLI.
 
 ## Development setup
+
+macOS or Linux:
 
 ```sh
 cd pdf-to-web
@@ -21,9 +28,49 @@ npm install
 pdf-to-web doctor
 ```
 
+Windows PowerShell:
+
+```powershell
+cd pdf-to-web
+py -3.12 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -e ".[test]"
+npm install
+pdf-to-web doctor
+```
+
 OpenDataLoader requires Python 3.10 or newer and Java 11 or newer. The doctor
 command checks both and looks for common Homebrew Java installations when the
 default `java` command is too old.
+
+Poppler's `pdfinfo` and `pdftoppm` commands are also required for source-page
+rendering. Node.js 20.19 or newer and `npm install` are required only for the
+WordPress Preview; Semantic Preview and the other Python workflows do not need
+Node.js.
+
+### Desktop launchers
+
+After completing development setup once, macOS users can double-click
+`Launch PDF to Web.command` in Finder. If macOS blocks the first launch,
+Control-click the file, choose **Open**, and approve it. Windows users can
+double-click `Launch PDF to Web.bat` after setup. Both launchers use the local
+`.venv` and run the same `pdf-to-web serve` command documented below.
+
+The launchers intentionally report missing setup rather than installing
+software or changing the computer automatically.
+
+### Platform support
+
+The application is developed and manually tested on macOS. Its Python paths,
+local configuration, browser startup, and native file chooser have Windows and
+Linux implementations, and OpenDataLoader supports Windows when Java is on
+`PATH`. Windows also requires Python 3.10+, Java 11+, and Poppler utilities on
+`PATH`; Node.js is optional as described above.
+
+Windows should currently be treated as **supported but not yet validated**:
+the automated suite has not been run on a Windows host and there is not yet a
+Windows CI job. Please report platform-specific installation or file-picker
+issues in GitHub Issues.
 
 ## Extraction spike workflow
 
@@ -109,7 +156,7 @@ and last-opened timestamp. On macOS it is stored at
 The app does not scan the filesystem for projects.
 
 The Semantic HTML preview uses only Python dependencies. The optional WordPress
-Preview additionally requires Node.js 18.12 or newer and the local packages
+Preview additionally requires Node.js 20.19 or newer and the local packages
 installed by `npm install`; it never requires WordPress, PHP, MySQL, Docker, or
 an external service. See `docs/GUTENBERG_PREVIEW.md` for its compatibility and
 security boundaries.

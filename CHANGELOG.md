@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Finder and Windows desktop launchers for an already configured checkout.
+- Third-party dependency and OpenDataLoader attribution documentation.
+- Platform-specific setup and Windows support-status documentation.
+
+### Changed
+
+- The optional WordPress Preview now reports its effective Node.js 20.19
+  minimum consistently with the locked dependency tree.
+
 ## [0.5.19] - 2026-09-18
 
 ### Fixed

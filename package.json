@@ -3,7 +3,7 @@
   "private": true,
   "description": "Optional local Gutenberg preview dependencies for PDF to Web",
   "engines": {
-    "node": ">=18.12.0"
+    "node": ">=20.19.0"
   },
   "dependencies": {
     "sanitize-html": "2.17.7",
