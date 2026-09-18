@@ -32,6 +32,7 @@ def _list_markup(block: dict[str, Any]) -> str:
     tag = "ol" if ordered else "ul"
     style_types = {"lower-alpha": "a", "upper-alpha": "A", "lower-roman": "i", "upper-roman": "I"}
     type_attr = f' type="{style_types[block["marker_style"]]}"' if ordered and block.get("marker_style") in style_types else ""
+    start_attr = f' start="{int(block["start"])}"' if ordered and int(block.get("start", 1)) != 1 else ""
     items: list[str] = []
     for child in block.get("children", []):
         if is_excluded(child) or is_footnote_body(child):
@@ -50,7 +51,7 @@ def _list_markup(block: dict[str, Any]) -> str:
                 nested_parts.append(html.escape(str(item.get("content", ""))))
         nested = "".join(nested_parts)
         items.append(f"<li>{render_inline(child)}{nested}</li>")
-    return f'<{tag}{type_attr} class="wp-block-list">{"".join(items)}</{tag}>'
+    return f'<{tag}{type_attr}{start_attr} class="wp-block-list">{"".join(items)}</{tag}>'
 
 
 def _render_list(block: dict[str, Any]) -> str:
@@ -58,6 +59,8 @@ def _render_list(block: dict[str, Any]) -> str:
     style_types = {"lower-alpha": "a", "upper-alpha": "A", "lower-roman": "i", "upper-roman": "I"}
     if block.get("ordered") and block.get("marker_style") in style_types:
         attrs["type"] = style_types[block["marker_style"]]
+    if block.get("ordered") and int(block.get("start", 1)) != 1:
+        attrs["start"] = int(block["start"])
     return _wrap("list", _list_markup(block), attrs)
 
 

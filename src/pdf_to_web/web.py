@@ -334,9 +334,15 @@ def _source_regions(block: dict[str, Any]) -> list[list[float]]:
     provenance = block.get("provenance", {})
     page = provenance.get("source_page")
     if block.get("type") == "list":
+        descendants = []
+        stack = list(block.get("children", []))
+        while stack:
+            child = stack.pop(0)
+            descendants.append(child)
+            stack[0:0] = child.get("children", [])
         regions = [
             child.get("provenance", {}).get("bounding_box")
-            for child in block.get("children", [])
+            for child in descendants
             if child.get("type") == "list_item"
             and child.get("provenance", {}).get("source_page") == page
             and isinstance(child.get("provenance", {}).get("bounding_box"), list)

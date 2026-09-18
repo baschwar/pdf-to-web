@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.16] - 2026-09-18
+
+### Fixed
+
+- Lists interrupted by a screenshot are split into correctly ordered list,
+  image, and continued-list blocks while preserving the continued item number.
+- Empty text wrappers that duplicate an image region are removed.
+- Selecting a list now outlines nested list items as well as top-level items.
+
 ## [0.5.15] - 2026-09-18
 
 ### Added

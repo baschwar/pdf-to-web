@@ -72,10 +72,11 @@ def ensure_review_document(project_dir: Path) -> dict[str, Any]:
     path = review_path(project_dir)
     if path.is_file():
         document = _read_document(path)
-        from .normalize import _clean_list_markers, apply_source_supplemental_regions, apply_source_title, reconcile_visual_reading_order
+        from .normalize import _clean_list_markers, apply_source_supplemental_regions, apply_source_title, reconcile_visual_reading_order, repair_interleaved_images
 
         changed = apply_source_title(document, project_dir)
         changed = apply_source_supplemental_regions(document, project_dir) or changed
+        changed = repair_interleaved_images(document) or changed
         session = document.get("review_session", {})
         if not session.get("manual_order_override") and int(session.get("revision", 0)) == 0:
             changed = reconcile_visual_reading_order(document) or changed

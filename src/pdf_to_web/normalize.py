@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import re
 from collections import Counter
@@ -218,6 +219,90 @@ def _mark_visual_order(block: dict[str, Any], visual_order: int, confidence: flo
     provenance["visual_order"] = visual_order
     provenance["visual_order_reason"] = "heading_table_association"
     provenance["visual_order_confidence"] = confidence
+
+
+def _descendant_bbox(block: dict[str, Any]) -> list[float] | None:
+    boxes = [_geometry(item) for item in [block, *_flatten(block.get("children", []))]]
+    valid = [box for box in boxes if box]
+    if not valid:
+        return None
+    return [min(box[0] for box in valid), min(box[1] for box in valid), max(box[2] for box in valid), max(box[3] for box in valid)]
+
+
+def _same_image_region(first: dict[str, Any], second: dict[str, Any]) -> bool:
+    first_box, second_box = _geometry(first), _geometry(second)
+    if not first_box or not second_box:
+        return False
+    if first.get("provenance", {}).get("source_page") != second.get("provenance", {}).get("source_page"):
+        return False
+    intersection = max(0.0, min(first_box[2], second_box[2]) - max(first_box[0], second_box[0])) * max(0.0, min(first_box[3], second_box[3]) - max(first_box[1], second_box[1]))
+    smaller = min((first_box[2] - first_box[0]) * (first_box[3] - first_box[1]), (second_box[2] - second_box[0]) * (second_box[3] - second_box[1]))
+    return bool(smaller and intersection / smaller >= 0.95)
+
+
+def repair_interleaved_images(document: dict[str, Any]) -> bool:
+    """Remove image wrappers and split lists only at clear image boundaries."""
+    state = document.get("reading_order", {})
+    if state.get("interleaved_image_repair_version") == 1:
+        return False
+    blocks = document.get("blocks", [])
+    changed = False
+
+    images = [block for block in blocks if block.get("type") == "image"]
+    wrappers = [
+        block for block in blocks
+        if block.get("type") == "paragraph"
+        and not str(block.get("content") or "").strip()
+        and any(_same_image_region(block, image) for image in images)
+    ]
+    if wrappers:
+        blocks[:] = [block for block in blocks if block not in wrappers]
+        changed = True
+
+    while True:
+        repaired = False
+        for list_block in list(blocks):
+            children = list_block.get("children", [])
+            if list_block.get("type") != "list" or len(children) < 2:
+                continue
+            page = list_block.get("provenance", {}).get("source_page")
+            for image in [block for block in blocks if block.get("type") == "image" and block.get("provenance", {}).get("source_page") == page]:
+                image_box = _geometry(image)
+                if not image_box:
+                    continue
+                split_at = next((
+                    index for index in range(1, len(children))
+                    if (above := _geometry(children[index - 1]))
+                    and (below := _geometry(children[index]))
+                    and above[1] >= image_box[3] - 4
+                    and below[3] <= image_box[1] + 4
+                ), None)
+                if split_at is None:
+                    continue
+                continuation = copy.deepcopy(list_block)
+                continuation["id"] = f'{list_block.get("id")}-continuation-{split_at + int(list_block.get("start", 1))}'
+                continuation["children"] = children[split_at:]
+                if continuation.get("ordered"):
+                    continuation["start"] = int(list_block.get("start", 1)) + split_at
+                continuation.setdefault("normalization", {})["split_around_image"] = image.get("id")
+                list_block["children"] = children[:split_at]
+                list_block.setdefault("normalization", {})["split_around_image"] = image.get("id")
+                for item in (list_block, continuation):
+                    bbox = _descendant_bbox(item)
+                    if bbox:
+                        item.setdefault("provenance", {})["bounding_box"] = bbox
+                blocks.remove(image)
+                insertion = blocks.index(list_block)
+                blocks[insertion:insertion + 1] = [list_block, image, continuation]
+                changed = repaired = True
+                break
+            if repaired:
+                break
+        if not repaired:
+            break
+    if changed:
+        document.setdefault("reading_order", {})["interleaved_image_repair_version"] = 1
+    return changed
 
 
 def reconcile_visual_reading_order(document: dict[str, Any]) -> bool:
@@ -843,6 +928,7 @@ def normalize_document(raw: dict[str, Any]) -> dict[str, Any]:
         "blocks": _walk(item for item in elements if isinstance(item, dict)),
     }
     _clean_list_markers(document["blocks"])
+    repair_interleaved_images(document)
     reconcile_visual_reading_order(document)
     _associate_image_captions(document["blocks"])
     _extract_footnotes(document)

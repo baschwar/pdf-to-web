@@ -42,6 +42,11 @@ class GutenbergTests(unittest.TestCase):
         self.assertNotIn('"type":"decimal"', output)
         self.assertNotIn('"type":"lower-alpha"', output)
 
+    def test_ordered_list_continuation_preserves_start(self):
+        output = render_document({"blocks": [{"type": "list", "ordered": True, "start": 3, "children": [{"type": "list_item", "content": "Three"}]}]})
+        self.assertIn('<!-- wp:list {"ordered":true,"start":3} -->', output)
+        self.assertIn('<ol start="3" class="wp-block-list">', output)
+
     def test_empty_paragraphs_are_not_exported_as_editor_spacers(self):
         output = render_document({"blocks": [{"type": "paragraph", "content": "  "}]})
         self.assertEqual(output, "\n")

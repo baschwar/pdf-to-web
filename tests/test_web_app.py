@@ -71,6 +71,18 @@ class WebAppTests(unittest.TestCase):
         }
         self.assertEqual(_source_regions(block), [[54, 700, 473, 739], [54, 466, 336, 477]])
 
+    def test_list_source_regions_include_nested_items(self):
+        block = {
+            "type": "list",
+            "provenance": {"source_page": 1, "bounding_box": [54, 500, 500, 700]},
+            "children": [{"type": "list_item", "provenance": {"source_page": 1, "bounding_box": [54, 680, 400, 700]}, "children": [
+                {"type": "list", "provenance": {"source_page": 1}, "children": [
+                    {"type": "list_item", "provenance": {"source_page": 1, "bounding_box": [90, 640, 400, 655]}}
+                ]}
+            ]}],
+        }
+        self.assertEqual(_source_regions(block), [[54, 680, 400, 700], [90, 640, 400, 655]])
+
     def test_startup_bootstrap_and_pages(self):
         self.assertEqual(self.client.get("/api/health").status_code, 200)
         self.assertEqual(self.client.get("/").status_code, 401)

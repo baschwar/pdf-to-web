@@ -15,10 +15,31 @@ from pdf_to_web.normalize import (
     extraction_summary,
     normalize_document,
     reconcile_visual_reading_order,
+    repair_interleaved_images,
 )
 
 
 class NormalizeTests(unittest.TestCase):
+    def test_interleaved_image_splits_list_and_removes_empty_wrapper(self):
+        def provenance(bbox):
+            return {"source_page": 1, "bounding_box": bbox}
+
+        nested = {"id": "nested", "type": "list", "ordered": True, "marker_style": "lower-alpha", "children": [{"id": "a", "type": "list_item", "content": "Nested", "provenance": provenance([90, 610, 300, 622])}], "provenance": provenance([90, 610, 300, 622])}
+        document = {"blocks": [
+            {"id": "steps", "type": "list", "ordered": True, "marker_style": "decimal", "children": [
+                {"id": "one", "type": "list_item", "content": "One", "children": [nested], "provenance": provenance([54, 640, 400, 675])},
+                {"id": "two", "type": "list_item", "content": "Two", "provenance": provenance([54, 500, 400, 512])},
+                {"id": "three", "type": "list_item", "content": "Three", "provenance": provenance([54, 240, 300, 252])},
+            ], "provenance": provenance([54, 240, 500, 675])},
+            {"id": "wrapper", "type": "paragraph", "content": "", "provenance": provenance([53, 268, 343, 491])},
+            {"id": "screen", "type": "image", "src": "images/screen.png", "provenance": provenance([54, 269, 342, 490])},
+        ]}
+        self.assertTrue(repair_interleaved_images(document))
+        self.assertEqual([block["id"] for block in document["blocks"]], ["steps", "screen", "steps-continuation-3"])
+        self.assertEqual([item["id"] for item in document["blocks"][0]["children"]], ["one", "two"])
+        self.assertEqual(document["blocks"][2]["start"], 3)
+        self.assertFalse(repair_interleaved_images(document))
+
     @mock.patch(
         "pdf_to_web.normalize.recover_source_supplemental_regions",
         return_value={
