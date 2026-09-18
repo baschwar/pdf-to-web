@@ -66,13 +66,14 @@ async function showSourcePage(page, card = selectedSourceCard) {
   const pane = document.querySelector('.source-pane');
   if (!pane) return;
   const pageCount = Number(pane.dataset.pageCount || 1);
+  const sourceKey = encodeURIComponent(pane.dataset.sourceKey || 'source');
   const requestedPage = Math.max(1, Math.min(pageCount, Number(page) || 1));
   document.querySelectorAll('.block-card').forEach((item) => item.classList.toggle('source-selected', item === card));
   const sourceImage = document.getElementById('source-image');
-  sourceImage.src = `/source-page/${requestedPage}.png`;
+  sourceImage.src = `/source-page/${requestedPage}.png?v=${sourceKey}`;
   sourceImage.alt = `Rendered source PDF page ${requestedPage}`;
   const sourceLink = document.getElementById('open-source-page');
-  sourceLink.href = `/source.pdf#page=${requestedPage}`;
+  sourceLink.href = `/source.pdf?v=${sourceKey}#page=${requestedPage}`;
   sourceLink.textContent = `Open source PDF page ${requestedPage}`;
   const pageNumber = document.getElementById('source-page-number');
   pageNumber.value = requestedPage;

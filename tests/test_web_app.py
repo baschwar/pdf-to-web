@@ -81,6 +81,7 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(source.status_code, 200)
         self.assertIn("inline", source.headers["content-disposition"])
         self.assertIn("fixture.pdf", source.headers["content-disposition"])
+        self.assertEqual(source.headers["cache-control"], "private, no-store")
 
     @mock.patch("pdf_to_web.web.source_page_size", return_value=(612.0, 792.0))
     def test_structure_exposes_source_region_and_page_dimensions(self, page_size):
@@ -95,6 +96,8 @@ class WebAppTests(unittest.TestCase):
         self.assertIn('id="source-page-number" type="number" min="1" max="2" value="1"', response.text)
         self.assertIn('id="source-page-next"', response.text)
         self.assertIn('data-page-count="2"', response.text)
+        self.assertRegex(response.text, r'data-source-key="[0-9a-f]{16}"')
+        self.assertRegex(response.text, r'src="/source-page/1\.png\?v=[0-9a-f]{16}"')
         self.assertIn('aria-label="Move block 1 to start" disabled', response.text)
         self.assertIn('aria-label="Move block 1 up" disabled', response.text)
         self.assertIn('aria-label="Move block 3 to end" disabled', response.text)
@@ -109,6 +112,7 @@ class WebAppTests(unittest.TestCase):
         self.assertIn(".block-status.status-approved { color: #166534; background: #dcfce7; }", app_styles.text)
         app_script = self.client.get("/static/app.js")
         self.assertIn("function navigateSourcePage(page)", app_script.text)
+        self.assertIn("sourceImage.src = `/source-page/${requestedPage}.png?v=${sourceKey}`", app_script.text)
         self.assertIn("firstCard = blockCards().find", app_script.text)
         self.assertIn("else delete values.level", app_script.text)
         self.assertIn("querySelector('select').disabled", app_script.text)

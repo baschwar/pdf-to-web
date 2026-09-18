@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import copy
+import hashlib
 import json
 import os
 import secrets
@@ -231,12 +232,20 @@ def document_model(project_dir: Path) -> dict[str, Any]:
     summary = extraction_summary(document)
     blocks = list(_walk(document.get("blocks", [])))
     counts = Counter(str(block.get("type", "unknown")) for block in blocks)
+    source = project_dir / str(project.get("source", {}).get("path") or "")
+    try:
+        source_stat = source.stat()
+        source_identity = f"{project_dir.resolve()}\0{source.resolve()}\0{source_stat.st_mtime_ns}\0{source_stat.st_size}"
+    except OSError:
+        source_identity = str(project_dir.resolve())
+    source_preview_key = hashlib.sha256(source_identity.encode("utf-8")).hexdigest()[:16]
     return {
         "project": project,
         "document": document,
         "summary": summary,
         "counts": dict(counts),
         "progress": review_progress(document),
+        "source_preview_key": source_preview_key,
     }
 
 
@@ -388,11 +397,12 @@ def _structure_page(model: dict[str, Any]) -> str:
     progress = model["progress"]
     blocks = document.get("blocks", [])
     page_count = int(model["project"].get("source", {}).get("page_count") or 1)
+    source_preview_key = html.escape(str(model["source_preview_key"]), quote=True)
     cards = "".join(_block_card(block, index, total=len(blocks), can_edit=can_edit) for index, block in enumerate(blocks, 1))
     visuals = "".join(_complex_visual_card(visual, can_edit=can_edit) for visual in document.get("review", {}).get("complex_visuals", []))
     body = f'''<h1>Structure</h1>{_status_banner(status, document.get("review", {}).get("issues", [])) if not can_edit else ''}<div class="review-toolbar"><p><strong>{_status_label(status)}</strong> · Reviewed {progress['reviewed']} / {progress['total']}</p>{'<button id="undo-action" type="button" class="secondary">Undo last action</button>' if can_edit else ''}</div>
 {f'<section class="complex-warning" aria-labelledby="complex-heading"><h2 id="complex-heading">Complex visuals</h2>{visuals}</section>' if visuals else ''}
-<div class="structure-layout"><section class="source-pane" aria-labelledby="source-heading" data-page-count="{page_count}"><h2 id="source-heading">Source page</h2><form id="source-page-controls" class="source-page-controls"><button id="source-page-previous" type="button" class="secondary" disabled aria-label="Previous source page">Previous</button><label>Page <input id="source-page-number" type="number" min="1" max="{page_count}" value="1" inputmode="numeric" aria-describedby="source-page-total"></label><span id="source-page-total">of {page_count}</span><button id="source-page-next" type="button" class="secondary"{(' disabled' if page_count <= 1 else '')} aria-label="Next source page">Next</button></form><p id="source-page-label" aria-live="polite">Select a block to view and outline its source region.</p><div class="source-image-stage"><img id="source-image" src="/source-page/1.png" alt="Rendered source PDF page 1"><span id="source-highlight" hidden aria-hidden="true"></span></div><p><a id="open-source-page" href="/source.pdf#page=1" target="_blank" rel="noopener">Open source PDF page 1</a></p></section>
+<div class="structure-layout"><section class="source-pane" aria-labelledby="source-heading" data-page-count="{page_count}" data-source-key="{source_preview_key}"><h2 id="source-heading">Source page</h2><form id="source-page-controls" class="source-page-controls"><button id="source-page-previous" type="button" class="secondary" disabled aria-label="Previous source page">Previous</button><label>Page <input id="source-page-number" type="number" min="1" max="{page_count}" value="1" inputmode="numeric" aria-describedby="source-page-total"></label><span id="source-page-total">of {page_count}</span><button id="source-page-next" type="button" class="secondary"{(' disabled' if page_count <= 1 else '')} aria-label="Next source page">Next</button></form><p id="source-page-label" aria-live="polite">Select a block to view and outline its source region.</p><div class="source-image-stage"><img id="source-image" src="/source-page/1.png?v={source_preview_key}" alt="Rendered source PDF page 1"><span id="source-highlight" hidden aria-hidden="true"></span></div><p><a id="open-source-page" href="/source.pdf?v={source_preview_key}#page=1" target="_blank" rel="noopener">Open source PDF page 1</a></p></section>
 <section class="blocks-pane" aria-labelledby="blocks-heading"><div class="reading-order-header"><h2 id="blocks-heading">Reading order</h2><div class="block-navigation" role="group" aria-label="Selected block navigation"><button id="previous-block" type="button" class="secondary" disabled>Previous block</button><span id="selected-block-position" aria-live="polite">No block selected</span><button id="next-block" type="button" class="secondary"{(' disabled' if not blocks else '')}>Next block</button></div></div><p>Use the movement controls on each block to correct reading order. Changes save immediately.</p>{cards or '<p>No normalized blocks are available.</p>'}</section></div>'''
     return _page("Structure", "structure", body)
 
@@ -628,13 +638,18 @@ def create_app(config: WebAppConfig):
             media_type="application/pdf",
             filename=str(source_data.get("original_filename") or path.name),
             content_disposition_type="inline",
+            headers={"Cache-Control": "private, no-store"},
         )
 
     @app.get("/source-page/{page}.png")
     async def source_page(page: int, session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
         require_session(session)
         try:
-            return FileResponse(render_source_page(current(), page), media_type="image/png")
+            return FileResponse(
+                render_source_page(current(), page),
+                media_type="image/png",
+                headers={"Cache-Control": "private, no-store"},
+            )
         except (PdfToWebError, ValueError) as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 

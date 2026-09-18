@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.10] - 2026-09-18
+
+### Fixed
+
+- Source-page previews and source-PDF links now carry a project-specific cache
+  key, preventing screenshots from a previously opened project from persisting
+  behind the current project's block highlights.
+- Source PDF and rendered-page responses opt out of browser caching as an
+  additional cross-project safeguard.
+
 ## [0.5.9] - 2026-09-18
 
 ### Changed
