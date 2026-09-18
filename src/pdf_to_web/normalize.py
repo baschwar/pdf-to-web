@@ -243,7 +243,8 @@ def _same_image_region(first: dict[str, Any], second: dict[str, Any]) -> bool:
 def repair_interleaved_images(document: dict[str, Any]) -> bool:
     """Remove image wrappers and split lists only at clear image boundaries."""
     state = document.get("reading_order", {})
-    if state.get("interleaved_image_repair_version") == 1:
+    repair_version = int(state.get("interleaved_image_repair_version", 0))
+    if repair_version == 2:
         return False
     blocks = document.get("blocks", [])
     changed = False
@@ -300,9 +301,32 @@ def repair_interleaved_images(document: dict[str, Any]) -> bool:
                 break
         if not repaired:
             break
-    if changed:
-        document.setdefault("reading_order", {})["interleaved_image_repair_version"] = 1
-    return changed
+
+    for index in range(len(blocks) - 2, -1, -1):
+        parent, nested = blocks[index:index + 2]
+        if parent.get("type") != "list" or nested.get("type") != "list" or not parent.get("children"):
+            continue
+        item = parent["children"][-1]
+        item_box, nested_box = _geometry(item), _geometry(nested)
+        if not item_box or not nested_box:
+            continue
+        if parent.get("provenance", {}).get("source_page") != nested.get("provenance", {}).get("source_page"):
+            continue
+        vertical_gap = item_box[1] - nested_box[3]
+        if not (nested_box[0] >= item_box[0] + 18 and -2 <= vertical_gap <= 14):
+            continue
+        item.setdefault("children", []).append(nested)
+        item.setdefault("normalization", {})["associated_indented_list"] = nested.get("id")
+        blocks.pop(index + 1)
+        bbox = _descendant_bbox(parent)
+        if bbox:
+            parent.setdefault("provenance", {})["bounding_box"] = bbox
+        changed = True
+
+    if changed or repair_version == 1:
+        document.setdefault("reading_order", {})["interleaved_image_repair_version"] = 2
+        return True
+    return False
 
 
 def reconcile_visual_reading_order(document: dict[str, Any]) -> bool:

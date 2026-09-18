@@ -40,6 +40,23 @@ class NormalizeTests(unittest.TestCase):
         self.assertEqual(document["blocks"][2]["start"], 3)
         self.assertFalse(repair_interleaved_images(document))
 
+    def test_indented_following_list_is_associated_with_parent_item(self):
+        def provenance(bbox):
+            return {"source_page": 1, "bounding_box": bbox}
+
+        document = {"blocks": [
+            {"id": "step-three", "type": "list", "ordered": True, "start": 3, "children": [
+                {"id": "three", "type": "list_item", "content": "Step three", "provenance": provenance([54, 240, 303, 251])}
+            ], "provenance": provenance([54, 240, 303, 251])},
+            {"id": "details", "type": "list", "ordered": True, "marker_style": "lower-alpha", "children": [
+                {"id": "a", "type": "list_item", "content": "Detail A", "provenance": provenance([90, 220, 350, 236])},
+                {"id": "b", "type": "list_item", "content": "Detail B", "provenance": provenance([90, 200, 350, 216])},
+            ], "provenance": provenance([90, 200, 350, 236])},
+        ]}
+        self.assertTrue(repair_interleaved_images(document))
+        self.assertEqual(len(document["blocks"]), 1)
+        self.assertEqual(document["blocks"][0]["children"][0]["children"][0]["id"], "details")
+
     @mock.patch(
         "pdf_to_web.normalize.recover_source_supplemental_regions",
         return_value={

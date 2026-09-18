@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.17] - 2026-09-18
+
+### Fixed
+
+- A following indented list is now associated with its preceding parent list
+  item when their page geometry shows a clear nested relationship.
+
 ## [0.5.16] - 2026-09-18
 
 ### Fixed
