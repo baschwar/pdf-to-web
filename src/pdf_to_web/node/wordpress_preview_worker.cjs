@@ -114,6 +114,7 @@ function sanitizePreview(fragment) {
       '*': ['class', 'id', 'data-*'],
       a: ['href', 'title'],
       img: ['src', 'alt', 'width', 'height', 'loading'],
+      ol: ['start', 'type'],
       td: ['colspan', 'rowspan'],
       th: ['colspan', 'rowspan', 'scope']
     },

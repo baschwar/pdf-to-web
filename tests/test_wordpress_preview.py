@@ -77,6 +77,27 @@ class WordPressPreviewTests(unittest.TestCase):
         self.assertNotIn("onerror", preview.html.lower())
         self.assertNotIn("onclick", preview.html.lower())
 
+    def test_ordered_list_start_and_type_survive_preview_sanitization(self):
+        document = {
+            "blocks": [
+                {
+                    "type": "list",
+                    "ordered": True,
+                    "start": 3,
+                    "children": [{"type": "list_item", "content": "Step three"}],
+                },
+                {
+                    "type": "list",
+                    "ordered": True,
+                    "marker_style": "lower-alpha",
+                    "children": [{"type": "list_item", "content": "Detail"}],
+                },
+            ]
+        }
+        preview = render_gutenberg_preview(gutenberg.render_document(document))
+        self.assertIn('<ol start="3" class="wp-block-list">', preview.html)
+        self.assertIn('<ol type="a" class="wp-block-list">', preview.html)
+
 
 if __name__ == "__main__":
     unittest.main()

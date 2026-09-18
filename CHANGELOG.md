@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [0.5.20] - 2026-09-18
 
 ### Added
 
@@ -17,6 +17,12 @@
   this release. Previously published revisions remain available under MIT.
 - The optional WordPress Preview now reports its effective Node.js 20.19
   minimum consistently with the locked dependency tree.
+
+### Fixed
+
+- WordPress Preview preserves ordered-list `start` and `type` attributes, so
+  split or interrupted lists continue at their source numbers instead of
+  restarting at 1.
 
 ## [0.5.19] - 2026-09-18
 

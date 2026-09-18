@@ -53,7 +53,7 @@ def preview_available() -> bool:
 def render_gutenberg_preview(markup: str) -> WordPressPreview:
     node = shutil.which("node")
     if node is None:
-        raise PdfToWebError("WordPress Preview requires Node.js 18.12 or newer")
+        raise PdfToWebError("WordPress Preview requires Node.js 20.19 or newer")
     if len(markup.encode("utf-8")) > 10_000_000:
         raise PdfToWebError("Gutenberg preview input exceeds the 10 MB local limit")
     try:
