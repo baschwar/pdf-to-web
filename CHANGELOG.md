@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.9] - 2026-09-18
+
+### Changed
+
+- Reading-order block headers now emphasize review status with text-labeled
+  green, yellow, or red pills beside the source page number.
+
 ## [0.5.8] - 2026-09-18
 
 ### Added

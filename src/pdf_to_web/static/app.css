@@ -33,6 +33,11 @@ body { letter-spacing: 0; }
 .block-card > header { border-bottom: 1px solid var(--app-border); padding-bottom: .65rem; }
 .block-card > header > div { display: flex; gap: .45rem; align-items: center; }
 .block-card > header h3 { margin: 0; font-size: 1rem; }
+.block-meta { display: inline-flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.block-status { display: inline-flex; align-items: center; min-height: 1.6rem; border: 1px solid currentcolor; border-radius: 999px; padding: .15rem .55rem; font-size: .75rem; font-weight: 700; line-height: 1; }
+.block-status.status-approved { color: #166534; background: #dcfce7; }
+.block-status.status-needs_review, .block-status.status-unreviewed { color: #713f12; background: #fef3c7; }
+.block-status.status-excluded, .block-status.status-conversion_blocked { color: #991b1b; background: #fee2e2; }
 .block-card > footer { border-top: 1px solid var(--app-border); padding-top: .5rem; gap: .4rem; justify-content: flex-start; }
 .block-card textarea { resize: vertical; }
 .source-provenance { color: var(--app-muted); font-size: .875rem; margin-block: .75rem; }
