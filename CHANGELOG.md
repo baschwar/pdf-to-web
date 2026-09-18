@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.18] - 2026-09-18
+
+### Changed
+
+- Nested lists in Structure now display their full hierarchy instead of a
+  misleading direct-item-only textarea. Whole-list text editing is disabled
+  for these blocks so saving cannot discard nested items.
+
 ## [0.5.17] - 2026-09-18
 
 ### Fixed

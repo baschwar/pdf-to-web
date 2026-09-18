@@ -49,6 +49,9 @@ button:disabled { opacity: 1; color: #4b5563; background: #e5e7eb; border-color:
 .image-block-form small { display: block; color: var(--app-muted); }
 .image-decorative { display: inline-flex; align-items: center; gap: .5rem; margin-bottom: .25rem; }
 .image-decorative input { margin: 0; }
+.list-structure-preview { padding: .75rem 1rem; border: 1px solid var(--app-border); background: #f8fafc; }
+.list-structure-preview :is(ol, ul) { margin-bottom: 0; }
+.list-structure-preview li { margin-block: .2rem; }
 .source-provenance { color: var(--app-muted); font-size: .875rem; margin-block: .75rem; }
 .order { display: inline-grid; place-items: center; width: 2rem; height: 2rem; border-radius: 50%; background: #20252b; color: white; font-weight: 700; }
 .block-issue, .complex-warning { border-left: 4px solid var(--app-warn); padding: .75rem 1rem; background: #fff8e8; }

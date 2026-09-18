@@ -107,6 +107,25 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("fixture.pdf", source.headers["content-disposition"])
         self.assertEqual(source.headers["cache-control"], "private, no-store")
 
+    def test_nested_list_uses_hierarchy_preview_instead_of_text_editor(self):
+        document = json.loads(original_path(self.project).read_text())
+        document["blocks"].append({
+            "id": "steps", "type": "list", "ordered": True, "start": 3,
+            "children": [{"id": "three", "type": "list_item", "content": "Step three", "children": [
+                {"id": "details", "type": "list", "ordered": True, "marker_style": "lower-alpha", "children": [
+                    {"id": "a", "type": "list_item", "content": "Detail A", "children": []}
+                ]}
+            ]}], "provenance": {"source_page": 1},
+        })
+        original_path(self.project).write_text(json.dumps(document))
+        self.bootstrap()
+        response = self.client.get("/structure")
+        self.assertIn('class="list-structure-preview"', response.text)
+        self.assertIn('<ol start="3"><li>Step three<ol type="a"><li>Detail A</li></ol></li></ol>', response.text)
+        self.assertIn("Whole-list text editing is disabled", response.text)
+        card = response.text[response.text.index('id="block-steps"'):]
+        self.assertNotIn('textarea name="content"', card.split("</article>", 1)[0])
+
     @mock.patch("pdf_to_web.web.source_page_size", return_value=(612.0, 792.0))
     def test_structure_exposes_source_region_and_page_dimensions(self, page_size):
         self.bootstrap()

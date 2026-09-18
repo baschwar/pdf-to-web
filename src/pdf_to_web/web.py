@@ -226,6 +226,30 @@ def _list_text(block: dict[str, Any]) -> str:
     return "\n".join(str(child.get("content", "")) for child in block.get("children", []))
 
 
+def _list_has_nested_content(block: dict[str, Any]) -> bool:
+    return any(child.get("children") for child in block.get("children", []))
+
+
+def _list_structure_preview(block: dict[str, Any]) -> str:
+    tag = "ol" if block.get("ordered") else "ul"
+    attrs = ""
+    marker_types = {"lower-alpha": "a", "upper-alpha": "A", "lower-roman": "i", "upper-roman": "I"}
+    if block.get("ordered") and block.get("marker_style") in marker_types:
+        attrs += f' type="{marker_types[block["marker_style"]]}"'
+    if block.get("ordered") and int(block.get("start", 1)) != 1:
+        attrs += f' start="{int(block["start"])}"'
+    items = []
+    for child in block.get("children", []):
+        nested = "".join(
+            _list_structure_preview(grandchild)
+            if grandchild.get("type") == "list"
+            else f'<p>{html.escape(str(grandchild.get("content", "")))}</p>'
+            for grandchild in child.get("children", [])
+        )
+        items.append(f'<li>{html.escape(str(child.get("content", "")))}{nested}</li>')
+    return f'<{tag}{attrs}>{"".join(items)}</{tag}>'
+
+
 def document_model(project_dir: Path) -> dict[str, Any]:
     project = load_project(project_dir)
     document = ensure_review_document(project_dir)
@@ -378,12 +402,18 @@ def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool
         rows = "".join("<tr>" + "".join(f"<td>{html.escape(str(cell.get('content','') if isinstance(cell,dict) else cell))}</td>" for cell in row) + "</tr>" for row in block.get("rows", []))
         table = f'<p>{stats["rows"]} rows, {stats["columns"]} columns, {stats["spans"]} spanning cells</p><div class="table-scroll"><table><tbody>{rows}</tbody></table></div>'
     editable = block_type in BLOCK_TYPES
+    nested_list = block_type == "list" and _list_has_nested_content(block)
     text_editor = f'''<form class="block-form" data-block-id="{block_id}"><div class="form-grid">
 <label>Block type<select name="type">{options}</select></label>
 <label class="heading-level"{"" if block_type == "heading" else " hidden"}>Heading level<select name="level"{"" if block_type == "heading" else " disabled"}>{levels}</select></label>
 <label>Review state<select name="review_status">{states}</select></label></div>
 <label>Text<textarea name="content" rows="3">{html.escape(content)}</textarea></label>
-<button type="submit" aria-label="Save block {index}">Save block</button></form>''' if editable and can_edit else ""
+<button type="submit" aria-label="Save block {index}">Save block</button></form>''' if editable and can_edit and not nested_list else ""
+    if nested_list and can_edit:
+        text_editor = f'''<div class="list-structure-preview" aria-label="Nested list structure">{_list_structure_preview(block)}</div>
+<p><small>This nested list is shown hierarchically. Whole-list text editing is disabled to preserve its structure.</small></p>
+<form class="block-form nested-list-review-form" data-block-id="{block_id}"><label>Review state<select name="review_status">{states}</select></label>
+<button type="submit" aria-label="Save review state for block {index}">Save review state</button></form>'''
     image_editor = ""
     if block_type == "image" and can_edit:
         image_src = str(block.get("src") or "")
