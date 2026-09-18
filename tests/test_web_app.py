@@ -131,6 +131,8 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("function navigateSourcePage(page)", app_script.text)
         self.assertIn("regions.forEach((bbox) =>", app_script.text)
         self.assertIn("function updateStickyHeaderOffset()", app_script.text)
+        self.assertIn("--structure-scroll-offset", app_script.text)
+        self.assertIn("card.scrollIntoView({ block: 'start' })", app_script.text)
         self.assertIn("`Page ${cards[index].dataset.page}`", app_script.text)
         self.assertIn("sourceImage.src = `/source-page/${requestedPage}.png?v=${sourceKey}`", app_script.text)
         self.assertIn("firstCard = blockCards().find", app_script.text)

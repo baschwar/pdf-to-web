@@ -1,4 +1,4 @@
-:root { --app-border: #c9c7c2; --app-muted: #5d6268; --app-crimson: #981e32; --app-teal: #087e8b; --app-warn: #9a6200; --app-header-height: 4rem; }
+:root { --app-border: #c9c7c2; --app-muted: #5d6268; --app-crimson: #981e32; --app-teal: #087e8b; --app-warn: #9a6200; --app-header-height: 4rem; --structure-scroll-offset: 9rem; }
 body { letter-spacing: 0; }
 .app-header { border-bottom: 1px solid var(--app-border); background: #fff; position: sticky; top: 0; z-index: 10; }
 .app-header nav { min-height: 4rem; }
@@ -32,7 +32,7 @@ button:disabled { opacity: 1; color: #4b5563; background: #e5e7eb; border-color:
 .source-pane img { display: block; width: 100%; max-height: calc(100vh - 14rem); object-fit: contain; object-position: top center; border: 1px solid var(--app-border); background: #eee; }
 #source-highlights { position: absolute; inset: 0; pointer-events: none; }
 .source-highlight { position: absolute; border: 4px solid #c2410c; background: rgb(255 237 213 / 35%); box-shadow: 0 0 0 2px white; }
-.block-card { border: 1px solid var(--app-border); border-radius: 6px; padding: .75rem; margin-bottom: .75rem; box-shadow: none; scroll-margin-top: 9rem; }
+.block-card { border: 1px solid var(--app-border); border-radius: 6px; padding: .75rem; margin-bottom: .75rem; box-shadow: none; scroll-margin-top: var(--structure-scroll-offset); }
 .block-card.source-selected { border-color: #c2410c; box-shadow: inset 4px 0 0 #c2410c; }
 .block-card:focus-within { outline: 3px solid #1c6ea4; outline-offset: 2px; }
 .block-card > header { border-bottom: 1px solid var(--app-border); padding-bottom: .65rem; }

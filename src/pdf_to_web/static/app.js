@@ -65,7 +65,11 @@ let selectedSourceCard = null;
 function updateStickyHeaderOffset() {
   const header = document.querySelector('.app-header');
   if (!header) return;
-  document.documentElement.style.setProperty('--app-header-height', `${Math.ceil(header.getBoundingClientRect().height)}px`);
+  const headerHeight = Math.ceil(header.getBoundingClientRect().height);
+  const readingOrderHeader = document.querySelector('.reading-order-header');
+  const readingOrderHeight = readingOrderHeader ? Math.ceil(readingOrderHeader.getBoundingClientRect().height) : 0;
+  document.documentElement.style.setProperty('--app-header-height', `${headerHeight}px`);
+  document.documentElement.style.setProperty('--structure-scroll-offset', `${headerHeight + readingOrderHeight + 8}px`);
 }
 
 updateStickyHeaderOffset();
@@ -73,6 +77,8 @@ window.addEventListener('resize', updateStickyHeaderOffset);
 if ('ResizeObserver' in window) {
   const header = document.querySelector('.app-header');
   if (header) new ResizeObserver(updateStickyHeaderOffset).observe(header);
+  const readingOrderHeader = document.querySelector('.reading-order-header');
+  if (readingOrderHeader) new ResizeObserver(updateStickyHeaderOffset).observe(readingOrderHeader);
 }
 
 async function showSourcePage(page, card = selectedSourceCard) {
@@ -151,7 +157,7 @@ function updateBlockNavigation() {
 function focusBlock(card) {
   if (!card) return;
   card.focus({ preventScroll: true });
-  card.scrollIntoView({ block: 'center' });
+  card.scrollIntoView({ block: 'start' });
 }
 
 function navigateSourcePage(page) {

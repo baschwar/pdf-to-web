@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.14] - 2026-09-18
+
+### Changed
+
+- Structure block navigation now aligns the selected block directly below the
+  sticky Reading Order controls, using their measured height as the scroll
+  offset.
+
 ## [0.5.13] - 2026-09-18
 
 ### Fixed
