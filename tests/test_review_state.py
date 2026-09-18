@@ -114,6 +114,32 @@ class ReviewStateTests(unittest.TestCase):
         self.assertEqual(progress["excluded"], 1)
         self.assertEqual(progress["needs_review"], 1)
 
+    def test_image_accessibility_fields_and_approval(self):
+        document = self.read_original()
+        document["blocks"].append({"id": "image-1", "type": "image", "src": "images/screen.png", "alt": "", "decorative": False, "provenance": {"source_page": 1}})
+        original_path(self.project).write_text(json.dumps(document))
+
+        with self.assertRaisesRegex(ValueError, "Add alt text"):
+            update_block(self.project, "image-1", {"review_status": "approved"})
+        update_block(self.project, "image-1", {"alt": "Student completing the registration form", "caption": "Registration step", "decorative": False, "review_status": "approved"})
+        image = ensure_review_document(self.project)["blocks"][-1]
+        self.assertEqual(image["alt"], "Student completing the registration form")
+        self.assertEqual(image["caption"], "Registration step")
+        self.assertEqual(image["review"]["status"], "approved")
+        self.assertIn('alt="Student completing the registration form"', html.render_document(ensure_review_document(self.project)))
+
+        update_block(self.project, "image-1", {"decorative": True, "review_status": "approved"})
+        image = ensure_review_document(self.project)["blocks"][-1]
+        self.assertTrue(image["decorative"])
+        self.assertEqual(image["alt"], "")
+
+    def test_approved_image_without_alt_returns_to_needs_review(self):
+        current = ensure_review_document(self.project)
+        current["blocks"].append({"id": "legacy-image", "type": "image", "src": "images/legacy.png", "alt": "", "decorative": False, "provenance": {"source_page": 1}, "review": {"status": "approved", "updated_at": "earlier"}})
+        (self.project / "review" / "current.json").write_text(json.dumps(current))
+        reopened = ensure_review_document(self.project)
+        self.assertEqual(reopened["blocks"][-1]["review"]["status"], "needs_review")
+
     def test_archive_preserves_review_before_normalized_regeneration(self):
         update_block(self.project, "p1", {"content": "Reviewed"})
         archived = archive_review_document(self.project, "regenerated")

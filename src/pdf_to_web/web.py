@@ -372,12 +372,27 @@ def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool
         rows = "".join("<tr>" + "".join(f"<td>{html.escape(str(cell.get('content','') if isinstance(cell,dict) else cell))}</td>" for cell in row) + "</tr>" for row in block.get("rows", []))
         table = f'<p>{stats["rows"]} rows, {stats["columns"]} columns, {stats["spans"]} spanning cells</p><div class="table-scroll"><table><tbody>{rows}</tbody></table></div>'
     editable = block_type in BLOCK_TYPES
-    editor = f'''<form class="block-form" data-block-id="{block_id}"><div class="form-grid">
+    text_editor = f'''<form class="block-form" data-block-id="{block_id}"><div class="form-grid">
 <label>Block type<select name="type">{options}</select></label>
 <label class="heading-level"{"" if block_type == "heading" else " hidden"}>Heading level<select name="level"{"" if block_type == "heading" else " disabled"}>{levels}</select></label>
 <label>Review state<select name="review_status">{states}</select></label></div>
 <label>Text<textarea name="content" rows="3">{html.escape(content)}</textarea></label>
 <button type="submit" aria-label="Save block {index}">Save block</button></form>''' if editable and can_edit else ""
+    image_editor = ""
+    if block_type == "image" and can_edit:
+        image_src = str(block.get("src") or "")
+        image_name = Path(image_src).name
+        preview = f'<img class="image-block-preview" src="/api/preview/images/{quote(image_name)}" alt="">' if image_name else '<p>Extracted image preview unavailable.</p>'
+        decorative = bool(block.get("decorative"))
+        accessibility_warning = "" if decorative or str(block.get("alt") or "").strip() else '<p class="block-issue" role="alert">Accessibility decision required: add alt text or mark this image as decorative.</p>'
+        image_editor = f'''{accessibility_warning}<form class="block-form image-block-form" data-block-id="{block_id}">{preview}<div class="form-grid">
+<label>Alt text<textarea name="alt" rows="3"{" disabled" if decorative else ""}>{html.escape(str(block.get("alt") or ""))}</textarea><small>Describe the image's purpose or information.</small></label>
+<label>Caption<textarea name="caption" rows="3">{html.escape(str(block.get("caption") or ""))}</textarea></label>
+<label>Review state<select name="review_status">{states}</select></label></div>
+<label class="image-decorative"><input type="checkbox" name="decorative"{" checked" if decorative else ""}> Decorative image</label>
+<small>Decorative images export with an empty alt attribute and do not require alt text.</small>
+<button type="submit" aria-label="Save image block {index}">Save image block</button></form>'''
+    editor = image_editor or text_editor
     include_label = "Include" if review_status == "excluded" else "Exclude"
     actions = f'''<footer class="block-actions" aria-label="Actions for block {index}">
 <button type="button" class="secondary block-action" data-action="start" data-block-id="{block_id}" aria-label="Move block {index} to start"{" disabled" if index == 1 else ""}>Move to start</button>

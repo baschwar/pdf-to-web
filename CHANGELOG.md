@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.15] - 2026-09-18
+
+### Added
+
+- Image blocks in Structure now provide an extracted-image preview, alt text,
+  caption, and decorative-image controls.
+- Image approval now requires either meaningful alt text or an explicit
+  decorative designation. Previously approved images without either decision
+  return to Needs review when reopened.
+
 ## [0.5.14] - 2026-09-18
 
 ### Changed

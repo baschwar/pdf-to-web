@@ -81,6 +81,14 @@ def ensure_review_document(project_dir: Path) -> dict[str, Any]:
             changed = reconcile_visual_reading_order(document) or changed
         before = json.dumps(document.get("blocks", []), sort_keys=True)
         _clean_list_markers(document.get("blocks", []))
+        for block in _walk(document.get("blocks", [])):
+            if (
+                block.get("type") == "image"
+                and not block.get("decorative")
+                and not str(block.get("alt") or "").strip()
+                and block.get("review", {}).get("status") == "approved"
+            ):
+                _set_status(block, "needs_review")
         changed = changed or before != json.dumps(document.get("blocks", []), sort_keys=True)
         if not document.get("footnotes"):
             from .normalize import _extract_footnotes
@@ -207,8 +215,28 @@ def update_block(project_dir: Path, block_id: str, changes: dict[str, Any]) -> d
                 for index, line in enumerate(content.splitlines())
                 if line.strip()
             ]
+    if any(field in changes for field in ("alt", "caption", "decorative")):
+        if block.get("type") != "image":
+            raise ValueError("Image accessibility fields can only be set on an image block")
+        if "decorative" in changes:
+            value = changes["decorative"]
+            block["decorative"] = value if isinstance(value, bool) else str(value).lower() in {"1", "true", "yes", "on"}
+        if "alt" in changes:
+            block["alt"] = str(changes["alt"]).strip()
+        if "caption" in changes:
+            block["caption"] = str(changes["caption"]).strip()
+        if block.get("decorative"):
+            block["alt"] = ""
     if "review_status" in changes:
-        _set_status(block, str(changes["review_status"]))
+        status = str(changes["review_status"])
+        if (
+            status == "approved"
+            and block.get("type") == "image"
+            and not block.get("decorative")
+            and not str(block.get("alt") or "").strip()
+        ):
+            raise ValueError("Add alt text or mark the image as decorative before approving it")
+        _set_status(block, status)
     return save_review_document(project_dir, document)
 
 

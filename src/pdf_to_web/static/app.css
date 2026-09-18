@@ -45,6 +45,10 @@ button:disabled { opacity: 1; color: #4b5563; background: #e5e7eb; border-color:
 .block-status.status-excluded, .block-status.status-conversion_blocked { color: #991b1b; background: #fee2e2; }
 .block-card > footer { border-top: 1px solid var(--app-border); padding-top: .5rem; gap: .4rem; justify-content: flex-start; }
 .block-card textarea { resize: vertical; }
+.image-block-preview { display: block; width: auto; max-width: min(100%, 28rem); max-height: 18rem; margin-bottom: .75rem; border: 1px solid var(--app-border); object-fit: contain; }
+.image-block-form small { display: block; color: var(--app-muted); }
+.image-decorative { display: inline-flex; align-items: center; gap: .5rem; margin-bottom: .25rem; }
+.image-decorative input { margin: 0; }
 .source-provenance { color: var(--app-muted); font-size: .875rem; margin-block: .75rem; }
 .order { display: inline-grid; place-items: center; width: 2rem; height: 2rem; border-radius: 50%; background: #20252b; color: white; font-weight: 700; }
 .block-issue, .complex-warning { border-left: 4px solid var(--app-warn); padding: .75rem 1rem; background: #fff8e8; }

@@ -228,6 +228,8 @@ function nextReviewBlockId(card) {
 document.querySelectorAll('.block-form').forEach((form) => form.addEventListener('submit', async (event) => {
   event.preventDefault();
   const values = Object.fromEntries(new FormData(form));
+  const decorative = form.querySelector('input[name="decorative"]');
+  if (decorative) values.decorative = decorative.checked;
   if (values.type === 'heading') values.level = Number(values.level);
   else delete values.level;
   try {
@@ -235,6 +237,12 @@ document.querySelectorAll('.block-form').forEach((form) => form.addEventListener
     announce('Block saved.');
     window.location.reload();
   } catch (error) { announce(error.message); alert(error.message); }
+}));
+
+document.querySelectorAll('.image-block-form input[name="decorative"]').forEach((checkbox) => checkbox.addEventListener('change', () => {
+  const alt = checkbox.closest('form').querySelector('textarea[name="alt"]');
+  alt.disabled = checkbox.checked;
+  if (checkbox.checked) alt.value = '';
 }));
 
 document.querySelectorAll('.block-form select[name="type"]').forEach((select) => select.addEventListener('change', () => {
