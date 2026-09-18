@@ -330,6 +330,24 @@ def _document_page(model: dict[str, Any]) -> str:
     return _page("Document", "document", body)
 
 
+def _source_regions(block: dict[str, Any]) -> list[list[float]]:
+    provenance = block.get("provenance", {})
+    page = provenance.get("source_page")
+    if block.get("type") == "list":
+        regions = [
+            child.get("provenance", {}).get("bounding_box")
+            for child in block.get("children", [])
+            if child.get("type") == "list_item"
+            and child.get("provenance", {}).get("source_page") == page
+            and isinstance(child.get("provenance", {}).get("bounding_box"), list)
+            and len(child.get("provenance", {}).get("bounding_box")) == 4
+        ]
+        if regions:
+            return regions
+    bbox = provenance.get("bounding_box")
+    return [bbox] if isinstance(bbox, list) and len(bbox) == 4 else []
+
+
 def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool = True) -> str:
     block_id = html.escape(str(block.get("id", "")), quote=True)
     block_type = str(block.get("type", "unknown"))
@@ -345,6 +363,8 @@ def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool
     source_type = str(provenance.get("source_type") or "Unknown")
     bbox = provenance.get("bounding_box")
     bbox_value = html.escape(json.dumps(bbox), quote=True) if isinstance(bbox, list) and len(bbox) == 4 else ""
+    source_regions = _source_regions(block)
+    regions_value = html.escape(json.dumps(source_regions), quote=True) if source_regions else ""
     inferred_order = provenance.get("visual_order_reason") == "heading_table_association"
     table = ""
     if block_type == "table":
@@ -369,7 +389,7 @@ def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool
 <button type="button" class="secondary block-action" data-action="toggle-excluded" data-block-id="{block_id}" data-current-status="{review_status}" aria-label="{include_label} block {index}">{include_label}</button>
 <button type="button" class="secondary block-action" data-action="approve" data-block-id="{block_id}" aria-label="Approve block {index}">Approve</button>
 <button type="button" class="secondary block-action" data-action="flag" data-block-id="{block_id}" aria-label="Mark block {index} as needs review">Needs review</button></footer>''' if can_edit else '<footer><strong>Inspection only while conversion is blocked.</strong></footer>'
-    return f'''<article class="block-card status-{html.escape(review_status)}" id="block-{block_id}" tabindex="-1" data-page="{page}" data-bbox="{bbox_value}" data-block-index="{index}" data-source-type="{html.escape(source_type, quote=True)}" aria-labelledby="block-{block_id}-heading">
+    return f'''<article class="block-card status-{html.escape(review_status)}" id="block-{block_id}" tabindex="-1" data-page="{page}" data-bbox="{bbox_value}" data-bboxes="{regions_value}" data-block-index="{index}" data-source-type="{html.escape(source_type, quote=True)}" aria-labelledby="block-{block_id}-heading">
 <header><div><span class="order">{index}</span> <h3 id="block-{block_id}-heading">{html.escape(block_type.replace("_", " ").title())}{f' H{level}' if block_type == 'heading' else ''}</h3></div><span class="block-status status-{html.escape(review_status)}">{_status_label(review_status)}</span></header>
 <p class="source-provenance">OpenDataLoader source: {html.escape(source_type)}{f' · Source region available' if bbox_value else ''}{' · Reading order inferred from layout' if inferred_order else ''}</p>{f'<p class="block-issue">{html.escape(issue_text)}</p>' if issue_text else ''}{table}{editor}
 {actions}</article>'''
@@ -402,7 +422,7 @@ def _structure_page(model: dict[str, Any]) -> str:
     visuals = "".join(_complex_visual_card(visual, can_edit=can_edit) for visual in document.get("review", {}).get("complex_visuals", []))
     body = f'''<h1>Structure</h1>{_status_banner(status, document.get("review", {}).get("issues", [])) if not can_edit else ''}<div class="review-toolbar"><p><strong>{_status_label(status)}</strong> · Reviewed {progress['reviewed']} / {progress['total']}</p>{'<button id="undo-action" type="button" class="secondary">Undo last action</button>' if can_edit else ''}</div>
 {f'<section class="complex-warning" aria-labelledby="complex-heading"><h2 id="complex-heading">Complex visuals</h2>{visuals}</section>' if visuals else ''}
-<div class="structure-layout"><section class="source-pane" aria-labelledby="source-heading" data-page-count="{page_count}" data-source-key="{source_preview_key}"><h2 id="source-heading">Source page</h2><form id="source-page-controls" class="source-page-controls"><button id="source-page-previous" type="button" class="secondary" disabled aria-label="Previous source page">Previous</button><label>Page <input id="source-page-number" type="number" min="1" max="{page_count}" value="1" inputmode="numeric" aria-describedby="source-page-total"></label><span id="source-page-total">of {page_count}</span><button id="source-page-next" type="button" class="secondary"{(' disabled' if page_count <= 1 else '')} aria-label="Next source page">Next</button></form><p id="source-page-label" aria-live="polite">Select a block to view and outline its source region.</p><div class="source-image-stage"><img id="source-image" src="/source-page/1.png?v={source_preview_key}" alt="Rendered source PDF page 1"><span id="source-highlight" hidden aria-hidden="true"></span></div><p><a id="open-source-page" href="/source.pdf?v={source_preview_key}#page=1" target="_blank" rel="noopener">Open source PDF page 1</a></p></section>
+<div class="structure-layout"><section class="source-pane" aria-labelledby="source-heading" data-page-count="{page_count}" data-source-key="{source_preview_key}"><h2 id="source-heading">Source page</h2><form id="source-page-controls" class="source-page-controls"><button id="source-page-previous" type="button" class="secondary" disabled aria-label="Previous source page">Previous</button><label>Page <input id="source-page-number" type="number" min="1" max="{page_count}" value="1" inputmode="numeric" aria-describedby="source-page-total"></label><span id="source-page-total">of {page_count}</span><button id="source-page-next" type="button" class="secondary"{(' disabled' if page_count <= 1 else '')} aria-label="Next source page">Next</button></form><p id="source-page-label" aria-live="polite">Select a block to view and outline its source region.</p><div class="source-image-stage"><img id="source-image" src="/source-page/1.png?v={source_preview_key}" alt="Rendered source PDF page 1"><span id="source-highlights" aria-hidden="true"></span></div><p><a id="open-source-page" href="/source.pdf?v={source_preview_key}#page=1" target="_blank" rel="noopener">Open source PDF page 1</a></p></section>
 <section class="blocks-pane" aria-labelledby="blocks-heading"><div class="reading-order-header"><h2 id="blocks-heading">Reading order</h2><div class="block-navigation" role="group" aria-label="Selected block navigation"><button id="previous-block" type="button" class="secondary" disabled>Previous block</button><span class="block-navigation-position" aria-live="polite"><span id="selected-block-page">Page -</span><span id="selected-block-position">No block selected</span></span><button id="next-block" type="button" class="secondary"{(' disabled' if not blocks else '')}>Next block</button></div></div><p>Use the movement controls on each block to correct reading order. Changes save immediately.</p>{cards or '<p>No normalized blocks are available.</p>'}</section></div>'''
     return _page("Structure", "structure", body)
 

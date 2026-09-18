@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.13] - 2026-09-18
+
+### Fixed
+
+- Source highlighting for lists now outlines each list item's actual region
+  instead of drawing one large rectangle across intervening screenshots or
+  unrelated page content.
+
 ## [0.5.12] - 2026-09-18
 
 ### Changed

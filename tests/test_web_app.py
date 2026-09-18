@@ -14,6 +14,7 @@ from pdf_to_web.review_state import original_path
 from pdf_to_web.web import (
     CSRF_HEADER,
     WebAppConfig,
+    _source_regions,
     create_app,
     is_allowed_host,
     is_allowed_origin,
@@ -59,6 +60,17 @@ class WebAppTests(unittest.TestCase):
     def headers(self):
         return {"origin": "http://127.0.0.1:54321", CSRF_HEADER: "csrf"}
 
+    def test_list_source_regions_use_item_boxes(self):
+        block = {
+            "type": "list",
+            "provenance": {"source_page": 4, "bounding_box": [54, 466, 473, 739]},
+            "children": [
+                {"type": "list_item", "provenance": {"source_page": 4, "bounding_box": [54, 700, 473, 739]}},
+                {"type": "list_item", "provenance": {"source_page": 4, "bounding_box": [54, 466, 336, 477]}},
+            ],
+        }
+        self.assertEqual(_source_regions(block), [[54, 700, 473, 739], [54, 466, 336, 477]])
+
     def test_startup_bootstrap_and_pages(self):
         self.assertEqual(self.client.get("/api/health").status_code, 200)
         self.assertEqual(self.client.get("/").status_code, 401)
@@ -91,7 +103,8 @@ class WebAppTests(unittest.TestCase):
         original_path(self.project).write_text(json.dumps(document))
         response = self.client.get("/structure")
         self.assertIn('data-bbox="[36, 700, 300, 730]"', response.text)
-        self.assertIn('id="source-highlight"', response.text)
+        self.assertIn('id="source-highlights"', response.text)
+        self.assertIn('data-bboxes="[[36, 700, 300, 730]]"', response.text)
         self.assertIn('id="source-page-previous"', response.text)
         self.assertIn('id="source-page-number" type="number" min="1" max="2" value="1"', response.text)
         self.assertIn('id="source-page-next"', response.text)
@@ -116,6 +129,7 @@ class WebAppTests(unittest.TestCase):
         self.assertIn(".block-status.status-approved { color: #166534; background: #dcfce7; }", app_styles.text)
         app_script = self.client.get("/static/app.js")
         self.assertIn("function navigateSourcePage(page)", app_script.text)
+        self.assertIn("regions.forEach((bbox) =>", app_script.text)
         self.assertIn("function updateStickyHeaderOffset()", app_script.text)
         self.assertIn("`Page ${cards[index].dataset.page}`", app_script.text)
         self.assertIn("sourceImage.src = `/source-page/${requestedPage}.png?v=${sourceKey}`", app_script.text)

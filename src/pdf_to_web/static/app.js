@@ -93,8 +93,8 @@ async function showSourcePage(page, card = selectedSourceCard) {
   document.getElementById('source-page-previous').disabled = requestedPage === 1;
   document.getElementById('source-page-next').disabled = requestedPage === pageCount;
   const label = document.getElementById('source-page-label');
-  const highlight = document.getElementById('source-highlight');
-  highlight.hidden = true;
+  const highlights = document.getElementById('source-highlights');
+  highlights.replaceChildren();
   if (!card || Number(card.dataset.page) !== requestedPage) {
     label.textContent = card
       ? `Source page ${requestedPage}. The selected block is on page ${card.dataset.page}; no region is outlined.`
@@ -103,17 +103,21 @@ async function showSourcePage(page, card = selectedSourceCard) {
   }
   const blockLabel = `Block ${card.dataset.blockIndex}, ${card.dataset.sourceType}, on source page ${requestedPage}.`;
   label.textContent = blockLabel;
-  if (!card.dataset.bbox) return;
+  if (!card.dataset.bboxes) return;
   try {
-    const bbox = JSON.parse(card.dataset.bbox);
+    const regions = JSON.parse(card.dataset.bboxes);
     const dimensions = await api(`/api/source-page/${requestedPage}`);
-    const [x0, y0, x1, y1] = bbox.map(Number);
-    highlight.style.left = `${Math.min(x0, x1) / dimensions.width * 100}%`;
-    highlight.style.top = `${(dimensions.height - Math.max(y0, y1)) / dimensions.height * 100}%`;
-    highlight.style.width = `${Math.abs(x1 - x0) / dimensions.width * 100}%`;
-    highlight.style.height = `${Math.abs(y1 - y0) / dimensions.height * 100}%`;
-    highlight.hidden = false;
-    label.textContent = `${blockLabel} The approximate source region is outlined.`;
+    regions.forEach((bbox) => {
+      const [x0, y0, x1, y1] = bbox.map(Number);
+      const highlight = document.createElement('span');
+      highlight.className = 'source-highlight';
+      highlight.style.left = `${Math.min(x0, x1) / dimensions.width * 100}%`;
+      highlight.style.top = `${(dimensions.height - Math.max(y0, y1)) / dimensions.height * 100}%`;
+      highlight.style.width = `${Math.abs(x1 - x0) / dimensions.width * 100}%`;
+      highlight.style.height = `${Math.abs(y1 - y0) / dimensions.height * 100}%`;
+      highlights.append(highlight);
+    });
+    label.textContent = `${blockLabel} ${regions.length === 1 ? 'The approximate source region is' : `${regions.length} source regions are`} outlined.`;
   } catch (error) {
     label.textContent = `${blockLabel} Its source region could not be outlined.`;
   }

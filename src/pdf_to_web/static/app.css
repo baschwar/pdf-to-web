@@ -30,7 +30,8 @@ button:disabled { opacity: 1; color: #4b5563; background: #e5e7eb; border-color:
 #selected-block-page { color: var(--pico-color); font-size: .8rem; font-weight: 700; }
 .source-image-stage { position: relative; display: block; width: 100%; max-width: 100%; }
 .source-pane img { display: block; width: 100%; max-height: calc(100vh - 14rem); object-fit: contain; object-position: top center; border: 1px solid var(--app-border); background: #eee; }
-#source-highlight { position: absolute; border: 4px solid #c2410c; background: rgb(255 237 213 / 35%); box-shadow: 0 0 0 2px white; pointer-events: none; }
+#source-highlights { position: absolute; inset: 0; pointer-events: none; }
+.source-highlight { position: absolute; border: 4px solid #c2410c; background: rgb(255 237 213 / 35%); box-shadow: 0 0 0 2px white; }
 .block-card { border: 1px solid var(--app-border); border-radius: 6px; padding: .75rem; margin-bottom: .75rem; box-shadow: none; scroll-margin-top: 9rem; }
 .block-card.source-selected { border-color: #c2410c; box-shadow: inset 4px 0 0 #c2410c; }
 .block-card:focus-within { outline: 3px solid #1c6ea4; outline-offset: 2px; }
