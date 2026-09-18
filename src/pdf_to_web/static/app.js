@@ -62,6 +62,19 @@ document.getElementById('new-project-form')?.addEventListener('submit', async (e
 
 let selectedSourceCard = null;
 
+function updateStickyHeaderOffset() {
+  const header = document.querySelector('.app-header');
+  if (!header) return;
+  document.documentElement.style.setProperty('--app-header-height', `${Math.ceil(header.getBoundingClientRect().height)}px`);
+}
+
+updateStickyHeaderOffset();
+window.addEventListener('resize', updateStickyHeaderOffset);
+if ('ResizeObserver' in window) {
+  const header = document.querySelector('.app-header');
+  if (header) new ResizeObserver(updateStickyHeaderOffset).observe(header);
+}
+
 async function showSourcePage(page, card = selectedSourceCard) {
   const pane = document.querySelector('.source-pane');
   if (!pane) return;
@@ -123,9 +136,11 @@ function updateBlockNavigation() {
   const index = selectedSourceCard ? cards.indexOf(selectedSourceCard) : -1;
   const previous = document.getElementById('previous-block');
   const next = document.getElementById('next-block');
+  const page = document.getElementById('selected-block-page');
   const position = document.getElementById('selected-block-position');
   if (previous) previous.disabled = index <= 0;
   if (next) next.disabled = cards.length === 0 || index === cards.length - 1;
+  if (page) page.textContent = index >= 0 ? `Page ${cards[index].dataset.page}` : 'Page -';
   if (position) position.textContent = index >= 0 ? `Block ${index + 1} of ${cards.length}` : 'No block selected';
 }
 

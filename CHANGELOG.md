@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.11] - 2026-09-18
+
+### Changed
+
+- Structure's sticky source and reading-order headings now remain below the
+  application header at different browser sizes and zoom levels.
+- The selected block navigator now shows the source page above the block
+  position; repeated page labels were removed from individual block headers.
+
 ## [0.5.10] - 2026-09-18
 
 ### Fixed
