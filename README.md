@@ -69,6 +69,12 @@ renames the uploaded file. Regenerate Gutenberg or WXR after import to replace
 the upload placeholders with proper Image blocks. Rows without a URL are left
 unresolved; decorative images are excluded from the upload package.
 
+Instead of entering every URL and attachment ID manually, use WordPress Tools >
+Export to download a Media WXR/XML file after uploading the images, then choose
+**Match WordPress media** on PDF to Web's Export screen. Exact filenames are
+matched into `media-mapping.csv`; unmatched or duplicate filenames are left for
+manual review rather than guessed.
+
 Authenticated WordPress media upload and direct draft publishing are deferred
 in `docs/FUTURE_FEATURES.md`.
 

@@ -72,6 +72,7 @@ class WebAppTests(unittest.TestCase):
             self.assertIn("PDF to Web v", response.text)
         self.assertIn('name="wrap_in_section"', self.client.get("/export").text)
         self.assertIn('id="media-mapping-form"', self.client.get("/export").text)
+        self.assertIn('id="media-wxr-form"', self.client.get("/export").text)
         placeholder = self.client.get("/api/preview/MEDIA_URL_REQUIRED")
         self.assertEqual(placeholder.status_code, 200)
         self.assertEqual(placeholder.headers["content-type"], "image/svg+xml")
@@ -263,6 +264,13 @@ class WebAppTests(unittest.TestCase):
         markup = (self.project / regenerated.json()["files"][0]).read_text()
         self.assertIn('src="https://example.edu/uploads/screen.png"', markup)
         self.assertIn('class="wp-image-91"', markup)
+
+        media_xml = '''<rss xmlns:wp="http://wordpress.org/export/1.2/"><channel><item>
+<wp:post_id>92</wp:post_id><wp:post_type>attachment</wp:post_type>
+<wp:attachment_url>https://example.edu/uploads/screen.png</wp:attachment_url>
+</item></channel></rss>'''
+        wxr_imported = self.client.post("/api/media-mapping-wxr", headers=self.headers(), json={"xml": media_xml})
+        self.assertEqual(wxr_imported.status_code, 200, wxr_imported.text)
 
     def test_preview_page_has_distinct_sandboxed_modes(self):
         self.bootstrap()

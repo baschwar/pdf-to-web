@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.7] - 2026-09-17
+
+### Added
+
+- WordPress Media WXR/XML imports can populate generated media mappings by
+  matching attachment filenames to exported PDF assets.
+- Matched attachment URLs and IDs are saved both to `media-mapping.csv` and the
+  reviewed document, while unmatched or ambiguous filenames remain unresolved.
+
 ## [0.5.6] - 2026-09-17
 
 ### Added

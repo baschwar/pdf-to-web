@@ -352,4 +352,18 @@ document.getElementById('media-mapping-form')?.addEventListener('submit', async 
   } catch (error) { output.textContent = error.message; announce(error.message); }
 });
 
+document.getElementById('media-wxr-form')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const output = document.getElementById('media-mapping-result');
+  const file = new FormData(event.currentTarget).get('media_wxr');
+  try {
+    if (!(file instanceof File)) throw new Error('Choose a WordPress media XML file.');
+    const data = await api('/api/media-mapping-wxr', {
+      method: 'POST', headers: csrfHeaders(), body: JSON.stringify({ xml: await file.text() })
+    });
+    output.textContent = `${data.matched} image mapping${data.matched === 1 ? '' : 's'} matched; ${data.unmatched} unmatched and ${data.ambiguous} ambiguous. Regenerate the Gutenberg or WXR export.`;
+    announce(output.textContent);
+  } catch (error) { output.textContent = error.message; announce(error.message); }
+});
+
 document.documentElement.dataset.appReady = 'true';
