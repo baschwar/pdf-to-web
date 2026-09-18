@@ -17,6 +17,8 @@ CLI.
 
 ![PDF to Web Structure screen showing a selected heading outlined in the source PDF beside its reading-order review controls](docs/images/structure-review.png)
 
+[Watch the 54-second silent end-to-end walkthrough](docs/media/pdf-to-web-walkthrough.mp4)
+
 ## Development setup
 
 macOS or Linux:
