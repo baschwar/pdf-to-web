@@ -57,11 +57,42 @@ except ImportError:  # pragma: no cover - CLI remains available without app depe
     Request = Any  # type: ignore
 
 APP_NAME = "PDF to Web"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SESSION_COOKIE = "pdf_to_web_session"
 CSRF_COOKIE = "pdf_to_web_csrf"
 CSRF_HEADER = "x-csrf-token"
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost"}
 LOOPBACK_CLIENTS = {"127.0.0.1", "::1", "localhost", "testclient"}
+
+
+def _commit_hash() -> str:
+    override = os.environ.get("PDF_TO_WEB_COMMIT")
+    if override:
+        return override[:12]
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short=12", "HEAD"],
+            cwd=REPOSITORY_ROOT,
+            capture_output=True,
+            check=True,
+            text=True,
+            timeout=2,
+        )
+        return result.stdout.strip() or "unknown"
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+
+
+def _display_project_path(path: Path, projects_root: Path) -> str:
+    canonical = path.expanduser().resolve(strict=False)
+    for root in (REPOSITORY_ROOT, projects_root.expanduser().resolve(strict=False)):
+        try:
+            relative = canonical.relative_to(root)
+        except ValueError:
+            continue
+        suffix = f"/{relative.as_posix()}" if relative.parts else ""
+        return f"/{root.name}{suffix}"
+    return f"/{canonical.parent.name}/{canonical.name}"
 
 
 def _document_with_local_preview_media(document: dict[str, Any]) -> dict[str, Any]:
@@ -297,7 +328,7 @@ def _page(title: str, active: str, body: str, *, selected: bool = True) -> str:
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(title)} | {APP_NAME}</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/pico.min.css"><link rel="stylesheet" href="/static/app.css"></head>
 <body><header class="app-header"><div class="container">{_nav(active, selected)}</div></header>
-<main class="container">{body}</main><footer class="app-footer"><div class="container">{APP_NAME} v{html.escape(__version__)}</div></footer><div id="app-status" class="visually-hidden" role="status" aria-live="polite"></div>
+<main class="container">{body}</main><footer class="app-footer"><div class="container">{APP_NAME} v{html.escape(__version__)} · commit {html.escape(_commit_hash())}</div></footer><div id="app-status" class="visually-hidden" role="status" aria-live="polite"></div>
 <script src="/static/app.js"></script></body></html>'''
 
 
@@ -315,7 +346,7 @@ def _projects_page(
 ) -> str:
     recent = "".join(
         f'''<li><div><strong>{html.escape(record.title)}</strong>
-<code>{html.escape(record.path)}</code><small>Last opened <time datetime="{html.escape(record.last_opened, quote=True)}">{html.escape(record.last_opened.replace("T", " ").replace("+00:00", " UTC"))}</time></small></div>
+<code>{html.escape(_display_project_path(record.project_path, config.projects_root))}</code><small>Last opened <time datetime="{html.escape(record.last_opened, quote=True)}">{html.escape(record.last_opened.replace("T", " ").replace("+00:00", " UTC"))}</time></small></div>
 <div class="recent-actions"><button type="button" class="open-project" data-project-token="{selection.token}">Open</button>
 <button type="button" class="secondary remove-project" data-project-token="{selection.token}" aria-label="Remove {html.escape(record.title, quote=True)} from recent projects">Remove</button></div></li>'''
         for selection, record in selections

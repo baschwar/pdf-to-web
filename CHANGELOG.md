@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.1] - 2026-09-25
+
+### Changed
+
+- Project paths displayed in the browser now begin at the relevant project
+  root instead of exposing the machine's full filesystem path.
+- The application footer now shows the abbreviated Git commit after the
+  version number.
+
 ## [0.6.0] - 2026-09-25
 
 ### Added

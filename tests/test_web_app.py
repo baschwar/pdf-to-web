@@ -14,6 +14,7 @@ from pdf_to_web.review_state import original_path
 from pdf_to_web.web import (
     CSRF_HEADER,
     WebAppConfig,
+    _display_project_path,
     _source_regions,
     create_app,
     is_allowed_host,
@@ -94,6 +95,7 @@ class WebAppTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertIn(f"<h1>{heading}</h1>", response.text)
             self.assertIn("PDF to Web v", response.text)
+            self.assertRegex(response.text, r"PDF to Web v[0-9.]+ · commit [0-9a-f]{12}")
         self.assertIn('name="wrap_in_section"', self.client.get("/export").text)
         self.assertIn('id="media-mapping-form"', self.client.get("/export").text)
         self.assertIn('id="media-wxr-form"', self.client.get("/export").text)
@@ -209,7 +211,8 @@ class WebAppTests(unittest.TestCase):
         self.bootstrap()
         first_page = self.client.get("/")
         self.assertIn("Web fixture", first_page.text)
-        self.assertIn(str(self.project.resolve()), first_page.text)
+        self.assertIn(f"/{self.project.parent.name}/{self.project.name}", first_page.text)
+        self.assertNotIn(str(self.project.resolve()), first_page.text)
         self.assertIn("Last opened", first_page.text)
 
         reopened_config = WebAppConfig(
@@ -233,6 +236,13 @@ class WebAppTests(unittest.TestCase):
         )
         self.assertEqual(removed.status_code, 200)
         self.assertNotIn("Web fixture", restarted.get("/").text)
+
+    def test_display_project_path_starts_at_repository_folder(self):
+        repository = Path("/Users/example/Documents/Codex/pdf-to-web")
+        project = repository / "sample_runs" / "run-one"
+        with mock.patch("pdf_to_web.web.REPOSITORY_ROOT", repository):
+            visible = _display_project_path(project, Path("/Users/example/Documents/PDF to Web Projects"))
+        self.assertEqual(visible, "/pdf-to-web/sample_runs/run-one")
 
     @mock.patch("pdf_to_web.web.normalize_project")
     @mock.patch("pdf_to_web.web.run_extraction")
