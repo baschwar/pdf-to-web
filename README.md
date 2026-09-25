@@ -11,9 +11,11 @@ engine and every export format. See [Third-party notices](THIRD_PARTY_NOTICES.md
 for the principal runtime and bundled dependencies.
 
 Extraction uses deterministic local processing and never enables OpenDataLoader
-hybrid or external AI processing. Phase 2 adds a local FastAPI/PicoCSS review
-application over the same normalized document model and exporters used by the
-CLI.
+hybrid or external AI processing. The completed Phase 2 foundation provides a
+local FastAPI/PicoCSS structural-review application over the same normalized
+document model and exporters used by the CLI. Phase 3A adds human accessibility
+authoring and downloadable review reports without claiming automated WCAG
+conformance.
 
 ![PDF to Web Structure screen showing a selected heading outlined in the source PDF beside its reading-order review controls](docs/images/structure-review.png)
 
@@ -169,7 +171,21 @@ Reviewed content is stored in `review/current.json`; immutable normalized input
 remains in `extraction/normalized/document.json`, and revision snapshots are
 kept under `review/revisions/`. Files under `extraction/raw/` are never changed
 by review operations. See `docs/PHASE2_REVIEW_APP.md` for the architecture,
-security model, and current limits.
+security model, and current limits. The completion evidence and remaining
+external acceptance checks are recorded in `docs/PHASE2_CLOSEOUT.md`.
+
+The Accessibility screen derives review items from the current reviewed
+document, including incomplete structural decisions, image alternatives,
+complex-visual text equivalents, table semantics, heading hierarchy, link
+purpose, unknown content, and extraction diagnostics. Reviewer decisions and
+notes are stored in `review/current.json`. Generate
+`output/reports/accessibility-review.html` and `.json` from that screen or with:
+
+```sh
+pdf-to-web export accessibility --project /path/to/my-report
+```
+
+These reports document human review. They do not certify WCAG conformance.
 
 Run tests without third-party test tooling:
 
@@ -207,11 +223,12 @@ Git because source publications may contain internal or copyrighted material.
 
 ## Current boundary
 
-The Phase 2 review interface does not include OCR remediation, AI, a full table
-editor, media sideloading, direct publishing, or a claim of automated WCAG
-conformance. The Phase 1B fixtures have been imported, edited, saved, and
-reopened in an isolated local WordPress instance. Production WSUWP compatibility
-still requires the exact deployed WSU block versions.
+Phase 2 structural review and Phase 3A accessibility authoring are complete.
+The application does not include OCR remediation, AI, a spreadsheet-like table
+editor, media sideloading, direct publishing, output-page/article building, or
+a claim of automated WCAG conformance. The Phase 1B fixtures have been imported,
+edited, saved, and reopened in an isolated local WordPress instance. Production
+WSUWP compatibility still requires the exact deployed WSU block versions.
 
 ## License
 

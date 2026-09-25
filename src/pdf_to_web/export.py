@@ -15,6 +15,7 @@ from .exporters import gutenberg, html, markdown, wxr
 from .normalize import load_normalized
 from .project import load_project, slugify
 from .media_mapping import MAPPING_FIELDS
+from .accessibility import write_reports
 
 
 def _walk(blocks: list[dict[str, Any]]):
@@ -250,5 +251,7 @@ def export_project(project_dir: Path, target: str, profile: str | None = None) -
     if target in {"gutenberg", "wordpress-xml", "all"}:
         media_outputs, _ = _write_media_manifest(project_dir, document)
         outputs.extend(media_outputs)
+    if target in {"accessibility", "all"}:
+        outputs.extend(write_reports(project_dir, document))
     _write_manifest(project_dir, item, selected_profile, output_slug)
     return outputs

@@ -67,17 +67,29 @@ to be exposed on a LAN or public interface.
 
 ## Current limitations
 
-- No bounding-box source highlighting.
 - No drag-and-drop reordering; keyboard-operable Move up/down controls are the
   supported method.
 - No spreadsheet-like table editor.
-- No alt-text or long-description remediation workflow.
-- Complex visuals can be retained, excluded, reclassified, or have recovered
-  text corrected, but cannot be fully remediated here.
 - Undo is session-oriented and restores persisted snapshots; there is no visual
   revision browser.
 - WSUWP output remains validated against fixtures and the documented shim, not
   against production plugin versions.
+
+Bounding-box source highlighting, image alt-text decisions, table semantic
+review, and complex-visual text-equivalent authoring were added during the
+stabilization and Phase 3A work. See `docs/PHASE3_ACCESSIBILITY.md`.
+
+## Phase 2 closeout
+
+Phase 2 is complete as of version 0.6.0. A user can open or create a project,
+compare reviewed blocks with source pages, edit structure and content, merge,
+split, reorder, include or exclude blocks, persist and undo changes, reopen a
+project, preview both supported output paths, and export reviewed HTML,
+Gutenberg, and WXR without modifying raw extraction.
+
+Production WSUWP plugin compatibility and a human listening pass with VoiceOver
+remain external acceptance checks. Neither changes the completed local review
+architecture, and neither is represented as an automated accessibility result.
 
 ## Verification
 

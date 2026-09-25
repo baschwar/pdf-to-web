@@ -89,7 +89,7 @@ class WebAppTests(unittest.TestCase):
         self.bootstrap()
         self.assertEqual(self.client.cookies.get("pdf_to_web_session"), "session")
         self.assertEqual(self.client.get("/bootstrap/bootstrap").status_code, 403)
-        for route, heading in (("/", "Projects"), ("/document", "Document"), ("/structure", "Structure"), ("/preview", "Preview"), ("/export", "Export")):
+        for route, heading in (("/", "Projects"), ("/document", "Document"), ("/structure", "Structure"), ("/accessibility", "Accessibility"), ("/preview", "Preview"), ("/export", "Export")):
             response = self.client.get(route)
             self.assertEqual(response.status_code, 200)
             self.assertIn(f"<h1>{heading}</h1>", response.text)
@@ -106,6 +106,25 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("inline", source.headers["content-disposition"])
         self.assertIn("fixture.pdf", source.headers["content-disposition"])
         self.assertEqual(source.headers["cache-control"], "private, no-store")
+
+    def test_accessibility_decisions_and_report_downloads(self):
+        document = json.loads(original_path(self.project).read_text())
+        document["blocks"].append({"id": "image", "type": "image", "src": "images/missing.png", "alt": "", "decorative": False, "provenance": {"source_page": 1}})
+        document["review"]["issues"] = [{"code": "manual_check", "page": 1, "message": "Confirm source reading order."}]
+        original_path(self.project).write_text(json.dumps(document))
+        self.bootstrap()
+        page = self.client.get("/accessibility")
+        self.assertIn("Image needs an accessibility decision", page.text)
+        self.assertIn("it cannot be approved as an exception", page.text)
+        saved = self.client.post("/api/accessibility/diagnostic:manual_check:1", headers=self.headers(), json={"status": "approved", "note": "Reviewed with content owner."})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        reopened = self.client.get("/api/document").json()["document"]
+        self.assertEqual(reopened["accessibility_review"]["decisions"]["diagnostic:manual_check:1"]["status"], "approved")
+        generated = self.client.post("/api/accessibility-report", headers=self.headers(), json={})
+        self.assertEqual(generated.status_code, 200, generated.text)
+        self.assertEqual(len(generated.json()["downloads"]), 2)
+        for download in generated.json()["downloads"]:
+            self.assertEqual(self.client.get(download["url"]).status_code, 200)
 
     def test_nested_list_uses_hierarchy_preview_instead_of_text_editor(self):
         document = json.loads(original_path(self.project).read_text())

@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.6.0] - 2026-09-25
+
+### Added
+
+- A dedicated Accessibility workspace for reviewing document structure,
+  images, complex visuals, tables, headings, links, unresolved content, and
+  extraction diagnostics.
+- Persistent human decisions with approved, unresolved, and not-applicable
+  states plus reviewer notes.
+- Short alt text, long-description, and adjacent-text-equivalent fields for
+  complex visuals.
+- Table caption, column-header, row-header, and structural-review controls.
+- Downloadable human-readable HTML and machine-readable JSON accessibility
+  review reports through the browser or `pdf-to-web export accessibility`.
+- Regression coverage for assessment categories, decisions, reports, table
+  semantics, HTTP persistence, and report downloads.
+
+### Changed
+
+- Reviewed table-header decisions now control semantic `th` and `scope`
+  output in HTML and Gutenberg exports.
+- Phase 2 is closed as the stable structural review foundation. Production
+  WSUWP plugin compatibility and human VoiceOver listening remain documented
+  external acceptance checks rather than automated conformance claims.
+
 ## [0.5.20] - 2026-09-18
 
 ### Added

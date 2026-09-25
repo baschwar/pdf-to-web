@@ -12,6 +12,16 @@ body { letter-spacing: 0; }
 .metadata-grid dt { color: var(--app-muted); font-size: .875rem; }
 .metadata-grid dd { margin: .2rem 0 0; }
 .metrics span { border-left: 3px solid var(--app-teal); padding: .55rem .75rem; }
+.accessibility-summary { display: grid; grid-template-columns: repeat(3, minmax(9rem, 1fr)); gap: 1rem; margin-block: 1rem; }
+.accessibility-summary span { border-left: 3px solid var(--app-teal); padding: .75rem; background: #f4f7f7; }
+.accessibility-item { border: 1px solid var(--app-border); border-radius: 6px; padding: 1rem; margin-bottom: .75rem; box-shadow: none; }
+.accessibility-item > header { display: flex; align-items: start; justify-content: space-between; gap: 1rem; border-bottom: 1px solid var(--app-border); }
+.accessibility-item h3, .accessibility-item header p { margin-bottom: .35rem; }
+.accessibility-item.status-approved { border-left: 4px solid #166534; }
+.accessibility-item.status-unresolved { border-left: 4px solid var(--app-warn); }
+.accessibility-item.status-not_applicable { border-left: 4px solid #4b5563; }
+.checkbox-label { display: flex; align-items: center; gap: .5rem; }
+.checkbox-label input { margin: 0; }
 .review-toolbar, .block-card > header, .block-card > footer, .preview-controls, .preview-toolbar, .segmented-control { display: flex; gap: .75rem; align-items: center; justify-content: space-between; flex-wrap: wrap; }
 .structure-layout { display: grid; grid-template-columns: minmax(20rem, 42%) minmax(28rem, 1fr); gap: 1.5rem; align-items: start; }
 .source-pane { position: sticky; top: calc(var(--app-header-height) + 1rem); }

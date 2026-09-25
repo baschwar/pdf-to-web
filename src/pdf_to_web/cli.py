@@ -56,7 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     export = commands.add_parser("export", help="Export normalized content")
     export.add_argument(
-        "target", choices=("markdown", "html", "gutenberg", "wordpress-xml", "all")
+        "target", choices=("markdown", "html", "gutenberg", "wordpress-xml", "accessibility", "all")
     )
     export.add_argument("--project", required=True, type=_project_path)
     export.add_argument("--profile", choices=("generic", "wsuwp"))

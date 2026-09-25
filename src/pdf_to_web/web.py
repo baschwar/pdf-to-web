@@ -19,6 +19,7 @@ from typing import Any
 from urllib.parse import quote, urlparse
 
 from . import __version__
+from .accessibility import assess_document, write_reports
 from .errors import PdfToWebError
 from .export import export_project
 from .exporters import gutenberg as gutenberg_exporter
@@ -44,6 +45,7 @@ from .review_state import (
     table_summary,
     undo_last,
     update_block,
+    update_accessibility_decision,
     update_complex_visual,
 )
 from .source_pages import render_source_page, source_page_size
@@ -269,6 +271,7 @@ def document_model(project_dir: Path) -> dict[str, Any]:
         "summary": summary,
         "counts": dict(counts),
         "progress": review_progress(document),
+        "accessibility": assess_document(document),
         "source_preview_key": source_preview_key,
     }
 
@@ -278,7 +281,7 @@ def _status_label(value: str) -> str:
 
 
 def _nav(active: str, selected: bool) -> str:
-    items = [("Projects", "/"), ("Document", "/document"), ("Structure", "/structure"), ("Preview", "/preview"), ("Export", "/export")]
+    items = [("Projects", "/"), ("Document", "/document"), ("Structure", "/structure"), ("Accessibility", "/accessibility"), ("Preview", "/preview"), ("Export", "/export")]
     links = []
     for label, href in items:
         disabled = not selected and href != "/"
@@ -428,7 +431,16 @@ def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool
 <label class="image-decorative"><input type="checkbox" name="decorative"{" checked" if decorative else ""}> Decorative image</label>
 <small>Decorative images export with an empty alt attribute and do not require alt text.</small>
 <button type="submit" aria-label="Save image block {index}">Save image block</button></form>'''
-    editor = image_editor or text_editor
+    table_editor = ""
+    if block_type == "table" and can_edit:
+        table_accessibility = block.get("table_accessibility", {})
+        table_editor = f'''<form class="block-form table-accessibility-form" data-block-id="{block_id}"><div class="form-grid">
+<label>Table caption<input name="table_caption" value="{html.escape(str(block.get('caption') or ''), quote=True)}"></label>
+<label class="checkbox-label"><input type="checkbox" name="table_header_row"{" checked" if table_accessibility.get('header_row', True) else ""}> First row contains column headers</label>
+<label class="checkbox-label"><input type="checkbox" name="table_header_column"{" checked" if table_accessibility.get('header_column') else ""}> First column contains row headers</label>
+<label class="checkbox-label"><input type="checkbox" name="table_reviewed"{" checked" if table_accessibility.get('reviewed') else ""}> I reviewed the table structure</label></div>
+<button type="submit" aria-label="Save table accessibility for block {index}">Save table accessibility</button></form>'''
+    editor = image_editor or table_editor or text_editor
     include_label = "Include" if review_status == "excluded" else "Exclude"
     actions = f'''<footer class="block-actions" aria-label="Actions for block {index}">
 <button type="button" class="secondary block-action" data-action="start" data-block-id="{block_id}" aria-label="Move block {index} to start"{" disabled" if index == 1 else ""}>Move to start</button>
@@ -454,10 +466,14 @@ def _complex_visual_card(visual: dict[str, Any], *, can_edit: bool) -> str:
     asset_list = "".join(f"<li><code>{html.escape(str(asset))}</code></li>" for asset in assets)
     asset_image = f'<img src="/review-asset/{html.escape(str(assets[0]), quote=True)}" alt="Extracted visual asset from source page {visual.get("source_page")}">' if assets else ""
     status = str(visual.get("status", "needs_text_equivalent"))
+    accessibility = visual.get("accessibility", {})
     form = f'''<form class="complex-visual-form" data-visual-id="{visual_id}"><div class="form-grid">
 <label>Classification<input name="type" value="{html.escape(str(visual.get('type','infographic')), quote=True)}"></label>
 <label>Review state<select name="status"><option value="needs_text_equivalent"{" selected" if status == "needs_text_equivalent" else ""}>Keep flagged</option><option value="reclassified"{" selected" if status == "reclassified" else ""}>Reclassified</option><option value="excluded"{" selected" if status == "excluded" else ""}>Excluded</option></select></label></div>
-<label>Recovered text<textarea name="recovered_text" rows="8">{html.escape(str(visual.get('recovered_text','')))}</textarea></label><button type="submit">Save complex visual review</button></form>''' if can_edit else "<p><strong>Inspection only while conversion is blocked.</strong></p>"
+<label>Short alt text<textarea name="short_alt" rows="3">{html.escape(str(accessibility.get('short_alt','')))}</textarea></label>
+<label>Long description<textarea name="long_description" rows="6">{html.escape(str(accessibility.get('long_description','')))}</textarea></label>
+<label>Adjacent text equivalent<textarea name="adjacent_text" rows="6">{html.escape(str(accessibility.get('adjacent_text','')))}</textarea></label>
+<label>Recovered source text<textarea name="recovered_text" rows="8">{html.escape(str(visual.get('recovered_text','')))}</textarea></label><button type="submit">Save complex visual review</button></form>''' if can_edit else "<p><strong>Inspection only while conversion is blocked.</strong></p>"
     return f'''<article class="complex-visual" id="visual-{visual_id}"><h3>Complex visual - review required</h3><p>Source page {visual.get('source_page')} · Text recovery {recovery} · {_status_label(status)}</p>{asset_image}<details><summary>Extracted assets and recovered text</summary><ul>{asset_list or '<li>No separate assets were retained.</li>'}</ul><p>{html.escape(str(visual.get('recovered_text','')))}</p></details>{form}</article>'''
 
 
@@ -476,6 +492,47 @@ def _structure_page(model: dict[str, Any]) -> str:
 <div class="structure-layout"><section class="source-pane" aria-labelledby="source-heading" data-page-count="{page_count}" data-source-key="{source_preview_key}"><h2 id="source-heading">Source page</h2><form id="source-page-controls" class="source-page-controls"><button id="source-page-previous" type="button" class="secondary" disabled aria-label="Previous source page">Previous</button><label>Page <input id="source-page-number" type="number" min="1" max="{page_count}" value="1" inputmode="numeric" aria-describedby="source-page-total"></label><span id="source-page-total">of {page_count}</span><button id="source-page-next" type="button" class="secondary"{(' disabled' if page_count <= 1 else '')} aria-label="Next source page">Next</button></form><p id="source-page-label" aria-live="polite">Select a block to view and outline its source region.</p><div class="source-image-stage"><img id="source-image" src="/source-page/1.png?v={source_preview_key}" alt="Rendered source PDF page 1"><span id="source-highlights" aria-hidden="true"></span></div><p><a id="open-source-page" href="/source.pdf?v={source_preview_key}#page=1" target="_blank" rel="noopener">Open source PDF page 1</a></p></section>
 <section class="blocks-pane" aria-labelledby="blocks-heading"><div class="reading-order-header"><h2 id="blocks-heading">Reading order</h2><div class="block-navigation" role="group" aria-label="Selected block navigation"><button id="previous-block" type="button" class="secondary" disabled>Previous block</button><span class="block-navigation-position" aria-live="polite"><span id="selected-block-page">Page -</span><span id="selected-block-position">No block selected</span></span><button id="next-block" type="button" class="secondary"{(' disabled' if not blocks else '')}>Next block</button></div></div><p>Use the movement controls on each block to correct reading order. Changes save immediately.</p>{cards or '<p>No normalized blocks are available.</p>'}</section></div>'''
     return _page("Structure", "structure", body)
+
+
+def _accessibility_page(model: dict[str, Any]) -> str:
+    report = model["accessibility"]
+    summary = report["summary"]
+    category_labels = {
+        "structure": "Structure",
+        "images": "Images",
+        "complex_visuals": "Complex visuals",
+        "tables": "Tables",
+        "headings": "Headings",
+        "links": "Links",
+        "unresolved_content": "Unresolved content",
+        "diagnostics": "Diagnostics",
+    }
+    groups: list[str] = []
+    for category in category_labels:
+        items = [item for item in report["items"] if item["category"] == category]
+        if not items:
+            continue
+        cards = []
+        for item in items:
+            item_id = html.escape(item["id"], quote=True)
+            location = f"Source page {item['source_page']}" if item.get("source_page") else "Document-level"
+            block_link = f' · <a href="/structure#block-{quote(str(item["block_id"]))}">Open block</a>' if item.get("block_id") else ""
+            if item["decision_allowed"]:
+                statuses = "".join(
+                    f'<option value="{value}"{" selected" if item["status"] == value else ""}>{_status_label(value)}</option>'
+                    for value in ("unresolved", "approved", "not_applicable")
+                )
+                decision_control = f'''<form class="accessibility-decision-form" data-item-id="{item_id}"><div class="form-grid"><label>Decision<select name="status">{statuses}</select></label><label>Reviewer note<textarea name="note" rows="2">{html.escape(item['note'])}</textarea></label></div><button type="submit">Save decision</button></form>'''
+            else:
+                decision_control = '<p><strong>Correction required.</strong> Resolve this finding in Structure; it cannot be approved as an exception.</p>'
+            cards.append(f'''<article class="accessibility-item status-{html.escape(item['status'])}"><header><div><h3>{html.escape(item['title'])}</h3><p>{html.escape(location)}{block_link}</p></div><span class="block-status status-{html.escape(item['status'])}">{_status_label(item['status'])}</span></header>
+<p>{html.escape(item['message'])}</p>{decision_control}</article>''')
+        groups.append(f'<section aria-labelledby="accessibility-{category}"><h2 id="accessibility-{category}">{category_labels[category]} <small>({len(items)})</small></h2>{"".join(cards)}</section>')
+    empty = '<section class="status-banner"><h2>No findings</h2><p>The current deterministic checks found no items requiring a decision.</p></section>' if not groups else ""
+    body = f'''<h1>Accessibility</h1><p>This workspace records human accessibility decisions. It does not certify WCAG conformance.</p>
+<div class="accessibility-summary"><span><strong>{summary['unresolved']}</strong> unresolved</span><span><strong>{summary['approved']}</strong> approved</span><span><strong>{summary['not_applicable']}</strong> not applicable</span></div>
+<p><button type="button" id="export-accessibility-report">Generate accessibility report</button></p><div id="accessibility-export-result" role="status" aria-live="polite"></div>{empty}{''.join(groups)}'''
+    return _page("Accessibility", "accessibility", body)
 
 
 def _preview_page(project: dict[str, Any]) -> str:
@@ -673,6 +730,11 @@ def create_app(config: WebAppConfig):
     async def structure_page(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
         require_session(session)
         return _structure_page(document_model(current()))
+
+    @app.get("/accessibility", response_class=HTMLResponse)
+    async def accessibility_page(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+        require_session(session)
+        return _accessibility_page(document_model(current()))
 
     @app.get("/preview", response_class=HTMLResponse)
     async def preview_page(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
@@ -889,6 +951,33 @@ def create_app(config: WebAppConfig):
         try:
             update_complex_visual(current(), visual_id, await request.json())
             return {"status": "ok"}
+        except Exception as exc:
+            return error_response(exc)
+
+    @app.post("/api/accessibility/{item_id:path}")
+    async def accessibility_decision(item_id: str, request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
+        require_change(request, session, csrf)
+        require_editable_document()
+        try:
+            data = await request.json()
+            update_accessibility_decision(
+                current(), item_id, str(data.get("status", "unresolved")), str(data.get("note", ""))
+            )
+            return {"status": "ok", "accessibility": assess_document(ensure_review_document(current()))["summary"]}
+        except Exception as exc:
+            return error_response(exc)
+
+    @app.post("/api/accessibility-report")
+    async def accessibility_report(request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
+        require_change(request, session, csrf)
+        try:
+            paths = write_reports(current(), ensure_review_document(current()))
+            files = [str(path.relative_to(current())) for path in paths]
+            return {
+                "status": "ok",
+                "files": files,
+                "downloads": [{"path": path, "url": f"/download/{quote(path, safe='/')}"} for path in files],
+            }
         except Exception as exc:
             return error_response(exc)
 

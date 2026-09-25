@@ -1,5 +1,10 @@
 # WordPress Acceptance 0.5.1
 
+> Historical acceptance worksheet: this file preserves the 0.5.1 manual test
+> record. Later automated fixes and Phase 2 closeout evidence are documented in
+> `CHANGELOG.md` and `docs/PHASE2_CLOSEOUT.md`. Rows still marked NOT TESTED must
+> not be treated as production WSUWP acceptance.
+
 Automated validation must pass before recording these manual results. Do not
 mark a row passed without performing it in the named WordPress environment.
 

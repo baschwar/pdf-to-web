@@ -123,13 +123,18 @@ def _render_image(block: dict[str, Any]) -> str:
 
 def _table_markup(block: dict[str, Any]) -> str:
     rows = block.get("rows", [])
+    table_review = block.get("table_accessibility", {})
+    header_row = table_review.get("header_row", True)
+    header_column = table_review.get("header_column", False)
     body = []
     for row_index, row in enumerate(rows):
-        cell_tag = "th" if row_index == 0 else "td"
         cells: list[str] = []
-        for cell in row:
+        for column_index, cell in enumerate(row):
+            cell_tag = "th" if (header_row and row_index == 0) or (header_column and column_index == 0) else "td"
             content, row_span, column_span = table_cell(cell)
             spans = ""
+            if cell_tag == "th":
+                spans += ' scope="col"' if header_row and row_index == 0 else ' scope="row"'
             if row_span > 1:
                 spans += f' rowspan="{row_span}"'
             if column_span > 1:

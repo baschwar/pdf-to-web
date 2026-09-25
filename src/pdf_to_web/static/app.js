@@ -230,6 +230,10 @@ document.querySelectorAll('.block-form').forEach((form) => form.addEventListener
   const values = Object.fromEntries(new FormData(form));
   const decorative = form.querySelector('input[name="decorative"]');
   if (decorative) values.decorative = decorative.checked;
+  ['table_header_row', 'table_header_column', 'table_reviewed'].forEach((name) => {
+    const checkbox = form.querySelector(`input[name="${name}"]`);
+    if (checkbox) values[name] = checkbox.checked;
+  });
   if (values.type === 'heading') values.level = Number(values.level);
   else delete values.level;
   try {
@@ -260,6 +264,35 @@ document.querySelectorAll('.complex-visual-form').forEach((form) => form.addEven
     window.location.reload();
   } catch (error) { announce(error.message); alert(error.message); }
 }));
+
+document.querySelectorAll('.accessibility-decision-form').forEach((form) => form.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    const values = Object.fromEntries(new FormData(form));
+    await api(`/api/accessibility/${encodeURIComponent(form.dataset.itemId)}`, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(values) });
+    announce('Accessibility decision saved.');
+    window.location.reload();
+  } catch (error) { announce(error.message); alert(error.message); }
+}));
+
+document.getElementById('export-accessibility-report')?.addEventListener('click', async () => {
+  const output = document.getElementById('accessibility-export-result');
+  try {
+    const data = await api('/api/accessibility-report', { method: 'POST', headers: csrfHeaders(), body: '{}' });
+    const list = document.createElement('ul');
+    data.downloads.forEach((file) => {
+      const item = document.createElement('li');
+      const link = document.createElement('a');
+      link.href = file.url;
+      link.download = '';
+      link.textContent = `Download ${file.path.split('/').pop()}`;
+      item.append(link);
+      list.append(item);
+    });
+    output.replaceChildren(list);
+    announce('Accessibility reports generated.');
+  } catch (error) { output.textContent = error.message; announce(error.message); }
+});
 
 document.querySelectorAll('.block-action').forEach((button) => button.addEventListener('click', async () => {
   let action = button.dataset.action;

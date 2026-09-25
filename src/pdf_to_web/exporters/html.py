@@ -27,15 +27,20 @@ def _list(block: dict[str, Any]) -> str:
 
 def _table(block: dict[str, Any]) -> str:
     caption = block.get("caption")
+    table_review = block.get("table_accessibility", {})
+    header_row = table_review.get("header_row", True)
+    header_column = table_review.get("header_column", False)
     parts = ["<table>"]
     if caption:
         parts.append(f"<caption>{html.escape(str(caption))}</caption>")
     for row_index, row in enumerate(block.get("rows", [])):
         parts.append("<tr>")
-        cell_tag = "th" if row_index == 0 else "td"
-        for cell in row:
+        for column_index, cell in enumerate(row):
+            cell_tag = "th" if (header_row and row_index == 0) or (header_column and column_index == 0) else "td"
             content, row_span, column_span = table_cell(cell)
-            scope = ' scope="col"' if cell_tag == "th" else ""
+            scope = ""
+            if cell_tag == "th":
+                scope = ' scope="col"' if header_row and row_index == 0 else ' scope="row"'
             spans = ""
             if row_span > 1:
                 spans += f' rowspan="{row_span}"'

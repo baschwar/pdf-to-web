@@ -151,9 +151,19 @@ class ReviewStateTests(unittest.TestCase):
         document = self.read_original()
         document["review"]["complex_visuals"] = [{"id": "visual-1", "type": "infographic", "status": "needs_text_equivalent", "recovered_text": "Old"}]
         original_path(self.project).write_text(json.dumps(document))
-        update_complex_visual(self.project, "visual-1", {"type": "chart", "status": "reclassified", "recovered_text": "Corrected"})
+        update_complex_visual(self.project, "visual-1", {"type": "chart", "status": "reclassified", "recovered_text": "Corrected", "short_alt": "Enrollment chart", "long_description": "Enrollment increased each year."})
         visual = ensure_review_document(self.project)["review"]["complex_visuals"][0]
         self.assertEqual((visual["type"], visual["status"], visual["recovered_text"]), ("chart", "reclassified", "Corrected"))
+        self.assertEqual(visual["accessibility"]["short_alt"], "Enrollment chart")
+
+    def test_table_accessibility_review_persists(self):
+        document = self.read_original()
+        document["blocks"].append({"id": "table-1", "type": "table", "rows": [[{"content": "Header"}], [{"content": "Value"}]], "provenance": {"source_page": 1}})
+        original_path(self.project).write_text(json.dumps(document))
+        update_block(self.project, "table-1", {"table_caption": "Results", "table_header_row": True, "table_header_column": False, "table_reviewed": True})
+        table = ensure_review_document(self.project)["blocks"][-1]
+        self.assertEqual(table["caption"], "Results")
+        self.assertEqual(table["table_accessibility"], {"header_row": True, "header_column": False, "reviewed": True})
 
 
 if __name__ == "__main__":

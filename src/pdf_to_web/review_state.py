@@ -228,6 +228,17 @@ def update_block(project_dir: Path, block_id: str, changes: dict[str, Any]) -> d
             block["caption"] = str(changes["caption"]).strip()
         if block.get("decorative"):
             block["alt"] = ""
+    if any(field in changes for field in ("table_header_row", "table_header_column", "table_caption", "table_reviewed")):
+        if block.get("type") != "table":
+            raise ValueError("Table accessibility fields can only be set on a table block")
+        table_review = block.setdefault("table_accessibility", {})
+        for field in ("table_header_row", "table_header_column", "table_reviewed"):
+            if field in changes:
+                value = changes[field]
+                key = field.removeprefix("table_")
+                table_review[key] = value if isinstance(value, bool) else str(value).lower() in {"1", "true", "yes", "on"}
+        if "table_caption" in changes:
+            block["caption"] = str(changes["table_caption"]).strip()
     if "review_status" in changes:
         status = str(changes["review_status"])
         if (
@@ -341,7 +352,21 @@ def update_complex_visual(
         visual["type"] = visual_type
     if "recovered_text" in changes:
         visual["recovered_text"] = str(changes["recovered_text"])
+    accessibility = visual.setdefault("accessibility", {})
+    for field in ("short_alt", "long_description", "adjacent_text"):
+        if field in changes:
+            accessibility[field] = str(changes[field]).strip()
     visual["reviewed_at"] = utc_now()
+    return save_review_document(project_dir, document)
+
+
+def update_accessibility_decision(
+    project_dir: Path, item_id: str, status: str, note: str
+) -> dict[str, Any]:
+    from .accessibility import save_decision
+
+    document = ensure_review_document(project_dir)
+    save_decision(document, item_id, status, note)
     return save_review_document(project_dir, document)
 
 
