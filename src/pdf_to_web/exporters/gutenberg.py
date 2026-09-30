@@ -6,7 +6,7 @@ import re
 from typing import Any
 from urllib.parse import urlparse
 
-from .common import is_excluded, is_footnote_body, render_footnote_backlinks, render_inline, table_cell
+from .common import block_anchors, is_excluded, is_footnote_body, render_footnote_backlinks, render_inline, table_cell
 
 
 def _attrs(values: dict[str, Any], escape_hyphens: bool = False) -> str:
@@ -226,21 +226,29 @@ def render_document(
     config = config or {}
     blocks = list(document.get("blocks", []))
     rendered: list[str] = []
+    anchors = set(document.get("output_anchor_ids", []))
+    def anchored(block):
+        markup = block_anchors(block, anchors)
+        anchor = _wrap("html", markup) if markup else ""
+        return anchor + render_block(block)
     if profile == "wsuwp":
         if (config.get("hero") or {}).get("enabled"):
             rendered.append(_wsu_hero(document, config))
             title = str(document.get("metadata", {}).get("title", ""))
             if blocks and blocks[0].get("type") == "heading" and blocks[0].get("content") == title:
+                title_anchor = block_anchors(blocks[0], anchors)
+                if title_anchor:
+                    rendered.append(_wrap("html", title_anchor))
                 blocks = blocks[1:]
         section = dict(config.get("section_defaults") or {})
         wrap_in_section = bool(config.get("wrap_in_section")) or bool(section)
         if wrap_in_section:
             rendered.append(f"<!-- wp:wsuwp/section{_attrs(section, escape_hyphens=True)} -->")
-        rendered.extend(content for block in blocks if (content := render_block(block)))
+        rendered.extend(content for block in blocks if (content := anchored(block)))
         if wrap_in_section:
             rendered.append("<!-- /wp:wsuwp/section -->")
     elif profile == "generic":
-        rendered.extend(content for block in blocks if (content := render_block(block)))
+        rendered.extend(content for block in blocks if (content := anchored(block)))
     else:
         raise ValueError(f"Unknown WordPress export profile: {profile}")
     rendered.extend(_render_footnotes(document))

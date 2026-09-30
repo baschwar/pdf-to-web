@@ -130,3 +130,10 @@ def table_cell(cell: Any) -> tuple[str, int, int]:
             int(cell.get("column_span", 1) or 1),
         )
     return str(cell), 1, 1
+
+
+def block_anchors(block, anchors):
+    if is_excluded(block):
+        return ''
+    markup = '<span id="' + html.escape(str(block.get('id')), quote=True) + '"></span>' if str(block.get('id')) in anchors else ''
+    return markup + ''.join(block_anchors(child, anchors) for child in block.get('children', []))

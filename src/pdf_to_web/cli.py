@@ -56,7 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     export = commands.add_parser("export", help="Export normalized content")
     export.add_argument(
-        "target", choices=("markdown", "html", "gutenberg", "wordpress-xml", "accessibility", "all")
+        "target", choices=("markdown", "html", "gutenberg", "wordpress-xml", "accessibility", "pages", "all")
     )
     export.add_argument("--project", required=True, type=_project_path)
     export.add_argument("--profile", choices=("generic", "wsuwp"))
@@ -122,7 +122,12 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "spike":
             print(run_corpus(args.sample_dir, args.output))
         elif args.command == "export":
-            for path in export_project(args.project, args.target, args.profile):
+            if args.target == "pages":
+                from .output_page_export import export_pages
+                paths = export_pages(args.project, profile=args.profile)
+            else:
+                paths = export_project(args.project, args.target, args.profile)
+            for path in paths:
                 print(path)
         elif args.command == "validate-exports":
             paths = validate_project_exports(args.project)

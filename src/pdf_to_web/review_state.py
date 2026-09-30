@@ -72,6 +72,7 @@ def ensure_review_document(project_dir: Path) -> dict[str, Any]:
     path = review_path(project_dir)
     if path.is_file():
         document = _read_document(path)
+        previous = copy.deepcopy(document)
         from .normalize import _clean_list_markers, apply_source_supplemental_regions, apply_source_title, reconcile_visual_reading_order, repair_interleaved_images
 
         changed = apply_source_title(document, project_dir)
@@ -97,10 +98,17 @@ def ensure_review_document(project_dir: Path) -> dict[str, Any]:
             _extract_footnotes(document)
             if document.get("footnotes"):
                 changed = True
+        from .output_pages import ensure_pages
+        changed = ensure_pages(document) or changed
         if changed:
+            if "output_pages" in previous:
+                from .output_pages import reconcile
+                reconcile(document, previous)
             _atomic_write(path, document)
         return document
     document = _prepare(_read_document(original_path(project_dir)))
+    from .output_pages import ensure_pages
+    ensure_pages(document)
     path.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write(path, document)
     project = load_project(project_dir)
@@ -138,7 +146,10 @@ def save_review_document(project_dir: Path, document: dict[str, Any], *, snapsho
     project_dir = project_dir.expanduser().resolve()
     path = review_path(project_dir)
     if snapshot and path.is_file():
-        _snapshot(project_dir, _read_document(path))
+        previous = _read_document(path)
+        from .output_pages import reconcile
+        reconcile(document, previous)
+        _snapshot(project_dir, previous)
     now = utc_now()
     session = document.setdefault("review_session", {})
     session["schema_version"] = REVIEW_SCHEMA
@@ -285,6 +296,9 @@ def merge_with_next(project_dir: Path, block_id: str) -> dict[str, Any]:
     provenance.setdefault("review_changes", []).append(
         {"action": "merge", "merged_block_id": following.get("id"), "at": utc_now()}
     )
+    provenance.setdefault("merged_source_pages", []).extend(
+        [following.get("provenance", {}).get("source_page"), *following.get("provenance", {}).get("merged_source_pages", [])]
+    )
     del siblings[index + 1]
     _set_status(block, "needs_review")
     return save_review_document(project_dir, document)
@@ -404,3 +418,11 @@ def table_summary(block: dict[str, Any]) -> dict[str, int]:
             if isinstance(cell, dict)
         ),
     }
+
+
+def update_output_pages(project_dir: Path, action: str, data: dict[str, Any]) -> str | None:
+    from .output_pages import mutate
+    document = ensure_review_document(project_dir)
+    selected = mutate(document, action, data)
+    save_review_document(project_dir, document)
+    return selected

@@ -41,7 +41,7 @@ def _item(
 def _link_items(block: dict[str, Any]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for index, run in enumerate(block.get("runs", []), 1):
-        if not isinstance(run, dict) or not run.get("href"):
+        if not isinstance(run, dict) or not (run.get("href") or run.get("url")):
             continue
         text = str(run.get("text") or "").strip()
         normalized = re.sub(r"\s+", " ", text).lower()
