@@ -160,3 +160,41 @@ retains author edits, and remains undoable.
 Restart the app to load the updated code, then use **Fill empty fields from
 existing drafts** once for earlier imports. Caption/long-description nulls in a
 response mean that no text was supplied; population does not invent missing text.
+
+### Imported visual cards and faster review controls — 2026-09-30
+
+Fixed a regression in the image-bound description cards: nested asset references
+were sent to a filename-only route, leaving broken previews. Cards now use the
+exact associated image through the existing confined local-asset endpoint; legacy
+basename assets and raw/project-relative paths also work. Missing or unsafe assets
+show a visible unavailable message. New and existing imported image descriptions
+show the image's short alt; saving either image editor synchronizes bound metadata.
+Legacy cards use the existing image alt without requiring reimport.
+
+Visual review saves persist short/long descriptions through the existing revision
+mechanism, show local live confirmation or errors, preserve keyboard focus, and
+update linked image fields without a page reload. Undo and reopen retain the
+expected behavior. Image-bound description cards use that name rather than
+labeling every screenshot a complex visual.
+
+Needs review (yellow), Exclude (red), and Approve (green) appear above each block's
+header/number and source information, in that left-to-right order. Movement,
+merge, and split remain below the editor. Excluded blocks offer Include. Labels,
+keyboard operation, contrast, and visible focus do not depend on color alone.
+Visual previews now shrink within their card on narrow screens.
+
+- Baseline: 186 tests passed; final suite: 191 tests passed.
+- Five new regressions cover exact preview paths, legacy short-alt fallback,
+  saving/export/Undo, image-editor synchronization, and top action order.
+- Ten Chrome checks passed with no page errors: decoded image previews, imported
+  short/long text, keyboard save feedback/focus without reload, synchronized image
+  fields, semantic preview, reload, Undo, action placement/order/colors,
+  approve/flag/exclude/include, and 390-pixel layout without horizontal overflow.
+- Evidence: `build/image-drafts/complex-review-browser-report.json`,
+  `complex-review-desktop.png`, and `complex-review-narrow.png`. Repeatable check:
+  `tools/complex-image-review-browser-check.js BOOTSTRAP_URL DISPOSABLE_PROJECT`.
+- Tests use only disposable synthetic fixtures. No real reviewed project, source
+  PDF, provider, WordPress site, or external account was changed or contacted.
+- Restart the app and reload Structure to use the Python rendering/save changes;
+  existing imports do not need to be repeated. Human VoiceOver, production WSUWP,
+  and actual Windows hardware acceptance remain pending. No push or release.

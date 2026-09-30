@@ -31,7 +31,12 @@ Accepted fields continue to drive HTML, Gutenberg, WXR and Output Pages.
 4. Refresh results to review ready drafts beside the accepted fields. Polling
    updates status without overwriting unsaved edits or moving keyboard focus.
 5. New imported or generated drafts fill empty alt, caption and long-description
-   fields directly for review. Existing nonempty text is preserved; Apply can
+   fields directly for review. Image-description cards show the exact associated
+   image and share its short alt with the image editor, including earlier imports.
+   **Save complex visual review** confirms in place; edits persist and are undoable.
+   Structure review buttons sit above each block header and source details in
+   Needs review (yellow), Exclude (red), Approve (green) order.
+   Existing nonempty text is preserved; Apply can
    deliberately replace it. Long descriptions are editable in the image form.
    **Fill empty fields from existing drafts** handles earlier imports in one batch.
    Null fields leave content unchanged. Reject removes untouched auto-filled text

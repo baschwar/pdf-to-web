@@ -66,7 +66,7 @@ button:disabled { opacity: 1; color: #4b5563; background: #e5e7eb; border-color:
 .order { display: inline-grid; place-items: center; width: 2rem; height: 2rem; border-radius: 50%; background: #20252b; color: white; font-weight: 700; }
 .block-issue, .complex-warning { border-left: 4px solid var(--app-warn); padding: .75rem 1rem; background: #fff8e8; }
 .complex-visual { border: 1px solid var(--app-border); border-radius: 6px; padding: 1rem; background: #fff; }
-.complex-visual img { max-width: 24rem; max-height: 18rem; object-fit: contain; border: 1px solid var(--app-border); }
+.complex-visual img { max-width: min(100%, 24rem); max-height: 18rem; object-fit: contain; border: 1px solid var(--app-border); }
 .table-scroll { overflow-x: auto; max-height: 18rem; }
 .project-list { list-style: none; padding: 0; }
 .project-list > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1rem; align-items: center; padding: .9rem 0; border-bottom: 1px solid var(--app-border); }
@@ -122,3 +122,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 #draft-provider-setup[open] > summary,
 #draft-manual-import[open] > summary { margin-bottom: .8rem; }
+
+.block-review-actions { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-bottom: .65rem; }
+.block-review-actions button { margin: 0; padding: .45rem .7rem; font-weight: 600; }
+.block-review-actions .review-needs { background: #facc15; border-color: #854d0e; color: #1c1917; }
+.block-review-actions .review-exclude { background: #b91c1c; border-color: #991b1b; color: #fff; }
+.block-review-actions .review-approve { background: #166534; border-color: #14532d; color: #fff; }
+.block-review-actions button:hover { filter: brightness(.9); }
+.block-review-actions button:focus-visible { outline: 3px solid #1c6ea4; outline-offset: 3px; }
+.visual-save-message { margin-top: .5rem; font-weight: 600; }

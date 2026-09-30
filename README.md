@@ -197,6 +197,10 @@ counts and brings the download link into view. Cancel controls appear only for
 active requests. Validate and import responses to fill empty alt, caption and long-description
 fields directly. Existing text is preserved; use Apply to replace it deliberately.
 Long descriptions are editable beside the image and retained through exports.
+Their image-description cards show the associated image and share its short alt
+text. Saving a visual review confirms in place and retains keyboard focus.
+Structure places **Needs review**, **Exclude**, and **Approve** above each block
+header and source details, in yellow, red, and green respectively.
 Use **Fill empty fields from existing drafts** for previously imported drafts.
 Null response fields leave existing content unchanged. Review, reject, retry and
 Undo remain available; populated images still need human approval. No key or network access is needed for manual

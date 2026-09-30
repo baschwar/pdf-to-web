@@ -248,6 +248,9 @@ def update_block(project_dir: Path, block_id: str, changes: dict[str, Any]) -> d
                 visual.setdefault("accessibility", {})["long_description"] = text
         if block.get("decorative"):
             block["alt"] = ""
+        visual = image_description_visual(document, block)
+        if visual and visual.get("source_block_id") == str(block["id"]):
+            visual.setdefault("accessibility", {})["short_alt"] = block.get("alt") or ""
     if any(field in changes for field in ("table_header_row", "table_header_column", "table_caption", "table_reviewed")):
         if block.get("type") != "table":
             raise ValueError("Table accessibility fields can only be set on a table block")
@@ -363,7 +366,7 @@ def image_description_visual(document, block, *, create=False):
         visual = {"id": "image-description-" + str(block["id"]), "type": "image",
                   "status": "needs_text_equivalent", "source_block_id": str(block["id"]),
                   "source_page": block.get("provenance", {}).get("source_page"),
-                  "asset_references": [block.get("src")], "accessibility": {}}
+                  "asset_references": [block.get("src")], "accessibility": {"short_alt": block.get("alt") or ""}}
         if any(v.get("id") == visual["id"] for v in visuals):
             raise ValueError("Image description identity already exists; verify association")
         visuals.append(visual)
@@ -395,6 +398,15 @@ def update_complex_visual(
     for field in ("short_alt", "long_description", "adjacent_text"):
         if field in changes:
             accessibility[field] = str(changes[field]).strip()
+    if visual.get("source_block_id"):
+        block = _find_location(document.get("blocks", []), str(visual["source_block_id"]))[2]
+        if block.get("type") != "image":
+            raise ValueError("Image description must reference an image block")
+        if "short_alt" in changes:
+            block["alt"] = "" if block.get("decorative") else accessibility["short_alt"]
+            accessibility["short_alt"] = block["alt"]
+        if any(field in changes for field in ("short_alt", "long_description", "adjacent_text")) and block.get("review", {}).get("status") != "excluded":
+            _set_status(block, "needs_review")
     visual["reviewed_at"] = utc_now()
     return save_review_document(project_dir, document)
 

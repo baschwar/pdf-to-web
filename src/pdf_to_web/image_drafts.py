@@ -231,6 +231,9 @@ def populate_empty_fields(root, document, entry):
         entry.setdefault('populated_fields', {})[field] = value
     if applied:
         block.setdefault('review', {}).update(status='needs_review', updated_at=utc_now())
+        visual = visual_for(document, block)
+        if visual and visual.get('source_block_id') == str(block['id']):
+            visual.setdefault('accessibility', {})['short_alt'] = block.get('alt') or ''
         entry.setdefault('applied_fields', []).extend(applied)
         entry['current_context_hash'] = current_identity(root, document, entry['block_id'])[0]['context_hash']
 
@@ -343,6 +346,9 @@ def mutate(root, action, data):
                     removed = True
             if removed and block.get('review', {}).get('status') != 'excluded':
                 block.setdefault('review', {}).update(status='needs_review', updated_at=utc_now())
+            visual = visual_for(document, block)
+            if visual and visual.get('source_block_id') == str(block['id']):
+                visual.setdefault('accessibility', {})['short_alt'] = block.get('alt') or ''
             entry['current_context_hash'] = current_identity(root, document, block_id)[0]['context_hash']
             entry['status'] = 'rejected'
         elif action in {'edit', 'apply'}:
@@ -367,6 +373,9 @@ def mutate(root, action, data):
                         raise ValueError('Use the existing decorative control before applying alt text')
                     else:
                         block[field] = value
+                visual = visual_for(document, block)
+                if visual and visual.get('source_block_id') == str(block['id']):
+                    visual.setdefault('accessibility', {})['short_alt'] = block.get('alt') or ''
                 # Existing authoring rules: applying never approves; preserve structural status.
                 entry['current_context_hash'] = current_identity(root, document, block_id)[0]['context_hash']
                 entry.setdefault('applied_fields', []).extend(fields)

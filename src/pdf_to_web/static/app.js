@@ -259,12 +259,33 @@ document.querySelectorAll('.block-form select[name="type"]').forEach((select) =>
 
 document.querySelectorAll('.complex-visual-form').forEach((form) => form.addEventListener('submit', async (event) => {
   event.preventDefault();
+  const button = form.querySelector('button[type="submit"]');
+  const message = form.querySelector('.visual-save-message');
+  const restoreFocus = document.activeElement === button;
+  button.disabled = true;
+  message.textContent = 'Saving…';
   try {
     const values = Object.fromEntries(new FormData(form));
     await api(`/api/complex-visuals/${encodeURIComponent(form.dataset.visualId)}`, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(values) });
+    message.textContent = 'Review saved. Image descriptions still need review.';
     announce('Complex visual review saved.');
-    window.location.reload();
-  } catch (error) { announce(error.message); alert(error.message); }
+    for (const field of form.querySelectorAll('input, textarea')) field.defaultValue = values[field.name];
+    const state = form.closest('.complex-visual').querySelector('.visual-state');
+    state.textContent = form.elements.status.selectedOptions[0].textContent;
+    const imageForm = form.dataset.blockId && document.querySelector(`.image-block-form[data-block-id="${CSS.escape(form.dataset.blockId)}"]`);
+    if (imageForm) {
+      for (const [key, value] of Object.entries({alt: values.short_alt, long_description: values.long_description})) {
+        const field = imageForm.elements.namedItem(key);
+        if (field && field.value === field.defaultValue) { field.value = value; field.defaultValue = value; }
+      }
+      const review = imageForm.elements.namedItem('review_status');
+      if (review.value === 'approved') review.value = 'needs_review';
+    }
+  } catch (error) { message.textContent = error.message; announce(error.message); }
+  finally {
+    button.disabled = false;
+    if (restoreFocus && document.activeElement === document.body) button.focus({preventScroll: true});
+  }
 }));
 
 document.querySelectorAll('.accessibility-decision-form').forEach((form) => form.addEventListener('submit', async (event) => {

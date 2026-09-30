@@ -492,32 +492,68 @@ def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool
 <button type="button" class="secondary block-action" data-action="end" data-block-id="{block_id}" aria-label="Move block {index} to end"{" disabled" if index == total else ""}>Move to end</button>
 <button type="button" class="secondary block-action" data-action="merge" data-block-id="{block_id}" aria-label="Merge block {index} with next block">Merge next</button>
 <button type="button" class="secondary block-action" data-action="split" data-block-id="{block_id}" aria-label="Split block {index}">Split</button>
-<button type="button" class="secondary block-action" data-action="toggle-excluded" data-block-id="{block_id}" data-current-status="{review_status}" aria-label="{include_label} block {index}">{include_label}</button>
-<button type="button" class="secondary block-action" data-action="approve" data-block-id="{block_id}" aria-label="Approve block {index}">Approve</button>
-<button type="button" class="secondary block-action" data-action="flag" data-block-id="{block_id}" aria-label="Mark block {index} as needs review">Needs review</button></footer>''' if can_edit else '<footer><strong>Inspection only while conversion is blocked.</strong></footer>'
+</footer>''' if can_edit else '<footer><strong>Inspection only while conversion is blocked.</strong></footer>'
+    review_actions = f'''<div class="block-review-actions" role="group" aria-label="Review block {index}">
+<button type="button" class="block-action review-needs" data-action="flag" data-block-id="{block_id}" aria-label="Mark block {index} as needs review">Needs review</button>
+<button type="button" class="block-action review-exclude" data-action="toggle-excluded" data-block-id="{block_id}" data-current-status="{review_status}" aria-label="{include_label} block {index}">{include_label}</button>
+<button type="button" class="block-action review-approve" data-action="approve" data-block-id="{block_id}" aria-label="Approve block {index}">Approve</button></div>''' if can_edit else ""
     return f'''<article class="block-card status-{html.escape(review_status)}" id="block-{block_id}" tabindex="-1" data-page="{page}" data-bbox="{bbox_value}" data-bboxes="{regions_value}" data-block-index="{index}" data-source-type="{html.escape(source_type, quote=True)}" aria-labelledby="block-{block_id}-heading">
-<header><div><span class="order">{index}</span> <h3 id="block-{block_id}-heading">{html.escape(block_type.replace("_", " ").title())}{f' H{level}' if block_type == 'heading' else ''}</h3></div><span class="block-status status-{html.escape(review_status)}">{_status_label(review_status)}</span></header>
+{review_actions}<header><div><span class="order">{index}</span> <h3 id="block-{block_id}-heading">{html.escape(block_type.replace("_", " ").title())}{f' H{level}' if block_type == 'heading' else ''}</h3></div><span class="block-status status-{html.escape(review_status)}">{_status_label(review_status)}</span></header>
 <p class="source-provenance">OpenDataLoader source: {html.escape(source_type)}{f' · Source region available' if bbox_value else ''}{' · Reading order inferred from layout' if inferred_order else ''}</p>{f'<p class="block-issue">{html.escape(issue_text)}</p>' if issue_text else ''}{table}{editor}
 {actions}</article>'''
 
 
-def _complex_visual_card(visual: dict[str, Any], *, can_edit: bool) -> str:
+def _visual_image_url(root: Path, document: dict[str, Any], visual: dict[str, Any]) -> str:
+    """Use the explicitly associated image, or the exact retained asset path."""
+    source_id = visual.get("source_block_id")
+    if source_id:
+        try:
+            block = drafts.image(document, str(source_id))
+            path = drafts.asset_for(root, document, block)
+            return "/api/image-drafts/asset?path=" + quote(str(path.relative_to(root.resolve())))
+        except (ValueError, KeyError):
+            return ""
+    for reference in visual.get("asset_references", []):
+        ref = str(reference or "")
+        if ref.startswith("extraction/"):
+            path = root / ref
+        elif ref.startswith("images/"):
+            path = root / "extraction/raw" / ref
+        elif Path(ref).name == ref:
+            path = root / "extraction/assets/images" / ref
+        else:
+            continue
+        try:
+            path = drafts.confined(root, path)
+            return "/api/image-drafts/asset?path=" + quote(str(path.relative_to(root.resolve())))
+        except ValueError:
+            continue
+    return ""
+
+
+def _complex_visual_card(visual: dict[str, Any], *, can_edit: bool, root: Path, document: dict[str, Any]) -> str:
     visual_id = html.escape(str(visual.get("id", "")), quote=True)
     ratio = visual.get("text_recovery_ratio")
     recovery = f"{ratio:.1%}" if ratio is not None else "Unknown"
     assets = visual.get("asset_references", [])
     asset_list = "".join(f"<li><code>{html.escape(str(asset))}</code></li>" for asset in assets)
-    asset_image = f'<img src="/review-asset/{html.escape(str(assets[0]), quote=True)}" alt="Extracted visual asset from source page {visual.get("source_page")}">' if assets else ""
+    image_url = _visual_image_url(root, document, visual)
+    asset_image = f'<img class="image-block-preview" src="{html.escape(image_url, quote=True)}" alt="">' if image_url else '<p>Image preview unavailable. Verify the retained image association.</p>'
+    source_id = str(visual.get("source_block_id") or "")
+    linked_block = next((b for b in drafts._walk(document.get("blocks", [])) if str(b.get("id")) == source_id), None)
     status = str(visual.get("status", "needs_text_equivalent"))
-    accessibility = visual.get("accessibility", {})
-    form = f'''<form class="complex-visual-form" data-visual-id="{visual_id}"><div class="form-grid">
+    accessibility = dict(visual.get("accessibility", {}))
+    if linked_block:
+        accessibility["short_alt"] = linked_block.get("alt") or ""
+    title = "Image description - review required" if source_id else "Complex visual - review required"
+    form = f'''<form class="complex-visual-form" data-visual-id="{visual_id}" data-block-id="{html.escape(source_id, quote=True)}"><div class="form-grid">
 <label>Classification<input name="type" value="{html.escape(str(visual.get('type','infographic')), quote=True)}"></label>
 <label>Review state<select name="status"><option value="needs_text_equivalent"{" selected" if status == "needs_text_equivalent" else ""}>Keep flagged</option><option value="reclassified"{" selected" if status == "reclassified" else ""}>Reclassified</option><option value="excluded"{" selected" if status == "excluded" else ""}>Excluded</option></select></label></div>
 <label>Short alt text<textarea name="short_alt" rows="3">{html.escape(str(accessibility.get('short_alt','')))}</textarea></label>
 <label>Long description<textarea name="long_description" rows="6">{html.escape(str(accessibility.get('long_description','')))}</textarea></label>
 <label>Adjacent text equivalent<textarea name="adjacent_text" rows="6">{html.escape(str(accessibility.get('adjacent_text','')))}</textarea></label>
-<label>Recovered source text<textarea name="recovered_text" rows="8">{html.escape(str(visual.get('recovered_text','')))}</textarea></label><button type="submit">Save complex visual review</button></form>''' if can_edit else "<p><strong>Inspection only while conversion is blocked.</strong></p>"
-    return f'''<article class="complex-visual" id="visual-{visual_id}"><h3>Complex visual - review required</h3><p>Source page {visual.get('source_page')} · Text recovery {recovery} · {_status_label(status)}</p>{asset_image}<details><summary>Extracted assets and recovered text</summary><ul>{asset_list or '<li>No separate assets were retained.</li>'}</ul><p>{html.escape(str(visual.get('recovered_text','')))}</p></details>{form}</article>'''
+<label>Recovered source text<textarea name="recovered_text" rows="8">{html.escape(str(visual.get('recovered_text','')))}</textarea></label><button type="submit">Save complex visual review</button><p class="visual-save-message" role="status" aria-live="polite"></p></form>''' if can_edit else "<p><strong>Inspection only while conversion is blocked.</strong></p>"
+    return f'''<article class="complex-visual" id="visual-{visual_id}"><h3>{title}</h3><p>Source page {visual.get('source_page')} · Text recovery {recovery} · <span class="visual-state">{_status_label(status)}</span></p>{asset_image}<details><summary>Extracted assets and recovered text</summary><ul>{asset_list or '<li>No separate assets were retained.</li>'}</ul><p>{html.escape(str(visual.get('recovered_text','')))}</p></details>{form}</article>'''
 
 
 def _structure_page(model: dict[str, Any]) -> str:
@@ -529,7 +565,7 @@ def _structure_page(model: dict[str, Any]) -> str:
     page_count = int(model["project"].get("source", {}).get("page_count") or 1)
     source_preview_key = html.escape(str(model["source_preview_key"]), quote=True)
     cards = "".join(_block_card(block, index, total=len(blocks), can_edit=can_edit, long_description=str((drafts.visual_for(document, block) or {}).get("accessibility", {}).get("long_description") or ""), draft_controls=image_draft_ui.controls(model["project_dir"], document, block) if can_edit and block.get("type") == "image" else "") for index, block in enumerate(blocks, 1))
-    visuals = "".join(_complex_visual_card(visual, can_edit=can_edit) for visual in document.get("review", {}).get("complex_visuals", []))
+    visuals = "".join(_complex_visual_card(visual, can_edit=can_edit, root=model["project_dir"], document=document) for visual in document.get("review", {}).get("complex_visuals", []))
     body = f'''<h1>Structure</h1>{_status_banner(status, document.get("review", {}).get("issues", [])) if not can_edit else ''}<div class="review-toolbar"><p><strong>{_status_label(status)}</strong> · Reviewed {progress['reviewed']} / {progress['total']}</p>{'<button id="undo-action" type="button" class="secondary">Undo last action</button>' if can_edit else ''}</div>
 {image_draft_ui.toolbar(document) if can_edit and any(b.get("type") == "image" for b in blocks) else ""}
 {f'<section class="complex-warning" aria-labelledby="complex-heading"><h2 id="complex-heading">Complex visuals</h2>{visuals}</section>' if visuals else ''}

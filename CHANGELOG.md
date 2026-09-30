@@ -25,6 +25,13 @@
 
 ### Fixed
 
+- Imported image-description cards now resolve retained image paths correctly,
+  show the image short alt, and keep it synchronized when either editor saves.
+- Visual review saves confirm beside the button, preserve focus, and retain
+  changes through reload and Undo.
+- Structure review actions appear above the block header and source details:
+  Needs review (yellow), Exclude (red), Approve (green), in that order.
+
 - Image-draft exports now show selection/pending counts, offer a pending-image
   ZIP without manual selection, and focus the download link. Cancel controls
   appear only for active requests.
