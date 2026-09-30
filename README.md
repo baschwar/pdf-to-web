@@ -191,7 +191,10 @@ Structure also offers optional **Image description drafts**. Select images,
 confirm ambiguous image associations, save the provider choice per project,
 generate through an existing local Ollama
 vision model or an explicitly authorized paid OpenAI request, or export a manual
-request ZIP for your chosen tool. Validate imported responses, edit drafts, apply
+request ZIP for your chosen tool. **Export pending images ZIP** includes images
+needing drafts without individual selection; the toolbar shows selected and pending
+counts and brings the download link into view. Cancel controls appear only for
+active requests. Validate imported responses, edit drafts, apply
 alt/caption individually, reject, retry and Undo. Drafts never approve content or
 enter public exports until applied. No key or network access is needed for manual
 exchange. See [workflow, providers and exchange schema](docs/IMAGE_DESCRIPTION_DRAFTS.md)

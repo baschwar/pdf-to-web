@@ -556,6 +556,21 @@ if (draftToolbar) {
     }
   });
   updateProviderSetup();
+  const selectedIds = () => [...document.querySelectorAll('.draft-selection:checked')].map(input => input.value);
+  const pendingIds = () => [...document.querySelectorAll('.image-draft-panel[data-pending="true"]')]
+    .filter(panel => !['ready', 'rejected', 'generating'].includes(panel.dataset.requestStatus)).map(panel => panel.dataset.blockId);
+  const updateBatchControls = () => {
+    const ids = selectedIds();
+    const pending = pendingIds();
+    document.getElementById('draft-selection-summary').textContent = `${ids.length} images selected · ${pending.length} pending images needing drafts.`;
+    document.querySelectorAll('[data-draft-batch]').forEach(button => {
+      const action = button.dataset.draftBatch;
+      if (action === 'cancel') button.hidden = !ids.some(id => ['requested', 'generating'].includes(panelFor(id)?.dataset.requestStatus));
+      else button.disabled = !(action === 'pending' ? pending.length : ids.length);
+    });
+  };
+  document.querySelectorAll('.draft-selection').forEach(input => input.addEventListener('change', updateBatchControls));
+  updateBatchControls();
   let cloudRequest = null;
   let importPayload = null;
   const draftValues = form => ({
@@ -567,7 +582,10 @@ if (draftToolbar) {
   const showDownload = result => {
     const link = document.createElement('a'); link.href = result.url; link.textContent = 'Download drafting request ZIP'; link.download = result.filename;
     document.getElementById('draft-downloads').replaceChildren(link);
-    message.textContent = 'Request ready. Manually attach its images and request.json to your chosen tool, then import its response JSON.';
+    message.textContent = 'ZIP ready. Use Download drafting request ZIP below to save the images, CSV review sheet and JSON template.';
+    link.focus();
+    link.scrollIntoView({block: 'nearest'});
+    pollDrafts();
   };
   const generate = async (ids, regenerate = false) => {
     const request = {block_ids: ids, provider: document.getElementById('draft-provider').value, model: document.getElementById('draft-model').value, regenerate};
@@ -606,18 +624,22 @@ if (draftToolbar) {
   });
   document.getElementById('draft-transmission-cancel').addEventListener('click', () => { cloudRequest = null; document.getElementById('draft-transmission').hidden = true; message.textContent = 'Cloud request cancelled.'; });
   document.querySelectorAll('[data-draft-batch]').forEach(button => button.addEventListener('click', async () => {
-    const ids = [...document.querySelectorAll('.draft-selection:checked')].map(input => input.value);
+    const ids = button.dataset.draftBatch === 'pending' ? pendingIds() : selectedIds();
     try {
       if (!ids.length) throw new Error('Select at least one image.');
-      if (button.dataset.draftBatch === 'export') showDownload(await postDraft('export', {block_ids: ids}));
+      message.textContent = 'Preparing image requests…';
+      if (['export', 'pending'].includes(button.dataset.draftBatch)) showDownload(await postDraft('export', {block_ids: ids}));
       else if (button.dataset.draftBatch === 'generate') await generate(ids);
       else {
         const current = await api('/api/image-drafts');
         if (current.document_id !== docId) throw new Error('Project changed; reload this screen.');
-        for (const entry of current.entries.filter(e => ids.includes(e.block_id))) await postDraft('cancel', entry);
+        for (const entry of current.entries.filter(e => ids.includes(e.block_id) && ['requested', 'generating'].includes(e.status))) await postDraft('cancel', entry);
         reloadDraft(ids[0]);
       }
-    } catch (error) { message.textContent = error.message; }
+    } catch (error) {
+      message.textContent = error.message;
+      message.tabIndex = -1; message.focus(); message.scrollIntoView({block: 'nearest'});
+    }
   }));
   document.querySelectorAll('.draft-association-form').forEach(form => form.addEventListener('submit', async event => {
     event.preventDefault();
@@ -677,11 +699,14 @@ if (draftToolbar) {
       if (result.document_id !== docId) { message.textContent = 'Project changed; reload this screen.'; return; }
       for (const entry of result.entries) {
         const panel = panelFor(entry.block_id); if (!panel) continue;
+        panel.dataset.requestStatus = entry.status;
+        panel.querySelector('[data-draft-action="cancel"]').hidden = !['requested', 'generating'].includes(entry.status);
         const label = {ready: 'Draft ready — refresh to review', requested: 'Awaiting response', generating: 'Generating', failed: 'Failed', stale: 'Context changed', cancelled: 'Cancelled', rejected: 'Rejected'}[entry.status];
         const status = panel.querySelector('.draft-status');
         if (!status.textContent.startsWith('Draft ready') || entry.status !== 'ready') status.textContent = label;
         if (entry.error) panel.querySelector('.draft-error')?.replaceChildren(document.createTextNode(entry.error));
       }
+      updateBatchControls();
     } catch (error) { message.textContent = error.message; }
   };
   setInterval(pollDrafts, 2500);

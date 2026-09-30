@@ -16,6 +16,10 @@
 
 ### Fixed
 
+- Image-draft exports now show selection/pending counts, offer a pending-image
+  ZIP without manual selection, and focus the download link. Cancel controls
+  appear only for active requests.
+
 - Provider selections can now be saved per project without reloading or moving
   focus to block review. ChatGPT / other tool explicitly selects manual exchange.
 - Ollama model input is hidden for other providers; provider setup and manual

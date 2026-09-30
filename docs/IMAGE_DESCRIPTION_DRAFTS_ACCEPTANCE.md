@@ -116,3 +116,18 @@ from current UI, workflow documentation and code commentary.
 Full suite: **181 passed** (`build/image-drafts/provider-help-tests.txt`). Updated
 targeted Chrome run: **nine checks passed**, no page errors, including help on
 selection change and after reopening. No live provider or WordPress call.
+
+### Pending-image export and request controls
+
+The toolbar displays selected/pending counts, exports pending images independently
+of checkboxes, disables selected export for an empty selection, and focuses the
+ZIP link or export error. Cancel controls are hidden without an awaiting-response
+or generating request; batch cancellation filters to those states. Pending means
+an image needing descriptions without a ready/rejected draft or running generation.
+Unconfirmed image associations still require reviewer confirmation before export.
+
+Full suite: 181 passed (`build/image-drafts/pending-tests.txt`). Targeted Chrome
+check (`tools/pending-images-browser-check.js`) passed empty-selection controls,
+pending export, focused download feedback, successful ZIP with CSV, and cancellation
+visibility after request creation, with no page errors. No live provider calls.
+Existing external WordPress, human VoiceOver and Windows acceptance remain pending.

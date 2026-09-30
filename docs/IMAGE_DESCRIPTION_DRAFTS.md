@@ -20,7 +20,12 @@ Accepted fields continue to drive HTML, Gutenberg, WXR and Output Pages.
    provider. ChatGPT manual exchange exports a
    request instead of calling an API. Choose **Generate drafts** or
    **Export drafting request**. Batch controls use
-   the selected images. Local or cloud generation is optional.
+   the selected images. The toolbar shows selected and pending counts.
+   **Export pending images ZIP** uses images needing descriptions that have no
+   ready or rejected draft and are not currently generating, regardless of the
+   checkboxes. Export displays and focuses a ZIP download link; click it to save.
+   Cancel controls appear only for selected awaiting-response or generating requests.
+   Local or cloud generation is optional.
 4. Refresh results to review ready drafts beside the accepted fields. Polling
    updates status without overwriting unsaved edits or moving keyboard focus.
 5. Edit drafts and save, apply alt or caption individually, reject the draft, or
