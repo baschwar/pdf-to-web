@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.7.0] - 2026-09-30
+
+### Added
+
+- Output Pages workspace with persistent block-reference arrangements, explicit
+  grouping suggestions, Page/Article metadata, parent hierarchy, contents order,
+  reassignment, split/merge and Undo.
+- Independent semantic/WordPress previews and page/complete-package exports with
+  HTML, Gutenberg, WXR, media, contents and a versioned review/import manifest.
+- Page-local footnotes/backlinks, cross-page block links recomputed after slug
+  changes, assignment/metadata validation and affected-page review invalidation.
+- CLI `export pages` and repeatable synthetic browser workflow checks.
+
+### Fixed
+
+- Output-page refresh and focus after Undo, split, merge and metadata saves.
+- Navigation wraps at narrower widths with the additional workspace.
+- Accessibility link-purpose review recognizes existing normalized `url` runs.
+
+### Acceptance boundary
+
+- Production WSUWP, human VoiceOver, Windows, five-PDF OpenDataLoader abort
+  investigation and historical WordPress retests remain pending in
+  `docs/PHASE3B_ACCEPTANCE.md`. No publishing or release is implied.
+
 ## [0.6.1] - 2026-09-25
 
 ### Changed

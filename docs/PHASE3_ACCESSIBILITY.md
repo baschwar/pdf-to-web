@@ -75,4 +75,5 @@ published page has been certified against WCAG.
 - It does not provide a spreadsheet-like table editor.
 - It does not replace testing of the published WordPress page with assistive
   technology.
-- OCR remediation and output-page/article building remain later phases.
+- OCR remediation remains Phase 3C. Output-page/article building is implemented
+  in Phase 3B; see `PHASE3B_OUTPUT_PAGES.md` for inherited and page-specific review.

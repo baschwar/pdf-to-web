@@ -187,6 +187,21 @@ pdf-to-web export accessibility --project /path/to/my-report
 
 These reports document human review. They do not certify WCAG conformance.
 
+The **Output Pages** workspace builds multiple independently previewable Pages or
+Articles from one reviewed document. Inspect heading-based grouping suggestions,
+apply an arrangement, move whole content blocks, split or merge pages, edit
+metadata and internal Page parents, set contents order, and Undo changes. Page
+arrangements persist with the reviewed document. Unassigned content and invalid
+arrangements remain visible and block page exports.
+
+Export one page or the complete ZIP package with HTML, Gutenberg, WXR, media,
+contents, review findings, a versioned manifest and manual import instructions.
+The CLI equivalent is `pdf-to-web export pages --project /path/to/project`.
+Existing single-document exports retain their behavior. See
+[Phase 3B workflow and schema](docs/PHASE3B_OUTPUT_PAGES.md) and the
+[acceptance ledger](docs/PHASE3B_ACCEPTANCE.md). WordPress media upload,
+permalink replacement and absent parent assignments remain manual.
+
 Run tests without third-party test tooling:
 
 ```sh

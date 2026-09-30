@@ -1,0 +1,164 @@
+{
+  "schema_version": "pdf-to-web-page-manifest-v1",
+  "app_version": "0.7.0",
+  "project": {
+    "id": "project-43fd2bffce21488cb9f70d453291e7c0",
+    "title": "Introduction",
+    "source": {
+      "path": null,
+      "original_filename": null,
+      "classification": null,
+      "page_count": null
+    },
+    "identity": {
+      "title": "Introduction"
+    },
+    "review_revision": 0
+  },
+  "export_settings": {
+    "wordpress_profile": "generic",
+    "hero": {
+      "enabled": false,
+      "headingTag": "h1"
+    },
+    "section_defaults": {},
+    "wordpress": {
+      "post_type": "page",
+      "status": "draft",
+      "author": "pdf-to-web"
+    }
+  },
+  "complete_package": true,
+  "pages": [
+    {
+      "id": "page-622637534b1243d394bb655209a70836",
+      "title": "Introduction",
+      "slug": "introduction",
+      "type": "page",
+      "parent": null,
+      "navigation_order": 0,
+      "block_ids": [
+        "block-1"
+      ],
+      "approval": {
+        "status": "needs_review",
+        "note": ""
+      },
+      "source_ranges": [
+        [
+          1,
+          1
+        ]
+      ],
+      "files": {
+        "html": "introduction.html",
+        "gutenberg": "introduction.gutenberg.html",
+        "wxr": "introduction.xml"
+      },
+      "review": {
+        "structural": "reviewed",
+        "accessibility": {
+          "schema_version": "pdf-to-web-accessibility-v1",
+          "generated_at": "2026-09-30T19:38:39+00:00",
+          "status": "review_complete",
+          "summary": {
+            "total": 0,
+            "unresolved": 0,
+            "approved": 0,
+            "not_applicable": 0,
+            "categories": {}
+          },
+          "items": []
+        },
+        "approval": {
+          "status": "needs_review",
+          "note": ""
+        },
+        "unresolved_targets": [],
+        "source_ranges": [
+          [
+            1,
+            1
+          ]
+        ]
+      },
+      "media_dependencies": [],
+      "required_page_dependencies": [],
+      "internal_link_mappings": [],
+      "unresolved_targets": [],
+      "manual_parent_assignment": null
+    }
+  ],
+  "media_files": [
+    "media/reports/media-manifest.json",
+    "media/reports/media-manifest.md",
+    "media/reports/media-mapping.csv"
+  ],
+  "manual_media_actions": [],
+  "validation": {
+    "page-622637534b1243d394bb655209a70836": {
+      "html": {
+        "generated": true,
+        "valid": true,
+        "headings": 1,
+        "h1_count": 1,
+        "paragraphs": 0,
+        "lists": 0,
+        "list_items": 0,
+        "tables": 0,
+        "images": 0,
+        "figures": 0,
+        "captions": 0,
+        "quotes": 0,
+        "links": 0,
+        "strong": 0,
+        "emphasis": 0,
+        "unknown_blocks": 0,
+        "images_without_alt_attribute": 0,
+        "heading_jumps": [],
+        "anchors": {
+          "valid": true,
+          "ids": 1,
+          "internal_links": 0,
+          "resolved_internal_links": 0,
+          "duplicate_ids": [],
+          "empty_ids": 0,
+          "missing_targets": [],
+          "malformed_targets": [],
+          "errors": []
+        },
+        "external_links": [],
+        "literal_bullet_items": 0,
+        "serialization_errors": []
+      },
+      "gutenberg": {
+        "generated": true,
+        "valid": true,
+        "normalized_block_count": 1,
+        "normalized_top_level_block_count": 1,
+        "exported_top_level_block_count": 1,
+        "skipped_block_count": 0,
+        "fallback_unknown_count": 0,
+        "block_comment_count": 2,
+        "block_names": {
+          "heading": 1,
+          "html": 1
+        },
+        "anchors": {
+          "valid": true,
+          "ids": 1,
+          "internal_links": 0,
+          "resolved_internal_links": 0,
+          "duplicate_ids": [],
+          "empty_ids": 0,
+          "missing_targets": [],
+          "malformed_targets": [],
+          "errors": []
+        },
+        "external_links": [],
+        "literal_bullet_items": 0,
+        "serialization_errors": []
+      }
+    }
+  }
+}
