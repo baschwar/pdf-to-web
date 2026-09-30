@@ -421,7 +421,7 @@ def _source_regions(block: dict[str, Any]) -> list[list[float]]:
     return [bbox] if isinstance(bbox, list) and len(bbox) == 4 else []
 
 
-def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool = True, draft_controls: str = "") -> str:
+def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool = True, draft_controls: str = "", long_description: str = "") -> str:
     block_id = html.escape(str(block.get("id", "")), quote=True)
     block_type = str(block.get("type", "unknown"))
     provenance = block.get("provenance", {})
@@ -469,6 +469,7 @@ def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool
         image_editor = f'''{accessibility_warning}<form class="block-form image-block-form" data-block-id="{block_id}">{preview}<div class="form-grid">
 <label>Alt text<textarea name="alt" rows="3"{" disabled" if decorative else ""}>{html.escape(str(block.get("alt") or ""))}</textarea><small>Describe the image's purpose or information.</small></label>
 <label>Caption<textarea name="caption" rows="3">{html.escape(str(block.get("caption") or ""))}</textarea></label>
+<label>Long description<textarea name="long_description" rows="6">{html.escape(long_description)}</textarea><small>Use for information that needs more detail than alt text.</small></label>
 <label>Review state<select name="review_status">{states}</select></label></div>
 <label class="image-decorative"><input type="checkbox" name="decorative"{" checked" if decorative else ""}> Decorative image</label>
 <small>Decorative images export with an empty alt attribute and do not require alt text.</small>
@@ -527,7 +528,7 @@ def _structure_page(model: dict[str, Any]) -> str:
     blocks = document.get("blocks", [])
     page_count = int(model["project"].get("source", {}).get("page_count") or 1)
     source_preview_key = html.escape(str(model["source_preview_key"]), quote=True)
-    cards = "".join(_block_card(block, index, total=len(blocks), can_edit=can_edit, draft_controls=image_draft_ui.controls(model["project_dir"], document, block) if can_edit and block.get("type") == "image" else "") for index, block in enumerate(blocks, 1))
+    cards = "".join(_block_card(block, index, total=len(blocks), can_edit=can_edit, long_description=str((drafts.visual_for(document, block) or {}).get("accessibility", {}).get("long_description") or ""), draft_controls=image_draft_ui.controls(model["project_dir"], document, block) if can_edit and block.get("type") == "image" else "") for index, block in enumerate(blocks, 1))
     visuals = "".join(_complex_visual_card(visual, can_edit=can_edit) for visual in document.get("review", {}).get("complex_visuals", []))
     body = f'''<h1>Structure</h1>{_status_banner(status, document.get("review", {}).get("issues", [])) if not can_edit else ''}<div class="review-toolbar"><p><strong>{_status_label(status)}</strong> · Reviewed {progress['reviewed']} / {progress['total']}</p>{'<button id="undo-action" type="button" class="secondary">Undo last action</button>' if can_edit else ''}</div>
 {image_draft_ui.toolbar(document) if can_edit and any(b.get("type") == "image" for b in blocks) else ""}
@@ -786,7 +787,16 @@ def create_app(config: WebAppConfig):
         entries = []
         for request_id in store['active'].values():
             entry = store['requests'][request_id]
-            entries.append({'block_id': entry['block_id'], 'request_id': request_id, 'status': 'stale' if drafts.stale(root, document, entry) else entry['status'], 'error': entry.get('error')})
+            fields = {}
+            try:
+                block = drafts.image(document, entry['block_id'])
+                fields = {key: block.get(key) or '' for key in ('alt', 'caption')}
+                fields['long_description'] = (drafts.visual_for(document, block) or {}).get('accessibility', {}).get('long_description') or ''
+            except (KeyError, ValueError):
+                pass
+            entries.append({'block_id': entry['block_id'], 'request_id': request_id,
+                            'status': 'stale' if drafts.stale(root, document, entry) else entry['status'],
+                            'error': entry.get('error'), 'image_fields': fields})
         return {'document_id': document['output_pages']['project_id'], 'entries': entries}
 
     @app.post('/api/image-drafts/{action}')
@@ -802,7 +812,7 @@ def create_app(config: WebAppConfig):
             document = ensure_review_document(root)
             if data.get('document_id') != document['output_pages']['project_id']:
                 raise ValueError('Project changed; reload this screen')
-            if action in {'settings', 'associate', 'edit', 'apply', 'reject', 'cancel'}:
+            if action in {'populate', 'settings', 'associate', 'edit', 'apply', 'reject', 'cancel'}:
                 drafts.mutate(root, action, data)
                 return {'status': 'ok'}
             if action == 'import':

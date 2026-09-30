@@ -1,4 +1,4 @@
-"""Image-specific, reviewable drafts. No accepted content is changed by generation."""
+"""Image-specific drafts that populate empty authoring fields for human review."""
 from __future__ import annotations
 
 import base64
@@ -16,7 +16,7 @@ from urllib.request import Request
 from typing import Protocol
 
 from .project import utc_now
-from .review_state import ensure_review_document, save_review_document, _find_location, _walk
+from .review_state import ensure_review_document, save_review_document, _find_location, _walk, image_description_visual
 
 SCHEMA = 'pdf-to-web-image-drafts-v1'
 EXCHANGE = 'pdf-to-web-image-exchange-v1'
@@ -207,6 +207,34 @@ def inspect_response(root, payload):
     return {'valid': valid, 'findings': findings}
 
 
+def populate_empty_fields(root, document, entry):
+    """Populate editable fields; retain existing author text and review decisions."""
+    block = image(document, entry['block_id'])
+    if block.get('decorative') or block.get('review', {}).get('status') == 'excluded':
+        return
+    applied = []
+    for field in FIELDS:
+        value = entry['draft'][field]
+        if value is None:
+            continue
+        if field == 'long_description':
+            visual = visual_for(document, block)
+            if visual and str(visual.get('accessibility', {}).get(field) or '').strip():
+                continue
+            visual = image_description_visual(document, block, create=True)
+            visual.setdefault('accessibility', {})[field] = value
+        else:
+            if str(block.get(field) or '').strip():
+                continue
+            block[field] = value
+        applied.append(field)
+        entry.setdefault('populated_fields', {})[field] = value
+    if applied:
+        block.setdefault('review', {}).update(status='needs_review', updated_at=utc_now())
+        entry.setdefault('applied_fields', []).extend(applied)
+        entry['current_context_hash'] = current_identity(root, document, entry['block_id'])[0]['context_hash']
+
+
 def import_response(root, payload, *, commit=False):
     result = inspect_response(root, payload)
     if commit and result['valid']:
@@ -214,6 +242,7 @@ def import_response(root, payload, *, commit=False):
         for item in result['valid']:
             entry = state(document)['requests'][item['request_id']]
             entry.update(draft=item['draft'], generated_draft=copy.deepcopy(item['draft']), status='ready', error=None, updated_at=utc_now())
+            populate_empty_fields(root, document, entry)
         save_review_document(root, document)
     return result
 
@@ -263,6 +292,11 @@ def exchange_package(root, entries):
 def mutate(root, action, data):
     document = ensure_review_document(root)
     store = state(document)
+    if action == 'populate':
+        for entry in store['requests'].values():
+            if entry['status'] == 'ready' and store['active'].get(entry['block_id']) == entry['request_id'] and not stale(root, document, entry):
+                populate_empty_fields(root, document, entry)
+        return save_review_document(root, document)
     if action == 'settings':
         provider = data.get('provider')
         model = data.get('model')
@@ -300,6 +334,16 @@ def mutate(root, action, data):
         if action == 'cancel':
             entry['status'] = 'cancelled'
         elif action == 'reject':
+            # Remove only unchanged auto-filled values; preserve subsequent author edits.
+            removed = False
+            for field, value in entry.get('populated_fields', {}).items():
+                target = (visual_for(document, block) or {}).get('accessibility', {}) if field == 'long_description' else block
+                if target.get(field) == value:
+                    target[field] = ''
+                    removed = True
+            if removed and block.get('review', {}).get('status') != 'excluded':
+                block.setdefault('review', {}).update(status='needs_review', updated_at=utc_now())
+            entry['current_context_hash'] = current_identity(root, document, block_id)[0]['context_hash']
             entry['status'] = 'rejected'
         elif action in {'edit', 'apply'}:
             if entry['status'] != 'ready':
@@ -317,9 +361,7 @@ def mutate(root, action, data):
                     if value is None:
                         raise ValueError('An omitted field cannot replace accepted content')
                     if field == 'long_description':
-                        visual = visual_for(document, block)
-                        if not visual:
-                            raise ValueError('Associate this image with a complex visual first')
+                        visual = image_description_visual(document, block, create=True)
                         visual.setdefault('accessibility', {})['long_description'] = value
                     elif field == 'alt' and block.get('decorative'):
                         raise ValueError('Use the existing decorative control before applying alt text')
@@ -400,6 +442,7 @@ def complete(root, entry, value=None, error=None):
                 raise ValueError('Provider returned mismatched image identity')
             draft = validate_draft(value)
             stored.update(draft=draft, generated_draft=copy.deepcopy(draft), status='ready', error=None)
+            populate_empty_fields(root, document, stored)
         except (ValueError, TypeError) as exc:
             stored.update(status='failed', error=str(exc))
     stored['updated_at'] = utc_now()

@@ -56,13 +56,13 @@ class ImageDraftTests(unittest.TestCase):
         doc = self.read(); doc['image_description_drafts']['schema_version'] = 'future'
         with self.assertRaises(ValueError): d.ensure_state(doc)
 
-    def test_draft_import_never_changes_accepted_text_or_approval(self):
+    def test_draft_import_preserves_existing_text_and_null_fields(self):
         before = copy.deepcopy(self.read()['blocks'])
         entry = self.entry()
-        preview = d.import_response(self.root, self.response(entry))
+        preview = d.import_response(self.root, self.response(entry, long_description=None))
         self.assertEqual(len(preview['valid']), 1)
         self.assertIsNone(d.state(self.read())['requests'][entry['request_id']]['draft'])
-        d.import_response(self.root, self.response(entry), commit=True)
+        d.import_response(self.root, self.response(entry, long_description=None), commit=True)
         self.assertEqual(self.read()['blocks'], before)
 
     def test_apply_individual_field_persistence_and_undo(self):
@@ -71,7 +71,7 @@ class ImageDraftTests(unittest.TestCase):
         block = d.image(self.read(), 'photo')
         self.assertEqual(block['alt'], 'DRAFT ALT')
         self.assertEqual(block['caption'], 'Accepted CAPTION')
-        self.assertEqual(block['review']['status'], 'approved')
+        self.assertEqual(block['review']['status'], 'needs_review')
         d.mutate(self.root, 'apply', {'block_id': 'photo', 'request_id': entry['request_id'], 'fields': ['caption']})
         self.assertEqual(d.image(self.read(), 'photo')['caption'], 'DRAFT CAPTION')
         undo_last(self.root)
@@ -104,10 +104,11 @@ class ImageDraftTests(unittest.TestCase):
             self.assertEqual(rows[0]['draft_caption'], '')
             self.assertEqual(rows[0]['request_id'], entry['request_id'])
 
-    def test_complex_long_description_requires_explicit_visual_association(self):
+    def test_long_description_creates_image_specific_association(self):
         entry = self.imported()
-        with self.assertRaisesRegex(ValueError, 'complex visual'):
-            d.mutate(self.root, 'apply', {'block_id': 'photo', 'request_id': entry['request_id'], 'fields': ['long_description']})
+        visual = d.visual_for(self.read(), d.image(self.read(), 'photo'))
+        self.assertEqual(visual['source_block_id'], 'photo')
+        self.assertEqual(visual['accessibility']['long_description'], 'DRAFT LONG')
         d.mutate(self.root, 'associate', {'block_id': 'photo', 'asset_path': 'extraction/raw/images/photo.png', 'visual_id': 'chart'})
         entry = self.entry(regenerate=True)
         d.import_response(self.root, self.response(entry), commit=True)
@@ -194,6 +195,68 @@ class ImageDraftTests(unittest.TestCase):
         d.begin(self.root, retried)
         d.complete(self.root, retried, value=self.response(retried)['responses'][0])
         self.assertEqual(d.state(self.read())['requests'][retried['request_id']]['status'], 'ready')
+
+    def test_empty_fields_populate_on_import_reopen_export_and_undo(self):
+        update_block(self.root, 'photo', {'alt': '', 'caption': '', 'review_status': 'needs_review'})
+        entry = self.entry()
+        d.import_response(self.root, self.response(entry), commit=True)
+        doc = self.read(); block = d.image(doc, 'photo')
+        self.assertEqual((block['alt'], block['caption']), ('DRAFT ALT', 'DRAFT CAPTION'))
+        self.assertEqual(block['review']['status'], 'needs_review')
+        stored = d.state(doc)['requests'][entry['request_id']]
+        self.assertFalse(d.stale(self.root, doc, stored))
+        for output in (html.render_document(doc), gutenberg.render_document(doc), wxr.render_wxr([{'title': 'Guide', 'content': gutenberg.render_document(doc)}])):
+            self.assertIn('DRAFT ALT', output)
+            self.assertIn('DRAFT CAPTION', output)
+            self.assertEqual(output.count('DRAFT LONG'), 1)
+        update_block(self.root, 'photo', {'long_description': 'Reviewer description'})
+        self.assertEqual(d.visual_for(self.read(), d.image(self.read(), 'photo'))['accessibility']['long_description'], 'Reviewer description')
+        undo_last(self.root); undo_last(self.root)
+        block = d.image(self.read(), 'photo')
+        self.assertEqual(block['alt'], '')
+        self.assertNotIn('complex_visual_id', block)
+        self.assertIsNone(d.state(self.read())['requests'][entry['request_id']]['draft'])
+
+    def test_reject_removes_untouched_population_and_preserves_author_edits(self):
+        update_block(self.root, 'photo', {'alt': '', 'caption': ''})
+        entry = self.imported()
+        update_block(self.root, 'photo', {'caption': 'Reviewer caption'})
+        d.mutate(self.root, 'reject', {'block_id': 'photo', 'request_id': entry['request_id']})
+        block = d.image(self.read(), 'photo')
+        self.assertEqual(block['alt'], '')
+        self.assertEqual(block['caption'], 'Reviewer caption')
+        self.assertEqual(d.visual_for(self.read(), block)['accessibility']['long_description'], '')
+        undo_last(self.root)
+        self.assertEqual(d.image(self.read(), 'photo')['alt'], 'DRAFT ALT')
+
+    def test_generated_drafts_populate_empty_fields(self):
+        update_block(self.root, 'photo', {'alt': '', 'caption': ''})
+        entry = self.entry(provider='mock', model='vision')
+        d.begin(self.root, entry)
+        d.complete(self.root, entry, value=self.response(entry)['responses'][0])
+        self.assertEqual(d.image(self.read(), 'photo')['alt'], 'DRAFT ALT')
+        self.assertEqual(d.image(self.read(), 'photo')['review']['status'], 'needs_review')
+
+    def test_existing_imports_can_fill_empty_fields_without_reimport(self):
+        entry = self.entry()
+        doc = self.read(); block = d.image(doc, 'photo'); block['alt'] = ''; block['caption'] = ''
+        stored = d.state(doc)['requests'][entry['request_id']]
+        stored.update(status='ready', draft=self.response(entry)['responses'][0])
+        stored['current_context_hash'] = d.current_identity(self.root, doc, 'photo')[0]['context_hash']
+        save_review_document(self.root, doc)
+        d.mutate(self.root, 'populate', {})
+        self.assertEqual(d.image(self.read(), 'photo')['caption'], 'DRAFT CAPTION')
+        undo_last(self.root)
+        self.assertEqual(d.image(self.read(), 'photo')['caption'], '')
+
+    def test_description_stays_with_image_across_output_pages(self):
+        from pdf_to_web import output_pages as op
+        self.imported(); doc = self.read()
+        doc['output_pages']['pages'] = [op.new_page('Photo', ['photo']), op.new_page('Other', ['h', 'p', 'ambiguous', 'decoration'])]
+        photo = op.page_document(doc, doc['output_pages']['pages'][0]['id'])
+        other = op.page_document(doc, doc['output_pages']['pages'][1]['id'])
+        self.assertEqual(html.render_document(photo).count('DRAFT LONG'), 1)
+        self.assertNotIn('DRAFT LONG', html.render_document(other))
 
     def test_asset_transmission_checks_hash_at_read_time(self):
         entry = self.entry()

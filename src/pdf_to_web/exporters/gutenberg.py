@@ -6,7 +6,7 @@ import re
 from typing import Any
 from urllib.parse import urlparse
 
-from .common import block_anchors, is_excluded, is_footnote_body, render_footnote_backlinks, render_inline, table_cell
+from .common import blocks_with_image_descriptions, block_anchors, is_excluded, is_footnote_body, render_footnote_backlinks, render_inline, table_cell
 
 
 def _attrs(values: dict[str, Any], escape_hyphens: bool = False) -> str:
@@ -224,7 +224,7 @@ def render_document(
     document: dict[str, Any], profile: str = "generic", config: dict[str, Any] | None = None
 ) -> str:
     config = config or {}
-    blocks = list(document.get("blocks", []))
+    blocks = blocks_with_image_descriptions(document)
     rendered: list[str] = []
     anchors = set(document.get("output_anchor_ids", []))
     def anchored(block):

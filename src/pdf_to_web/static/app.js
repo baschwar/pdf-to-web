@@ -691,6 +691,9 @@ if (draftToolbar) {
       reloadDraft();
     } catch (error) { message.textContent = error.message; }
   });
+  document.getElementById('draft-populate').addEventListener('click', async () => {
+    try { await postDraft('populate', {}); reloadDraft(); } catch (error) { message.textContent = error.message; }
+  });
   document.getElementById('draft-refresh').addEventListener('click', () => reloadDraft());
   // Update status only; polling must not discard unsaved reviewer edits or move focus.
   const pollDrafts = async () => {
@@ -700,6 +703,15 @@ if (draftToolbar) {
       for (const entry of result.entries) {
         const panel = panelFor(entry.block_id); if (!panel) continue;
         panel.dataset.requestStatus = entry.status;
+        if (entry.status === 'ready' && entry.image_fields) {
+          const form = panel.closest('.block-card')?.querySelector('.image-block-form') || document.querySelector(`.image-block-form[data-block-id="${CSS.escape(entry.block_id)}"]`);
+          for (const [key, value] of Object.entries(entry.image_fields)) {
+            const field = form?.elements.namedItem(key);
+            if (field && field.value === field.defaultValue && document.activeElement !== field) {
+              field.value = value; field.defaultValue = value;
+            }
+          }
+        }
         panel.querySelector('[data-draft-action="cancel"]').hidden = !['requested', 'generating'].includes(entry.status);
         const label = {ready: 'Draft ready — refresh to review', requested: 'Awaiting response', generating: 'Generating', failed: 'Failed', stale: 'Context changed', cancelled: 'Cancelled', rejected: 'Rejected'}[entry.status];
         const status = panel.querySelector('.draft-status');

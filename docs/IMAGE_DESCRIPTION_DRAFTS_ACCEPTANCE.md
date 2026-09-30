@@ -131,3 +131,32 @@ check (`tools/pending-images-browser-check.js`) passed empty-selection controls,
 pending export, focused download feedback, successful ZIP with CSV, and cancellation
 visibility after request creation, with no page errors. No live provider calls.
 Existing external WordPress, human VoiceOver and Windows acceptance remain pending.
+
+### Direct image-field population — 2026-09-30
+
+The user's follow-up supersedes the original apply-each-field workflow for empty
+fields. Valid manual imports and generated responses populate empty image alt,
+caption and long-description fields directly. Existing nonempty text is retained;
+null values do not clear it. Changed images require review. Earlier imports have
+a single batch population action. Descriptions use the existing complex-visual
+model, creating an exact image-bound record when necessary. Structure exposes
+an editable long-description field. Reject clears untouched populated values,
+retains author edits, and remains undoable.
+
+- Baseline: 181 tests passed. Final suite: 186 tests passed.
+- Eight Chrome checks passed with no page errors: actual file validation/import,
+  all three fields visible without Apply, review required, existing text retained,
+  reload persistence, description editing/save, Undo edit and Undo import.
+  Evidence: `build/image-drafts/direct-fields-browser-report.json`; reproduction:
+  `tools/direct-image-fields-browser-check.js BOOTSTRAP_URL DISPOSABLE_PROJECT`.
+- Export tests inspect HTML and Gutenberg and verify a description appears once
+  and stays with its image across independently arranged Output Pages. WXR uses
+  the same Gutenberg serialization. Null handling, generation, stale identities,
+  Undo, legacy-import population and rejection preserve existing regression gates.
+- Only disposable synthetic fixtures were used. No user project was changed,
+  no provider/WordPress call was made, and nothing was pushed or released.
+- Production WSUWP, human VoiceOver and Windows hardware acceptance remain pending.
+
+Restart the app to load the updated code, then use **Fill empty fields from
+existing drafts** once for earlier imports. Caption/long-description nulls in a
+response mean that no text was supplied; population does not invent missing text.

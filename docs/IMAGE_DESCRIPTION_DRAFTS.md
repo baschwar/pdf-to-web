@@ -12,7 +12,9 @@ Accepted fields continue to drive HTML, Gutenberg, WXR and Output Pages.
    **Image and context** to confirm an asset when extraction supplied only page
    candidates. Even one page candidate needs confirmation. Add image purpose or
    verified identification. Associate a chart with the correct existing complex
-   visual explicitly; page coincidence does not establish that relationship.
+   visual explicitly when one exists; page coincidence does not establish that
+   relationship. A supplied long description without an association creates an
+   image-specific record tied to its stable block ID.
 3. Expand the bold **Provider setup** accordion, choose Local Ollama, OpenAI API
    or ChatGPT / other tool (manual exchange), and **Save provider settings**.
    Settings persist per project; saving keeps your position and focus. The Ollama
@@ -28,9 +30,12 @@ Accepted fields continue to drive HTML, Gutenberg, WXR and Output Pages.
    Local or cloud generation is optional.
 4. Refresh results to review ready drafts beside the accepted fields. Polling
    updates status without overwriting unsaved edits or moving keyboard focus.
-5. Edit drafts and save, apply alt or caption individually, reject the draft, or
-   apply its longer equivalent to an explicitly associated complex visual.
-   Omitted fields cannot clear accepted content. Applying never approves a block;
+5. New imported or generated drafts fill empty alt, caption and long-description
+   fields directly for review. Existing nonempty text is preserved; Apply can
+   deliberately replace it. Long descriptions are editable in the image form.
+   **Fill empty fields from existing drafts** handles earlier imports in one batch.
+   Null fields leave content unchanged. Reject removes untouched auto-filled text
+   while preserving subsequent author edits. Population never approves a block;
    use the existing review controls to approve. Decorative suggestions require
    the existing decorative control, which retains a legitimate caption.
 6. Continue Structure/Accessibility and Output Pages review, then preview and
@@ -59,8 +64,9 @@ files or send a request. A manual external submission is the user's action.
 Return the completed response template as JSON. Open **Import manual responses**,
 choose the file and **Validate responses**. Inspect the number of valid entries
 and entry-specific findings, then **Import valid drafts**. Validation runs again
-at import time. Importing changes only draft state; public content and approvals
-are unchanged. Invalid entries are held out while valid entries may be imported.
+at import time. Importing fills empty editable fields and marks changed images as needing review.
+Existing text is preserved. Populated fields drive previews and exports, so review
+them before publication. Descriptions persist through save/reopen and Undo. Invalid entries are held out while valid entries may be imported.
 
 The authoritative exchange version is `pdf-to-web-image-exchange-v1`. Request
 entries contain `document_id`, `block_id`, `asset_hash`, `context_hash`,
@@ -152,8 +158,11 @@ charges. Server restart does not resume transmissions: interrupted provider work
 is cancelled and can be retried explicitly. Manual requests persist independently.
 Undo cancels live provider jobs before a late response can reapply an undone result.
 
-Public serializers continue to read accepted metadata only. They never emit
-unaccepted drafts, provider errors, request context or generation provenance.
+Public serializers read image authoring fields, including populated drafts that
+still need review. Explicitly associated long descriptions appear beside images
+in HTML, Gutenberg, WXR and page exports without duplication. Provider errors,
+request context and generation provenance never enter public output. Local
+polling updates untouched image fields without overwriting unsaved typing.
 
 ## Verification
 

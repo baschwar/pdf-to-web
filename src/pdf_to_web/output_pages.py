@@ -85,7 +85,7 @@ def semantic_units(document):
     for visual in document.get('review', {}).get('complex_visuals', []):
         if visual.get('status') == 'excluded':
             continue
-        images = [b for b in included(document) if b.get('type') == 'image' and b.get('provenance', {}).get('source_page') == visual.get('source_page')]
+        images = [b for b in included(document) if b.get('type') == 'image' and (str(b['id']) == visual['source_block_id'] if visual.get('source_block_id') else b.get('provenance', {}).get('source_page') == visual.get('source_page'))]
         unit = {str(b['id']) for b in images}
         unit.update(str(b['caption_block_id']) for b in images if b.get('caption_block_id'))
         if unit:
@@ -354,9 +354,13 @@ def page_document(document, page_id):
             ref['footnote_id'] = prefix + str(ref['footnote_id'])
     ranges = source_ranges(result['blocks'])
     source_pages = {n for start, end in ranges for n in range(start, end + 1)}
-    result['review']['complex_visuals'] = [v for v in result.get('review', {}).get('complex_visuals', []) if v.get('source_page') in source_pages or not v.get('source_page')]
+    result_ids = {str(b['id']) for b in visible_walk(result['blocks'])}
+    result['review']['complex_visuals'] = [v for v in result.get('review', {}).get('complex_visuals', []) if (v['source_block_id'] in result_ids if v.get('source_block_id') else v.get('source_page') in source_pages or not v.get('source_page'))]
     result['review']['issues'] = [i for i in result.get('review', {}).get('issues', []) if not i.get('page') or i.get('page') in source_pages]
+    associated = {str(b.get('complex_visual_id')) for b in visible_walk(result['blocks']) if b.get('type') == 'image'}
     for visual in result['review']['complex_visuals']:
+        if str(visual['id']) in associated:
+            continue
         a = visual.get('accessibility', {})
         text = a.get('long_description') or a.get('adjacent_text')
         if text and visual.get('status') != 'excluded':

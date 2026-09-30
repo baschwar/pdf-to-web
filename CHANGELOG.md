@@ -14,6 +14,15 @@
 - Confirmed image-asset associations, stale-draft detection, bounded generation,
   incremental persistence and protection against late or switched-project results.
 
+### Changed
+
+- Imported and generated image drafts fill empty alt, caption and long-description
+  fields directly, retaining existing text and requiring human review. Previously
+  imported drafts can populate empty fields in one batch, with Undo.
+- Image long descriptions are editable beside the image, use explicit block-bound
+  associations when needed, and appear in HTML, Gutenberg, WXR and page exports.
+- Rejecting drafts removes untouched auto-filled values while preserving edits.
+
 ### Fixed
 
 - Image-draft exports now show selection/pending counts, offer a pending-image

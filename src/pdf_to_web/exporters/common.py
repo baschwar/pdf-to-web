@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import copy
 import re
 from typing import Any
 
@@ -137,3 +138,23 @@ def block_anchors(block, anchors):
         return ''
     markup = '<span id="' + html.escape(str(block.get('id')), quote=True) + '"></span>' if str(block.get('id')) in anchors else ''
     return markup + ''.join(block_anchors(child, anchors) for child in block.get('children', []))
+
+
+def blocks_with_image_descriptions(document):
+    """Render explicitly associated equivalents beside their images."""
+    visuals = {str(v['id']): v for v in document.get('review', {}).get('complex_visuals', [])}
+    def expand(blocks):
+        result = []
+        for original in blocks:
+            block = copy.deepcopy(original)
+            if 'children' in block:
+                block['children'] = expand(block['children'])
+            result.append(block)
+            visual = visuals.get(str(block.get('complex_visual_id')))
+            if block.get('type') != 'image' or is_excluded(block) or block.get('decorative') or not visual or visual.get('status') == 'excluded':
+                continue
+            text = visual.get('accessibility', {}).get('long_description')
+            if text:
+                result.append({'id': str(block['id']) + '-description', 'type': 'paragraph', 'content': text})
+        return result
+    return expand(document.get('blocks', []))

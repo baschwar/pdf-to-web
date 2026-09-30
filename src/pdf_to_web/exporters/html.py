@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 from typing import Any
 
-from .common import block_anchors, image_src, is_excluded, is_footnote_body, render_footnotes_list, render_inline, table_cell
+from .common import blocks_with_image_descriptions, block_anchors, image_src, is_excluded, is_footnote_body, render_footnotes_list, render_inline, table_cell
 
 
 def _list(block: dict[str, Any]) -> str:
@@ -86,7 +86,7 @@ def _block(block: dict[str, Any]) -> str:
 def render_document(document: dict[str, Any]) -> str:
     title = html.escape(str(document.get("metadata", {}).get("title", "Untitled document")))
     anchors = set(document.get("output_anchor_ids", []))
-    body_parts = [block_anchors(block, anchors) + _block(block) for block in document.get("blocks", [])]
+    body_parts = [block_anchors(block, anchors) + _block(block) for block in blocks_with_image_descriptions(document)]
     footnotes = render_footnotes_list(document)
     if footnotes:
         body_parts.append(footnotes)

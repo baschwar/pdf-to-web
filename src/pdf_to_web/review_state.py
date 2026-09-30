@@ -231,7 +231,7 @@ def update_block(project_dir: Path, block_id: str, changes: dict[str, Any]) -> d
                 for index, line in enumerate(content.splitlines())
                 if line.strip()
             ]
-    if any(field in changes for field in ("alt", "caption", "decorative")):
+    if any(field in changes for field in ("alt", "caption", "decorative", "long_description")):
         if block.get("type") != "image":
             raise ValueError("Image accessibility fields can only be set on an image block")
         if "decorative" in changes:
@@ -241,6 +241,11 @@ def update_block(project_dir: Path, block_id: str, changes: dict[str, Any]) -> d
             block["alt"] = str(changes["alt"]).strip()
         if "caption" in changes:
             block["caption"] = str(changes["caption"]).strip()
+        if "long_description" in changes:
+            text = str(changes["long_description"]).strip()
+            visual = image_description_visual(document, block, create=bool(text))
+            if visual:
+                visual.setdefault("accessibility", {})["long_description"] = text
         if block.get("decorative"):
             block["alt"] = ""
     if any(field in changes for field in ("table_header_row", "table_header_column", "table_caption", "table_reviewed")):
@@ -348,6 +353,22 @@ def undo_last(project_dir: Path) -> dict[str, Any]:
     restored = _read_document(latest)
     latest.unlink()
     return save_review_document(project_dir, restored, snapshot=False)
+
+
+def image_description_visual(document, block, *, create=False):
+    """Resolve by explicit image identity, never by page coincidence."""
+    visuals = document.setdefault("review", {}).setdefault("complex_visuals", [])
+    visual = next((v for v in visuals if str(v.get("id")) == block.get("complex_visual_id")), None)
+    if visual is None and create:
+        visual = {"id": "image-description-" + str(block["id"]), "type": "image",
+                  "status": "needs_text_equivalent", "source_block_id": str(block["id"]),
+                  "source_page": block.get("provenance", {}).get("source_page"),
+                  "asset_references": [block.get("src")], "accessibility": {}}
+        if any(v.get("id") == visual["id"] for v in visuals):
+            raise ValueError("Image description identity already exists; verify association")
+        visuals.append(visual)
+        block["complex_visual_id"] = visual["id"]
+    return visual
 
 
 def update_complex_visual(

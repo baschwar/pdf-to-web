@@ -194,9 +194,12 @@ vision model or an explicitly authorized paid OpenAI request, or export a manual
 request ZIP for your chosen tool. **Export pending images ZIP** includes images
 needing drafts without individual selection; the toolbar shows selected and pending
 counts and brings the download link into view. Cancel controls appear only for
-active requests. Validate imported responses, edit drafts, apply
-alt/caption individually, reject, retry and Undo. Drafts never approve content or
-enter public exports until applied. No key or network access is needed for manual
+active requests. Validate and import responses to fill empty alt, caption and long-description
+fields directly. Existing text is preserved; use Apply to replace it deliberately.
+Long descriptions are editable beside the image and retained through exports.
+Use **Fill empty fields from existing drafts** for previously imported drafts.
+Null response fields leave existing content unchanged. Review, reject, retry and
+Undo remain available; populated images still need human approval. No key or network access is needed for manual
 exchange. See [workflow, providers and exchange schema](docs/IMAGE_DESCRIPTION_DRAFTS.md)
 and [acceptance evidence](docs/IMAGE_DESCRIPTION_DRAFTS_ACCEPTANCE.md).
 
