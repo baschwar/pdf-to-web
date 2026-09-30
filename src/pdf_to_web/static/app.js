@@ -215,6 +215,8 @@ if (pendingBlockId) {
   window.addEventListener('load', () => setTimeout(() => {
     // A reviewer who has entered provider setup keeps focus there.
     if (document.activeElement?.closest('#image-draft-toolbar')) return;
+    const complete = document.getElementById('structure-review-complete');
+    if (complete) { complete.focus({preventScroll: true}); complete.scrollIntoView({block: 'center'}); return; }
     const pendingCard = document.getElementById(pendingBlockId);
     if (!pendingCard) return;
     focusBlock(pendingCard);
@@ -240,6 +242,7 @@ document.querySelectorAll('.block-form').forEach((form) => form.addEventListener
   else delete values.level;
   try {
     await api(`/api/blocks/${encodeURIComponent(form.dataset.blockId)}`, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(values) });
+    if (['approved', 'excluded'].includes(values.review_status)) sessionStorage.setItem(reviewAdvanceKey, `block-${form.dataset.blockId}`);
     announce('Block saved.');
     window.location.reload();
   } catch (error) { announce(error.message); alert(error.message); }

@@ -131,3 +131,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .block-review-actions button:hover { filter: brightness(.9); }
 .block-review-actions button:focus-visible { outline: 3px solid #1c6ea4; outline-offset: 3px; }
 .visual-save-message { margin-top: .5rem; font-weight: 600; }
+
+.structure-review-complete { border: 2px solid #166534; border-radius: .35rem; background: #f0fdf4; padding: 1rem; margin-bottom: 1rem; scroll-margin-top: var(--app-header-height); }
+.structure-review-complete h2 { font-size: 1.2rem; margin-bottom: .5rem; }
+.structure-review-complete:focus-visible { outline: 3px solid #1c6ea4; outline-offset: 3px; }

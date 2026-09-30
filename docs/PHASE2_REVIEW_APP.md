@@ -102,3 +102,32 @@ python -m unittest discover -s tests -v
 The Playwright-based browser and accessibility scripts under `tools/` are
 developer checks. Their Node dependencies are already part of the existing
 WordPress round-trip tooling and are not application runtime dependencies.
+
+## Structure completion message — 2026-09-30
+
+Structure displays **All blocks have been reviewed** and **Continue to
+Accessibility** once every top-level review card is approved or excluded. It uses
+the existing review-progress model; Needs review does not count as completion
+even though it counts as a recorded decision in the toolbar. Empty documents and
+blocked conversions do not show the message. No approval is inferred for complex
+visuals or Accessibility findings.
+
+After a final approval/exclusion, or saving a final approved review state, the
+normal reload focuses and reveals the message rather than returning to the last
+block. It is an inline status message, not an automatic navigation or a modal.
+Existing provider-toolbar focus protection remains. The message persists on
+reopen and disappears after Undo or renewed pending block review. It requires no
+new stored state or schema migration.
+
+Local evidence: baseline 191 tests passed; final suite 196 passed. Five new
+regressions cover completion, exclusions, pending decisions, empty/blocked
+documents, and final approval/Undo. Seven Chrome checks passed without page
+errors: pending-message absence, keyboard final approval/message focus, keyboard
+Accessibility navigation, return persistence, Undo, final form-save focus, and
+390-pixel layout without horizontal scrolling. Evidence is under
+`build/image-drafts/structure-completion-browser-report.json`,
+`structure-complete.png`, and `structure-complete-narrow.png`; repeat with
+`tools/structure-completion-browser-check.js BOOTSTRAP_URL` against a disposable
+fixture. No user project, WordPress site, or external provider was changed. Human
+VoiceOver, production WSUWP, and actual Windows hardware acceptance remain
+pending. No push or release. Restart the local app to load the new rendering.

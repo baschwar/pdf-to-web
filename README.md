@@ -187,6 +187,12 @@ pdf-to-web export accessibility --project /path/to/my-report
 
 These reports document human review. They do not certify WCAG conformance.
 
+**Structure** shows “All blocks have been reviewed” when every block is approved
+or excluded and offers **Continue to Accessibility**. Unreviewed or Needs review
+blocks keep the message hidden. Final approval brings the message into view; Undo
+or a new pending review decision removes it. This completes block review, while
+Accessibility remains a separate step.
+
 Structure also offers optional **Image description drafts**. Select images,
 confirm ambiguous image associations, save the provider choice per project,
 generate through an existing local Ollama

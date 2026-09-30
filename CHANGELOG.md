@@ -4,6 +4,11 @@
 
 ### Added
 
+- Structure completion message when all blocks are approved or excluded, with a
+  keyboard-accessible Continue to Accessibility link and focus after final approval.
+  Pending review decisions, blocked conversion, and empty documents suppress it;
+  Undo or returning a block to review removes it.
+
 - Context-aware image-description drafts in Structure, kept separate from accepted
   alt text, captions and complex-visual descriptions, with individual application,
   editing, rejection, explicit regeneration/retry, cancellation and Undo.
