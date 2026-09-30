@@ -100,6 +100,8 @@ def ensure_review_document(project_dir: Path) -> dict[str, Any]:
                 changed = True
         from .output_pages import ensure_pages
         changed = ensure_pages(document) or changed
+        from .image_drafts import ensure_state
+        changed = ensure_state(document) or changed
         if changed:
             if "output_pages" in previous:
                 from .output_pages import reconcile
@@ -109,6 +111,8 @@ def ensure_review_document(project_dir: Path) -> dict[str, Any]:
     document = _prepare(_read_document(original_path(project_dir)))
     from .output_pages import ensure_pages
     ensure_pages(document)
+    from .image_drafts import ensure_state
+    ensure_state(document)
     path.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write(path, document)
     project = load_project(project_dir)

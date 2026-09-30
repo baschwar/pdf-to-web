@@ -44,10 +44,11 @@ def _wordpress_media_values(block: dict[str, Any]) -> tuple[str | None, int | No
 
 
 def _local_image_path(project_dir: Path, source: str) -> Path | None:
+    project_dir = project_dir.resolve()
     relative = Path(source)
     if not source or relative.is_absolute() or ".." in relative.parts:
         return None
-    candidates = [project_dir / "extraction" / "raw" / relative, project_dir / "extraction" / "assets" / relative]
+    candidates = [project_dir / relative] if source.startswith(("extraction/raw/", "extraction/assets/images/")) else [project_dir / "extraction" / "raw" / relative, project_dir / "extraction" / "assets" / relative]
     for candidate in candidates:
         resolved = candidate.resolve()
         if resolved.is_file() and resolved.is_relative_to(project_dir):

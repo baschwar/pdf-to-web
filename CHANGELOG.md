@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Context-aware image-description drafts in Structure, kept separate from accepted
+  alt text, captions and complex-visual descriptions, with individual application,
+  editing, rejection, explicit regeneration/retry, cancellation and Undo.
+- Manual image/request ZIP and validated versioned JSON response exchange using
+  document, block, asset, context and request identities.
+- Optional existing local Ollama vision generation and a dedicated-key OpenAI
+  adapter with explicit per-selection cloud consent; no automatic model downloads.
+- Confirmed image-asset associations, stale-draft detection, bounded generation,
+  incremental persistence and protection against late or switched-project results.
+
+### Acceptance boundary
+
+- Provider calls were mocked during development; live generation remains untested.
+  Production WSUWP, human VoiceOver, Windows, extraction-abort investigation and
+  historical WordPress acceptance remain pending. No WordPress operation or release.
+
 ## [0.7.0] - 2026-09-30
 
 ### Added

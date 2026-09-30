@@ -105,3 +105,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .app-header nav { justify-content: flex-start; }
   .app-header nav ul { max-width: 100%; }
 }
+
+.image-draft-panel { border-top: 2px solid #b7c4cd; margin-top: 1rem; padding-top: 1rem; }
+.draft-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.draft-context { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow: auto; }
+#image-draft-toolbar { border: 1px solid #b7c4cd; padding: 1rem; margin-bottom: 1rem; }

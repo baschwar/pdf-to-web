@@ -519,3 +519,140 @@ document.querySelectorAll('[data-page-export]').forEach(button => button.addEven
     }
   } catch (error) { pageMessage.textContent = error.message; }
 }));
+
+// Image drafts use the Structure editor and its existing Undo and focus behavior.
+const draftToolbar = document.getElementById('image-draft-toolbar');
+if (draftToolbar) {
+  const message = document.getElementById('draft-message');
+  const docId = draftToolbar.dataset.documentId;
+  const postDraft = (action, data) => api(`/api/image-drafts/${action}`, {method: 'POST', headers: csrfHeaders(), body: JSON.stringify({document_id: docId, ...data})});
+  const panelFor = id => [...document.querySelectorAll('.image-draft-panel')].find(p => p.dataset.blockId === id);
+  const reloadDraft = id => { if (id) sessionStorage.setItem(reviewAdvanceKey, `block-${id}`); location.reload(); };
+  let cloudRequest = null;
+  let importPayload = null;
+  const draftValues = form => ({
+    alt: form.elements.alt.value,
+    caption: form.elements.omit_caption.checked ? null : form.elements.caption.value,
+    long_description: form.elements.omit_long_description.checked ? null : form.elements.long_description.value,
+    warnings: JSON.parse(form.dataset.warnings || '[]'), decorative: form.dataset.decorative === 'true'
+  });
+  const showDownload = result => {
+    const link = document.createElement('a'); link.href = result.url; link.textContent = 'Download drafting request ZIP'; link.download = result.filename;
+    document.getElementById('draft-downloads').replaceChildren(link);
+    message.textContent = 'Request ready. Manually attach its images and request.json to your chosen tool, then import its response JSON.';
+  };
+  const generate = async (ids, regenerate = false) => {
+    const request = {block_ids: ids, provider: document.getElementById('draft-provider').value, model: document.getElementById('draft-model').value, regenerate};
+    if (request.provider === 'openai') {
+      const result = await postDraft('preflight', request);
+      cloudRequest = {...request, consent_hash: result.consent_hash};
+      const view = document.getElementById('draft-transmission-content');
+      view.textContent = JSON.stringify(result.requests, null, 2);
+      const images = document.getElementById('draft-transmission-images');
+      images.replaceChildren();
+      for (const request of result.requests) {
+        const figure = document.createElement('figure');
+        const image = document.createElement('img'); image.className = 'image-block-preview';
+        image.src = `/api/image-drafts/asset?path=${encodeURIComponent(request.image_path)}`;
+        image.alt = `Selected image for block ${request.block_id}`;
+        const caption = document.createElement('figcaption'); caption.textContent = `Block ${request.block_id}`;
+        figure.append(image, caption); images.append(figure);
+      }
+      document.getElementById('draft-transmission').hidden = false;
+      document.getElementById('draft-transmission-send').focus();
+      message.textContent = 'Review the selected images and context before sending to OpenAI.';
+    } else {
+      const result = await postDraft('generate', request);
+      message.textContent = `${result.queued} requests queued with local Ollama; ${result.preserved} existing drafts preserved. Refresh to review results.`;
+    }
+  };
+  document.getElementById('draft-transmission-send').addEventListener('click', async () => {
+    if (!cloudRequest) return;
+    try {
+      const result = await postDraft('generate', {...cloudRequest, authorize_cloud: true});
+      cloudRequest = null; document.getElementById('draft-transmission').hidden = true;
+      message.textContent = `${result.queued} requests queued with OpenAI for the authorized selection; ${result.preserved} existing drafts preserved.`;
+    } catch (error) { message.textContent = error.message; }
+  });
+  document.getElementById('draft-transmission-cancel').addEventListener('click', () => { cloudRequest = null; document.getElementById('draft-transmission').hidden = true; message.textContent = 'Cloud request cancelled.'; });
+  document.querySelectorAll('[data-draft-batch]').forEach(button => button.addEventListener('click', async () => {
+    const ids = [...document.querySelectorAll('.draft-selection:checked')].map(input => input.value);
+    try {
+      if (!ids.length) throw new Error('Select at least one image.');
+      if (button.dataset.draftBatch === 'export') showDownload(await postDraft('export', {block_ids: ids}));
+      else if (button.dataset.draftBatch === 'generate') await generate(ids);
+      else {
+        const current = await api('/api/image-drafts');
+        if (current.document_id !== docId) throw new Error('Project changed; reload this screen.');
+        for (const entry of current.entries.filter(e => ids.includes(e.block_id))) await postDraft('cancel', entry);
+        reloadDraft(ids[0]);
+      }
+    } catch (error) { message.textContent = error.message; }
+  }));
+  document.querySelectorAll('.draft-association-form').forEach(form => form.addEventListener('submit', async event => {
+    event.preventDefault();
+    try { await postDraft('associate', {...Object.fromEntries(new FormData(form)), block_id: form.dataset.blockId}); reloadDraft(form.dataset.blockId); }
+    catch (error) { message.textContent = error.message; announce(error.message); }
+  }));
+  document.querySelectorAll('.draft-edit-form').forEach(form => form.addEventListener('submit', async event => {
+    event.preventDefault();
+    try { await postDraft('edit', {block_id: form.dataset.blockId, request_id: form.dataset.requestId, draft: draftValues(form)}); reloadDraft(form.dataset.blockId); }
+    catch (error) { message.textContent = error.message; announce(error.message); }
+  }));
+  document.querySelectorAll('[data-draft-action]').forEach(button => button.addEventListener('click', async () => {
+    const panel = button.closest('.image-draft-panel');
+    const id = panel.dataset.blockId;
+    const action = button.dataset.draftAction;
+    try {
+      if (action === 'export' || action === 'export-new') showDownload(await postDraft('export', {block_ids: [id], regenerate: action === 'export-new'}));
+      else if (action === 'generate' || action === 'regenerate') await generate([id], action === 'regenerate');
+      else {
+        const current = await api('/api/image-drafts');
+        if (current.document_id !== docId) throw new Error('Project changed; reload this screen.');
+        const entry = current.entries.find(e => e.block_id === id);
+        if (!entry) throw new Error('No draft request exists for this image.');
+        if (action === 'apply') {
+          // Save edited drafts first; applying reads the saved draft, never the accepted form.
+          const form = panel.querySelector('.draft-edit-form');
+          if (!form || form.dataset.requestId !== entry.request_id) throw new Error('Draft changed; refresh results.');
+          await postDraft('edit', {block_id: id, request_id: entry.request_id, draft: draftValues(form)});
+        }
+        await postDraft(action, {block_id: id, request_id: entry.request_id, fields: [button.dataset.field]}); reloadDraft(id);
+      }
+    } catch (error) { message.textContent = error.message; announce(error.message); }
+  }));
+  document.getElementById('draft-import-preview').addEventListener('click', async () => {
+    importPayload = null; document.getElementById('draft-import-confirm').disabled = true;
+    try {
+      const file = document.getElementById('draft-response-file').files[0];
+      if (!file) throw new Error('Choose a response JSON file.');
+      if (file.size > 4 * 1024 * 1024) throw new Error('Response exceeds 4 MiB.');
+      const payload = JSON.parse(await file.text());
+      const result = await postDraft('import', {response: payload});
+      document.getElementById('draft-import-findings').textContent = `${result.valid_count} valid drafts. ${result.findings.map(f => `Entry ${f.entry}: ${f.error}`).join(' ')}`;
+      importPayload = payload; document.getElementById('draft-import-confirm').disabled = !result.valid_count;
+    } catch (error) { document.getElementById('draft-import-findings').textContent = error.message; }
+  });
+  document.getElementById('draft-import-confirm').addEventListener('click', async () => {
+    try { const result = await postDraft('import', {response: importPayload, commit: true});
+      if (!result.valid_count) throw new Error(result.findings.map(f => f.error).join(' '));
+      reloadDraft();
+    } catch (error) { message.textContent = error.message; }
+  });
+  document.getElementById('draft-refresh').addEventListener('click', () => reloadDraft());
+  // Update status only; polling must not discard unsaved reviewer edits or move focus.
+  const pollDrafts = async () => {
+    try {
+      const result = await api('/api/image-drafts');
+      if (result.document_id !== docId) { message.textContent = 'Project changed; reload this screen.'; return; }
+      for (const entry of result.entries) {
+        const panel = panelFor(entry.block_id); if (!panel) continue;
+        const label = {ready: 'Draft ready — refresh to review', requested: 'Awaiting response', generating: 'Generating', failed: 'Failed', stale: 'Context changed', cancelled: 'Cancelled', rejected: 'Rejected'}[entry.status];
+        const status = panel.querySelector('.draft-status');
+        if (!status.textContent.startsWith('Draft ready') || entry.status !== 'ready') status.textContent = label;
+        if (entry.error) panel.querySelector('.draft-error')?.replaceChildren(document.createTextNode(entry.error));
+      }
+    } catch (error) { message.textContent = error.message; }
+  };
+  setInterval(pollDrafts, 2500);
+}

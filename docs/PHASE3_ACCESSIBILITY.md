@@ -69,7 +69,8 @@ published page has been certified against WCAG.
 
 ## Boundaries
 
-- The tool does not generate descriptions with AI.
+- Optional image-description drafting is now available in Structure. Drafts are
+  unapproved suggestions; see `IMAGE_DESCRIPTION_DRAFTS.md`.
 - It does not determine whether a human-authored alternative is factually or
   contextually sufficient.
 - It does not provide a spreadsheet-like table editor.

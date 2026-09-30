@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import asyncio
 import copy
 import hashlib
 import json
@@ -21,6 +22,8 @@ from urllib.parse import quote, urlparse
 from . import __version__
 from .accessibility import assess_document, write_reports
 from . import output_pages as op
+from . import image_drafts as drafts
+from . import image_draft_ui
 from .output_page_export import export_pages, contents_html
 from .review_state import update_output_pages
 from .errors import PdfToWebError
@@ -30,7 +33,7 @@ from .exporters import html as html_exporter
 from .extraction import run_extraction
 from .normalize import extraction_summary, normalize_project
 from .media_mapping import apply_media_mapping, apply_wordpress_media_export
-from .project import create_project, import_pdf, load_project, save_project, slugify
+from .project import create_project, import_pdf, load_project, save_project, slugify, utc_now
 from .recent_projects import (
     RecentProject,
     default_recent_projects_path,
@@ -50,6 +53,8 @@ from .review_state import (
     update_block,
     update_accessibility_decision,
     update_complex_visual,
+    save_review_document,
+    review_path,
 )
 from .source_pages import render_source_page, source_page_size
 from .wordpress_preview import render_gutenberg_preview
@@ -107,8 +112,8 @@ def _document_with_local_preview_media(document: dict[str, Any]) -> dict[str, An
         if block.get("type") != "image" or block.get("wordpress_url"):
             continue
         source = Path(str(block.get("src") or ""))
-        if source.name == str(source) or source.parts[:1] == ("images",):
-            block["wordpress_url"] = f"/api/preview/images/{quote(source.name)}"
+        if source.name == str(source) or source.parts[:1] == ("images",) or str(source).startswith(("extraction/raw/", "extraction/assets/images/")):
+            block["wordpress_url"] = f"/api/image-drafts/asset?path={quote(str(source))}" if str(source).startswith("extraction/") else f"/api/preview/images/{quote(source.name)}"
     return preview
 
 
@@ -307,6 +312,7 @@ def document_model(project_dir: Path) -> dict[str, Any]:
         "progress": review_progress(document),
         "accessibility": assess_document(document),
         "source_preview_key": source_preview_key,
+        "project_dir": project_dir,
     }
 
 
@@ -415,7 +421,7 @@ def _source_regions(block: dict[str, Any]) -> list[list[float]]:
     return [bbox] if isinstance(bbox, list) and len(bbox) == 4 else []
 
 
-def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool = True) -> str:
+def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool = True, draft_controls: str = "") -> str:
     block_id = html.escape(str(block.get("id", "")), quote=True)
     block_type = str(block.get("type", "unknown"))
     provenance = block.get("provenance", {})
@@ -456,6 +462,8 @@ def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool
         image_src = str(block.get("src") or "")
         image_name = Path(image_src).name
         preview = f'<img class="image-block-preview" src="/api/preview/images/{quote(image_name)}" alt="">' if image_name else '<p>Extracted image preview unavailable.</p>'
+        if image_src.startswith("extraction/"):
+            preview = f'<img class="image-block-preview" src="/api/image-drafts/asset?path={quote(image_src)}" alt="">'
         decorative = bool(block.get("decorative"))
         accessibility_warning = "" if decorative or str(block.get("alt") or "").strip() else '<p class="block-issue" role="alert">Accessibility decision required: add alt text or mark this image as decorative.</p>'
         image_editor = f'''{accessibility_warning}<form class="block-form image-block-form" data-block-id="{block_id}">{preview}<div class="form-grid">
@@ -474,7 +482,7 @@ def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool
 <label class="checkbox-label"><input type="checkbox" name="table_header_column"{" checked" if table_accessibility.get('header_column') else ""}> First column contains row headers</label>
 <label class="checkbox-label"><input type="checkbox" name="table_reviewed"{" checked" if table_accessibility.get('reviewed') else ""}> I reviewed the table structure</label></div>
 <button type="submit" aria-label="Save table accessibility for block {index}">Save table accessibility</button></form>'''
-    editor = image_editor or table_editor or text_editor
+    editor = (image_editor or table_editor or text_editor) + draft_controls
     include_label = "Include" if review_status == "excluded" else "Exclude"
     actions = f'''<footer class="block-actions" aria-label="Actions for block {index}">
 <button type="button" class="secondary block-action" data-action="start" data-block-id="{block_id}" aria-label="Move block {index} to start"{" disabled" if index == 1 else ""}>Move to start</button>
@@ -519,9 +527,10 @@ def _structure_page(model: dict[str, Any]) -> str:
     blocks = document.get("blocks", [])
     page_count = int(model["project"].get("source", {}).get("page_count") or 1)
     source_preview_key = html.escape(str(model["source_preview_key"]), quote=True)
-    cards = "".join(_block_card(block, index, total=len(blocks), can_edit=can_edit) for index, block in enumerate(blocks, 1))
+    cards = "".join(_block_card(block, index, total=len(blocks), can_edit=can_edit, draft_controls=image_draft_ui.controls(model["project_dir"], document, block) if can_edit and block.get("type") == "image" else "") for index, block in enumerate(blocks, 1))
     visuals = "".join(_complex_visual_card(visual, can_edit=can_edit) for visual in document.get("review", {}).get("complex_visuals", []))
     body = f'''<h1>Structure</h1>{_status_banner(status, document.get("review", {}).get("issues", [])) if not can_edit else ''}<div class="review-toolbar"><p><strong>{_status_label(status)}</strong> · Reviewed {progress['reviewed']} / {progress['total']}</p>{'<button id="undo-action" type="button" class="secondary">Undo last action</button>' if can_edit else ''}</div>
+{image_draft_ui.toolbar(document) if can_edit and any(b.get("type") == "image" for b in blocks) else ""}
 {f'<section class="complex-warning" aria-labelledby="complex-heading"><h2 id="complex-heading">Complex visuals</h2>{visuals}</section>' if visuals else ''}
 <div class="structure-layout"><section class="source-pane" aria-labelledby="source-heading" data-page-count="{page_count}" data-source-key="{source_preview_key}"><h2 id="source-heading">Source page</h2><form id="source-page-controls" class="source-page-controls"><button id="source-page-previous" type="button" class="secondary" disabled aria-label="Previous source page">Previous</button><label>Page <input id="source-page-number" type="number" min="1" max="{page_count}" value="1" inputmode="numeric" aria-describedby="source-page-total"></label><span id="source-page-total">of {page_count}</span><button id="source-page-next" type="button" class="secondary"{(' disabled' if page_count <= 1 else '')} aria-label="Next source page">Next</button></form><p id="source-page-label" aria-live="polite">Select a block to view and outline its source region.</p><div class="source-image-stage"><img id="source-image" src="/source-page/1.png?v={source_preview_key}" alt="Rendered source PDF page 1"><span id="source-highlights" aria-hidden="true"></span></div><p><a id="open-source-page" href="/source.pdf?v={source_preview_key}#page=1" target="_blank" rel="noopener">Open source PDF page 1</a></p></section>
 <section class="blocks-pane" aria-labelledby="blocks-heading"><div class="reading-order-header"><h2 id="blocks-heading">Reading order</h2><div class="block-navigation" role="group" aria-label="Selected block navigation"><button id="previous-block" type="button" class="secondary" disabled>Previous block</button><span class="block-navigation-position" aria-live="polite"><span id="selected-block-page">Page -</span><span id="selected-block-position">No block selected</span></span><button id="next-block" type="button" class="secondary"{(' disabled' if not blocks else '')}>Next block</button></div></div><p>Use the movement controls on each block to correct reading order. Changes save immediately.</p>{cards or '<p>No normalized blocks are available.</p>'}</section></div>'''
@@ -724,6 +733,115 @@ def create_app(config: WebAppConfig):
 
     app.mount("/static", StaticFiles(directory=static_path(".").resolve()), name="static")
 
+    draft_tasks = set()
+    draft_semaphore = asyncio.Semaphore(2)
+    draft_epoch = 0
+
+    def cancel_draft_jobs():
+        nonlocal draft_epoch
+        draft_epoch += 1
+        if active_project and review_path(active_project).is_file():
+            document = ensure_review_document(active_project)
+            changed = False
+            for entry in drafts.state(document)['requests'].values():
+                if entry['status'] in {'requested', 'generating'} and entry['provider'] != 'manual':
+                    entry.update(status='cancelled', updated_at=utc_now())
+                    changed = True
+            if changed:
+                save_review_document(active_project, document, snapshot=False)
+
+    # An interrupted server never silently resumes transmissions. Retry is explicit.
+    if active_project:
+        cancel_draft_jobs()
+
+    async def generate_one(root, epoch, provider, entry):
+        async with draft_semaphore:
+            if epoch != draft_epoch or active_project != root or not drafts.begin(root, entry):
+                return
+            try:
+                value = await asyncio.to_thread(provider.generate, entry, drafts.confined(root, entry['asset_path']))
+                if epoch == draft_epoch and active_project == root:
+                    drafts.complete(root, entry, value=value)
+            except Exception:
+                if epoch == draft_epoch and active_project == root:
+                    drafts.complete(root, entry, error=True)
+
+    @app.get('/api/image-drafts/asset')
+    async def draft_asset(path: str, session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+        require_session(session)
+        root = current()
+        try:
+            if not path.startswith(('extraction/raw/', 'extraction/assets/images/')):
+                raise ValueError('Unsupported asset path')
+            return FileResponse(drafts.confined(root, path), headers={'Cache-Control': 'private, no-store'})
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get('/api/image-drafts')
+    async def draft_status(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+        require_session(session)
+        root = current()
+        document = ensure_review_document(root)
+        store = drafts.state(document)
+        entries = []
+        for request_id in store['active'].values():
+            entry = store['requests'][request_id]
+            entries.append({'block_id': entry['block_id'], 'request_id': request_id, 'status': 'stale' if drafts.stale(root, document, entry) else entry['status'], 'error': entry.get('error')})
+        return {'document_id': document['output_pages']['project_id'], 'entries': entries}
+
+    @app.post('/api/image-drafts/{action}')
+    async def draft_action(action: str, request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
+        require_change(request, session, csrf)
+        require_editable_document()
+        root = current()
+        try:
+            raw = await request.body()
+            if len(raw) > 4 * 1024 * 1024:
+                raise ValueError('Draft request exceeds 4 MiB')
+            data = json.loads(raw)
+            document = ensure_review_document(root)
+            if data.get('document_id') != document['output_pages']['project_id']:
+                raise ValueError('Project changed; reload this screen')
+            if action in {'associate', 'edit', 'apply', 'reject', 'cancel'}:
+                drafts.mutate(root, action, data)
+                return {'status': 'ok'}
+            if action == 'import':
+                result = drafts.import_response(root, data.get('response'), commit=data.get('commit') is True)
+                return {'status': 'ok', 'valid_count': len(result['valid']), 'findings': result['findings']}
+            if action in {'export', 'generate', 'preflight'}:
+                ids = data.get('block_ids')
+                provider_name = data.get('provider', 'ollama-local')
+                if action == 'export':
+                    entries = drafts.prepare(root, ids, regenerate=data.get('regenerate') is True)
+                    path = drafts.exchange_package(root, entries)
+                    relative = str(path.relative_to(root))
+                    return {'status': 'ok', 'url': '/download/' + quote(relative), 'filename': path.name}
+                if provider_name not in {'ollama-local', 'openai'}:
+                    raise ValueError('Unknown generation provider')
+                provider = drafts.OpenAIProvider() if provider_name == 'openai' else drafts.OllamaProvider(data.get('model', ''))
+                if not isinstance(ids, list) or not ids or len(ids) > 100 or len(set(ids)) != len(ids):
+                    raise ValueError('Select 1–100 distinct image blocks')
+                contexts = [drafts.current_identity(root, document, i) for i in ids]
+                consent_hash = drafts.digest({'requests': [{**identity, 'context': ctx} for identity, asset, ctx in contexts], 'provider': provider.name, 'model': provider.model, 'regenerate': bool(data.get('regenerate'))})
+                if action == 'preflight':
+                    return {'status': 'ok', 'consent_hash': consent_hash, 'requests': [{**identity, 'image_path': str(asset.relative_to(root)), 'context': ctx} for identity, asset, ctx in contexts]}
+                if provider.name == 'openai' and (data.get('authorize_cloud') is not True or data.get('consent_hash') != consent_hash):
+                    raise ValueError('Review the selected images/context and explicitly authorize this OpenAI request')
+                if sum(not task.done() for task in draft_tasks) + len(ids) > 100:
+                    raise ValueError('Generation queue is full; wait for results or cancel requests')
+                entries = drafts.prepare(root, ids, provider.name, provider.model, bool(data.get('regenerate')))
+                queued = 0
+                for entry in entries:
+                    if entry['status'] == 'requested':
+                        queued += 1
+                        task = asyncio.create_task(generate_one(root, draft_epoch, provider, entry))
+                        draft_tasks.add(task)
+                        task.add_done_callback(draft_tasks.discard)
+                return {'status': 'ok', 'queued': queued, 'preserved': len(entries) - queued}
+            raise ValueError('Unsupported draft action')
+        except Exception as exc:
+            return error_response(exc)
+
     @app.get("/api/health")
     async def health():
         return {"status": "ok", "app": APP_NAME}
@@ -763,6 +881,7 @@ def create_app(config: WebAppConfig):
             if selection is None:
                 raise ValueError("Project selection token is invalid or expired")
             load_project(selection.path)
+            cancel_draft_jobs()
             active_project = selection.path
             remember(active_project)
             ensure_review_document(active_project)
@@ -800,6 +919,7 @@ def create_app(config: WebAppConfig):
             import_pdf(project_dir, source_pdf)
             run_extraction(project_dir, False)
             normalize_project(project_dir)
+            cancel_draft_jobs()
             active_project = project_dir
             remember(project_dir)
             return {"status": "ok", "project": {"name": project_dir.name}}
@@ -850,6 +970,7 @@ def create_app(config: WebAppConfig):
                 return {'status': 'ok', 'downloads': [{'path': str(p.relative_to(current())), 'url': '/download/' + quote(str(p.relative_to(current())), safe='/')} for p in paths]}
             if action == 'undo':
                 undo_last(current())
+                cancel_draft_jobs()
                 restored = ensure_review_document(current())
                 selected = data.get('page_id')
                 if not op.page_by_id(restored, selected):
@@ -873,7 +994,7 @@ def create_app(config: WebAppConfig):
         # Same page projection and serializers; preview assets use confined local routes.
         projected = _document_with_local_preview_media(projected)
         for b in op.walk(projected['blocks']):
-            if b.get('type') == 'image' and b.get('wordpress_url', '').startswith('/api/preview/images/'):
+            if b.get('type') == 'image' and b.get('wordpress_url', '').startswith(('/api/preview/images/', '/api/image-drafts/asset?')):
                 b['src'] = b['wordpress_url']
         config_data = load_project(current()).get('export', {})
         if mode == 'wordpress':
@@ -972,13 +1093,20 @@ def create_app(config: WebAppConfig):
     @app.get("/api/document")
     async def api_document(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
         require_session(session)
-        return document_model(current())
+        model = document_model(current())
+        model.pop("project_dir", None)
+        return model
 
     @app.get("/api/preview/html", response_class=HTMLResponse)
     async def preview_html(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
         require_session(session)
+        document = ensure_review_document(current())
+        projected = copy.deepcopy(document)
+        for block in _walk(projected.get('blocks', [])):
+            if block.get('type') == 'image' and str(block.get('src') or '').startswith(('extraction/raw/', 'extraction/assets/images/')):
+                block['src'] = '/api/image-drafts/asset?path=' + quote(block['src'])
         return HTMLResponse(
-            html_exporter.render_document(ensure_review_document(current())),
+            html_exporter.render_document(projected),
             headers={
                 "Content-Security-Policy": "default-src 'none'; img-src 'self' data: http: https:; style-src 'self' 'unsafe-inline'; frame-ancestors 'self'"
             },
@@ -1089,6 +1217,7 @@ def create_app(config: WebAppConfig):
         require_editable_document()
         try:
             undo_last(current())
+            cancel_draft_jobs()
             return {"status": "ok"}
         except Exception as exc:
             return error_response(exc)

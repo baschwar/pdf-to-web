@@ -187,6 +187,15 @@ pdf-to-web export accessibility --project /path/to/my-report
 
 These reports document human review. They do not certify WCAG conformance.
 
+Structure also offers optional **Image description drafts**. Select images,
+confirm ambiguous image associations, generate through an existing local Ollama
+vision model or an explicitly authorized paid OpenAI request, or export a manual
+request ZIP for your chosen tool. Validate imported responses, edit drafts, apply
+alt/caption individually, reject, retry and Undo. Drafts never approve content or
+enter public exports until applied. No key or network access is needed for manual
+exchange. See [workflow, providers and exchange schema](docs/IMAGE_DESCRIPTION_DRAFTS.md)
+and [acceptance evidence](docs/IMAGE_DESCRIPTION_DRAFTS_ACCEPTANCE.md).
+
 The **Output Pages** workspace builds multiple independently previewable Pages or
 Articles from one reviewed document. Inspect heading-based grouping suggestions,
 apply an arrangement, move whole content blocks, split or merge pages, edit
@@ -239,8 +248,8 @@ Git because source publications may contain internal or copyrighted material.
 ## Current boundary
 
 Phase 2 structural review and Phase 3A accessibility authoring are complete.
-The application does not include OCR remediation, AI, a spreadsheet-like table
-editor, media sideloading, direct publishing, output-page/article building, or
+The application does not include OCR remediation, a spreadsheet-like table
+editor, media sideloading, direct publishing, or
 a claim of automated WCAG conformance. The Phase 1B fixtures have been imported,
 edited, saved, and reopened in an isolated local WordPress instance. Production
 WSUWP compatibility still requires the exact deployed WSU block versions.
