@@ -190,3 +190,18 @@ class ImageDraftRouteTests(unittest.TestCase):
                 release.set()
                 self.wait_status('cancelled')
                 self.assertEqual(d.image(ensure_review_document(self.root), 'photo')['alt'], 'Accepted ALT')
+
+    def test_provider_settings_save_reopen_and_undo_without_generation(self):
+        before = ensure_review_document(self.root)
+        result = self.post('settings', {'provider': 'openai', 'model': 'llava:latest'})
+        self.assertEqual(result.status_code, 200, result.text)
+        doc = ensure_review_document(self.root)
+        self.assertEqual(d.state(doc)['settings']['provider'], 'openai')
+        self.assertEqual(doc['blocks'], before['blocks'])
+        self.assertEqual(d.state(doc)['requests'], {})
+        self.assertIn('<option value="openai" selected>', self.client.get('/structure').text)
+        self.client.post('/api/review/undo', headers=self.headers, json={})
+        self.assertNotIn('settings', d.state(ensure_review_document(self.root)))
+        self.post('settings', {'provider': 'manual', 'model': 'llava:latest'})
+        self.assertIn('<option value="manual" selected>', self.client.get('/structure').text)
+        self.assertEqual(self.post('settings', {'provider': 'unknown', 'model': ''}).status_code, 400)

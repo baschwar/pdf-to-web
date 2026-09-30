@@ -1,4 +1,6 @@
 import copy
+import csv
+import io
 import json
 import tempfile
 import unittest
@@ -94,6 +96,13 @@ class ImageDraftTests(unittest.TestCase):
             manifest = json.loads(archive.read('request.json'))
             self.assertEqual(archive.read(manifest['requests'][0]['image_file']), b'two.png')
             self.assertEqual(json.loads(archive.read('response-template.json'))['schema_version'], d.EXCHANGE)
+            rows = list(csv.DictReader(io.StringIO(archive.read('review-sheet.csv').decode('utf-8-sig'))))
+            self.assertEqual(rows[0]['image_file'], manifest['requests'][0]['image_file'])
+            self.assertEqual(rows[0]['source_image_name'], 'two.png')
+            self.assertEqual(rows[0]['block_id'], 'ambiguous')
+            self.assertEqual(rows[0]['draft_alt'], '')
+            self.assertEqual(rows[0]['draft_caption'], '')
+            self.assertEqual(rows[0]['request_id'], entry['request_id'])
 
     def test_complex_long_description_requires_explicit_visual_association(self):
         entry = self.imported()
@@ -207,3 +216,12 @@ class ImageDraftTests(unittest.TestCase):
         (self.root / 'extraction/raw/images/link.png').symlink_to(self.root / 'project.json')
         with self.assertRaises(ValueError):
             d.confined(self.root, '../outside.png')
+
+    def test_review_csv_preserves_text_without_spreadsheet_formulas(self):
+        update_block(self.root, 'photo', {'caption': '=HYPERLINK("https://example.invalid", "source text")', 'alt': 'Text with, comma and "quotes"\nsecond line'})
+        entry = self.entry()
+        with zipfile.ZipFile(d.exchange_package(self.root, [entry])) as archive:
+            rows = list(csv.DictReader(io.StringIO(archive.read('review-sheet.csv').decode('utf-8-sig'))))
+            self.assertTrue(rows[0]['current_caption'].startswith("'="))
+            self.assertEqual(rows[0]['current_alt'], 'Text with, comma and "quotes"\nsecond line')
+            self.assertEqual(rows[0]['draft_alt'], '')

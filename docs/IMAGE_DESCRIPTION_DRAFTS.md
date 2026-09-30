@@ -13,7 +13,12 @@ Accepted fields continue to drive HTML, Gutenberg, WXR and Output Pages.
    candidates. Even one page candidate needs confirmation. Add image purpose or
    verified identification. Associate a chart with the correct existing complex
    visual explicitly; page coincidence does not establish that relationship.
-3. Choose **Generate drafts** or **Export drafting request**. Batch controls use
+3. Expand the bold **Provider setup** accordion, choose Local Ollama, OpenAI API
+   or ChatGPT / other tool (manual exchange), and **Save provider settings**.
+   Settings persist per project; saving keeps your position and focus. The Ollama
+   model field appears only for Local Ollama. ChatGPT manual exchange exports a
+   request instead of calling an API. Choose **Generate drafts** or
+   **Export drafting request**. Batch controls use
    the selected images. Local or cloud generation is optional.
 4. Refresh results to review ready drafts beside the accepted fields. Polling
    updates status without overwriting unsaved edits or moving keyboard focus.
@@ -35,8 +40,13 @@ and cannot be applied. Request a replacement after inspecting the changed contex
 ## Manual exchange
 
 No API key, model, network access or automatic external transmission is required.
-The request ZIP contains selected image files, `request.json`, drafting
-instructions and `response-template.json`. Manually attach the image files and
+The request ZIP contains selected image files, `review-sheet.csv`, `request.json`,
+drafting instructions and `response-template.json`. The CSV identifies each exported
+image alongside its original filename, block/page, accepted text, context and empty
+draft alt/caption/long-description fields. Open it in a spreadsheet for manual
+writing or send it with the image assets to ChatGPT, Codex or another tool. CSV
+is a review companion; copy the final drafts into the identity-preserving JSON
+template for import, or ask the tool to return that JSON directly. Manually attach the image files and
 request manifest to ChatGPT or another tool. Opening that tool does not attach
 files or send a request. A manual external submission is the user's action.
 

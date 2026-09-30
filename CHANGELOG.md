@@ -14,6 +14,17 @@
 - Confirmed image-asset associations, stale-draft detection, bounded generation,
   incremental persistence and protection against late or switched-project results.
 
+### Fixed
+
+- Provider selections can now be saved per project without reloading or moving
+  focus to block review. ChatGPT / other tool explicitly selects manual exchange.
+- Ollama model input is hidden for other providers; provider setup and manual
+  import accordion headings are bold, bordered and easier to identify.
+- Delayed block-focus restoration yields to active provider setup interaction.
+- Manual request ZIPs now include a CSV review sheet with image names, context
+  and draft alt/caption fields; the import panel explains how to export a batch
+  for manual writing or processing with ChatGPT, Codex or another tool.
+
 ### Acceptance boundary
 
 - Provider calls were mocked during development; live generation remains untested.

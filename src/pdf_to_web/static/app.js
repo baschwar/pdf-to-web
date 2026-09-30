@@ -213,6 +213,8 @@ if (pendingBlockId) {
   sessionStorage.removeItem(reviewAdvanceKey);
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
   window.addEventListener('load', () => setTimeout(() => {
+    // A reviewer who has entered provider setup keeps focus there.
+    if (document.activeElement?.closest('#image-draft-toolbar')) return;
     const pendingCard = document.getElementById(pendingBlockId);
     if (!pendingCard) return;
     focusBlock(pendingCard);
@@ -528,6 +530,30 @@ if (draftToolbar) {
   const postDraft = (action, data) => api(`/api/image-drafts/${action}`, {method: 'POST', headers: csrfHeaders(), body: JSON.stringify({document_id: docId, ...data})});
   const panelFor = id => [...document.querySelectorAll('.image-draft-panel')].find(p => p.dataset.blockId === id);
   const reloadDraft = id => { if (id) sessionStorage.setItem(reviewAdvanceKey, `block-${id}`); location.reload(); };
+  const providerSelect = document.getElementById('draft-provider');
+  const providerMessage = document.getElementById('draft-provider-message');
+  const updateProviderSetup = () => {
+    document.getElementById('draft-model-label').hidden = providerSelect.value !== 'ollama-local';
+  };
+  providerSelect.addEventListener('change', () => {
+    updateProviderSetup();
+    providerMessage.textContent = 'Selection changed. Save provider settings to keep it when you reopen this project.';
+  });
+  document.getElementById('draft-provider-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = event.currentTarget.querySelector('button[type="submit"]');
+    const keepFocus = document.activeElement === button;
+    try {
+      button.disabled = true;
+      await postDraft('settings', {provider: providerSelect.value, model: document.getElementById('draft-model').value});
+      providerMessage.textContent = 'Provider settings saved for this project.';
+    } catch (error) { providerMessage.textContent = error.message; }
+    finally {
+      button.disabled = false;
+      if (keepFocus && document.activeElement === document.body) button.focus({preventScroll: true});
+    }
+  });
+  updateProviderSetup();
   let cloudRequest = null;
   let importPayload = null;
   const draftValues = form => ({
@@ -543,7 +569,9 @@ if (draftToolbar) {
   };
   const generate = async (ids, regenerate = false) => {
     const request = {block_ids: ids, provider: document.getElementById('draft-provider').value, model: document.getElementById('draft-model').value, regenerate};
-    if (request.provider === 'openai') {
+    if (request.provider === 'manual') {
+      showDownload(await postDraft('export', {block_ids: ids, regenerate}));
+    } else if (request.provider === 'openai') {
       const result = await postDraft('preflight', request);
       cloudRequest = {...request, consent_hash: result.consent_hash};
       const view = document.getElementById('draft-transmission-content');

@@ -802,7 +802,7 @@ def create_app(config: WebAppConfig):
             document = ensure_review_document(root)
             if data.get('document_id') != document['output_pages']['project_id']:
                 raise ValueError('Project changed; reload this screen')
-            if action in {'associate', 'edit', 'apply', 'reject', 'cancel'}:
+            if action in {'settings', 'associate', 'edit', 'apply', 'reject', 'cancel'}:
                 drafts.mutate(root, action, data)
                 return {'status': 'ok'}
             if action == 'import':

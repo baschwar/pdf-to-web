@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import base64
 import copy
+import csv
+import io
 import hashlib
 import json
 import mimetypes
@@ -221,6 +223,10 @@ def exchange_package(root, entries):
     output.mkdir(parents=True, exist_ok=True)
     manifest = {'schema_version': EXCHANGE, 'prompt_version': PROMPT_VERSION, 'instructions': INSTRUCTIONS, 'requests': []}
     template = {'schema_version': EXCHANGE, 'responses': []}
+    sheet = io.StringIO(newline='')
+    columns = ['image_file', 'source_image_name', 'block_id', 'source_page', 'current_alt', 'current_caption', 'draft_alt', 'draft_caption', 'draft_long_description', 'purpose', 'heading', 'nearby_text', *[key for key in IDENTITY if key != 'block_id']]
+    writer = csv.DictWriter(sheet, fieldnames=columns)
+    writer.writeheader()
     package = output / ('request-' + uuid.uuid4().hex + '.zip')
     document = ensure_review_document(root)
     if any(stale(root, document, entry) for entry in entries):
@@ -232,17 +238,42 @@ def exchange_package(root, entries):
                 raise ValueError('Image changed before request export')
             name = f"images/{entry['request_id']}{asset.suffix.lower()}"
             archive.write(asset, name)
+            context = entry['context']
+            row = {k: entry[k] for k in IDENTITY} | {
+                'image_file': name, 'source_image_name': asset.name,
+                'source_page': context.get('source_page') or '',
+                'current_alt': context.get('current_alt', ''), 'current_caption': context.get('current_caption', ''),
+                'draft_alt': '', 'draft_caption': '', 'draft_long_description': '',
+                'purpose': context.get('purpose', ''), 'heading': context.get('heading', ''),
+                'nearby_text': '\n'.join(item['text'] for item in context.get('nearby_text', []))}
+            # Keep extracted text as text when reviewers open this CSV in a spreadsheet.
+            def text_cell(value):
+                text = str(value)
+                return "'" + text if text.lstrip().startswith(('=', '+', '-', '@')) or text.startswith(('\t', '\r')) else text
+            writer.writerow({key: text_cell(value) for key, value in row.items()})
             manifest['requests'].append({k: entry[k] for k in IDENTITY} | {'image_file': name, 'context': entry['context']})
             template['responses'].append({k: entry[k] for k in IDENTITY} | {'alt': '', 'caption': None, 'long_description': None, 'warnings': [], 'decorative': False})
+        archive.writestr('review-sheet.csv', '\ufeff' + sheet.getvalue())
         archive.writestr('request.json', json.dumps(manifest, indent=2, ensure_ascii=False))
         archive.writestr('response-template.json', json.dumps(template, indent=2))
-        archive.writestr('INSTRUCTIONS.txt', INSTRUCTIONS + '\nManually attach the images and request.json to your chosen tool. Opening its website does not attach or send files. Return response-template.json with completed fields. Import and review drafts locally; nothing is approved automatically.\n')
+        archive.writestr('INSTRUCTIONS.txt', INSTRUCTIONS + '\nManually attach the images and request.json to your chosen tool. Opening its website does not attach or send files. Use review-sheet.csv to organize manual writing or AI batch review. Copy final drafts into response-template.json with its identities unchanged; CSV is a companion, not an import format. Return response-template.json with completed fields. Import and review drafts locally; nothing is approved automatically.\n')
     return package
 
 
 def mutate(root, action, data):
     document = ensure_review_document(root)
     store = state(document)
+    if action == 'settings':
+        provider = data.get('provider')
+        model = data.get('model')
+        if provider not in {'ollama-local', 'openai', 'manual'}:
+            raise ValueError('Choose Local Ollama, OpenAI API or manual exchange')
+        if not isinstance(model, str) or len(model) > 200:
+            raise ValueError('Vision model must be text up to 200 characters')
+        if provider == 'ollama-local' and not model.strip():
+            raise ValueError('Enter an installed Ollama vision model')
+        store['settings'] = {'provider': provider, 'model': model.strip()}
+        return save_review_document(root, document)
     block_id = data.get('block_id')
     block = image(document, block_id)
     if action == 'associate':

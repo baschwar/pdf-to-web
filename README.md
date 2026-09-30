@@ -188,7 +188,8 @@ pdf-to-web export accessibility --project /path/to/my-report
 These reports document human review. They do not certify WCAG conformance.
 
 Structure also offers optional **Image description drafts**. Select images,
-confirm ambiguous image associations, generate through an existing local Ollama
+confirm ambiguous image associations, save the provider choice per project,
+generate through an existing local Ollama
 vision model or an explicitly authorized paid OpenAI request, or export a manual
 request ZIP for your chosen tool. Validate imported responses, edit drafts, apply
 alt/caption individually, reject, retry and Undo. Drafts never approve content or

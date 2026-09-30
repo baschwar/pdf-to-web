@@ -80,3 +80,29 @@ Local implementation and verification are complete. External acceptance and
 release are separate and remain pending. Restart the local review app to use the
 updated Structure controls. See `IMAGE_DESCRIPTION_DRAFTS.md` for configuration,
 exchange schema and reproduction commands.
+
+## Provider setup and manual-exchange follow-up — 2026-09-30
+
+Provider/model preferences now persist per project through the existing review
+state and Undo. Save works in place without navigation or scrolling and retains
+keyboard focus. OpenAI API and ChatGPT/other-tool manual exchange are distinct
+choices; only Local Ollama displays its model input. Provider setup and manual
+import use bold bordered accordion headings. Delayed block advancement yields
+to a reviewer already using the provider toolbar.
+
+Manual ZIPs now include `review-sheet.csv`: exported/original image filenames,
+stable identities, source page, accepted alt/caption, purpose, surrounding context,
+and blank draft alt/caption/long-description fields. The CSV is a spreadsheet
+review companion; final responses use the authoritative JSON template for import.
+The import accordion now explains the batch export and return steps and includes
+an export button. Extracted strings are quoted safely as text in the CSV.
+
+- Full suite: **181 tests passed**; `build/image-drafts/provider-tests.txt`.
+- **Seven targeted Chrome checks passed**, no page errors:
+  `build/image-drafts/provider-browser-report.json`. Checked keyboard save,
+  no navigation/scroll/focus change, reload/reopen persistence, conditional model
+  visibility, bold accordion headings, manual generation choosing ZIP export,
+  CSV in the downloaded ZIP, and a slow-source-load/pending-block focus race.
+- Screenshot: `build/image-drafts/provider-settings.png`; sample ZIP:
+  `build/image-drafts/manual-review-sample.zip`.
+- No live provider or WordPress call was made. External acceptance remains pending.

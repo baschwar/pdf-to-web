@@ -110,3 +110,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .draft-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 .draft-context { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow: auto; }
 #image-draft-toolbar { border: 1px solid #b7c4cd; padding: 1rem; margin-bottom: 1rem; }
+
+#draft-provider-setup > summary,
+#draft-manual-import > summary {
+  font-weight: 700;
+  padding: .7rem .8rem;
+  border: 1px solid #8b9daa;
+  border-radius: .25rem;
+  background: #edf3f7;
+  color: #18394d;
+}
+#draft-provider-setup[open] > summary,
+#draft-manual-import[open] > summary { margin-bottom: .8rem; }
