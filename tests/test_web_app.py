@@ -61,6 +61,29 @@ class WebAppTests(unittest.TestCase):
     def headers(self):
         return {"origin": "http://127.0.0.1:54321", CSRF_HEADER: "csrf"}
 
+    def test_output_pages_routes_use_session_csrf_and_persistent_undo(self):
+        self.assertEqual(self.client.get('/output-pages').status_code, 401)
+        self.bootstrap()
+        response = self.client.get('/output-pages')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('<h1>Output Pages</h1>', response.text)
+        from pdf_to_web.review_state import ensure_review_document
+        from pdf_to_web.output_pages import pages
+        p = pages(ensure_review_document(self.project))[0]
+        denied = self.client.post('/api/output-pages/create', json={'title': 'Denied'})
+        self.assertEqual(denied.status_code, 403)
+        saved = self.client.post('/api/output-pages/metadata', headers=self.headers(), json={'page_id': p['id'], 'title': 'Renamed', 'slug': 'renamed'})
+        self.assertEqual(saved.status_code, 200)
+        preview = self.client.get('/output-preview/renamed.html')
+        self.assertIn('<title>Renamed</title>', preview.text)
+        self.assertEqual(self.client.get('/output-preview/absent.html').status_code, 404)
+        exported = self.client.post('/api/output-pages/export', headers=self.headers(), json={})
+        self.assertEqual(exported.status_code, 200, exported.text)
+        for file in exported.json()['downloads']:
+            self.assertEqual(self.client.get(file['url']).status_code, 200)
+        self.client.post('/api/output-pages/undo', headers=self.headers(), json={'page_id': p['id']})
+        self.assertEqual(pages(ensure_review_document(self.project))[0]['title'], 'Web fixture')
+
     def test_list_source_regions_use_item_boxes(self):
         block = {
             "type": "list",

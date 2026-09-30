@@ -20,6 +20,9 @@ from urllib.parse import quote, urlparse
 
 from . import __version__
 from .accessibility import assess_document, write_reports
+from . import output_pages as op
+from .output_page_export import export_pages, contents_html
+from .review_state import update_output_pages
 from .errors import PdfToWebError
 from .export import export_project
 from .exporters import gutenberg as gutenberg_exporter
@@ -312,11 +315,11 @@ def _status_label(value: str) -> str:
 
 
 def _nav(active: str, selected: bool) -> str:
-    items = [("Projects", "/"), ("Document", "/document"), ("Structure", "/structure"), ("Accessibility", "/accessibility"), ("Preview", "/preview"), ("Export", "/export")]
+    items = [("Projects", "/"), ("Document", "/document"), ("Structure", "/structure"), ("Accessibility", "/accessibility"), ("Output Pages", "/output-pages"), ("Preview", "/preview"), ("Export", "/export")]
     links = []
     for label, href in items:
         disabled = not selected and href != "/"
-        current = ' aria-current="page"' if active == label.lower() else ""
+        current = ' aria-current="page"' if active == label.lower().replace(" ", "-") else ""
         links.append(
             f'<li><a href="{href}"{current}>{label}</a></li>' if not disabled else f'<li><span aria-disabled="true">{label}</span></li>'
         )
@@ -566,6 +569,59 @@ def _accessibility_page(model: dict[str, Any]) -> str:
     return _page("Accessibility", "accessibility", body)
 
 
+def _output_pages_page(model, selected_id=None):
+    document = model['document']
+    group = op.pages(document)
+    selected = op.page_by_id(document, selected_id) or (group[0] if group else None)
+    esc = lambda value: html.escape(str(value or ''), quote=True)
+    errors = op.validate(document)
+    validation = '<ul>' + ''.join('<li>' + esc(e) + '</li>' for e in errors) + '</ul>' if errors else '<p>Every included block is assigned once.</p>'
+    listing = []
+    for p in sorted(group, key=lambda p: p['navigation_order']):
+        state = op.status(document, p['id'])
+        ranges = ', '.join(str(a) if a == b else f'{a}–{b}' for a, b in state['source_ranges']) or 'No source pages'
+        unresolved = state['accessibility']['summary']['unresolved'] + len(state['unresolved_targets'])
+        listing.append(f'<li><a href="/output-pages?page_id={esc(p["id"])}">{esc(p["title"])}</a><br><small>Source {ranges} · {len(p["block_ids"])} blocks · {esc(state["structural"].replace("_", " "))} · {unresolved} unresolved · {esc(p["approval"]["status"].replace("_", " "))}</small></li>')
+    suggestions = op.suggest(document)
+    proposals = ''.join(f'<li>{esc(p["title"])} — {len(p["block_ids"])} blocks; source {esc(p["source_ranges"])}; starts at {esc(p["block_ids"][0])}</li>' for p in suggestions)
+    editor = '<p>Create a page and assign content to begin.</p>'
+    if selected:
+        p = selected
+        options = '<option value="">No parent</option>' + ''.join(f'<option value="{esc(i["id"])}"'+(' selected' if p.get('parent') == i['id'] else '')+f'>{esc(i["title"])}</option>' for i in group if i['id'] != p['id'] and i['type'] == 'page')
+        targets = ''.join(f'<option value="{esc(i["id"])}">{esc(i["title"])}</option>' for i in group if i['id'] != p['id'])
+        outline = []
+        for b in document.get('blocks', []):
+            ref = str(b['id'])
+            owner = next((i for i in group if ref in i['block_ids']), None)
+            assigned = owner is p
+            label = str(b.get('content') or b.get('caption') or b.get('type'))[:160]
+            state = 'Excluded' if op.is_excluded(b) else (owner['title'] if owner else 'Unassigned')
+            controls = f'<button type="button" data-page-action="assign" data-block-id="{esc(ref)}">Move here</button>' if not assigned else f'<button type="button" data-page-action="split" data-block-id="{esc(ref)}"'+(' disabled' if p['block_ids'].index(ref) == 0 else '')+'>Split before</button>'
+            outline.append(f'<li><strong>{esc(b.get("type"))}</strong> {esc(label)}<br><small>{esc(state)} · {esc(ref)}</small> {controls}</li>')
+        for ref in p['block_ids']:
+            if ref not in {str(b['id']) for b in document.get('blocks', [])}:
+                outline.append(f'<li>Missing {esc(ref)} <button type="button" data-page-action="remove_reference" data-block-id="{esc(ref)}">Remove missing reference</button></li>')
+        state = op.status(document, p['id'])
+        target_findings = ''.join('<li>Unresolved link target: ' + esc(i['target']) + '</li>' for i in state['unresolved_targets'])
+        findings = target_findings + ''.join(f'<li>{esc(i["title"])}: {esc(i["message"])} — {esc(i["status"])} {esc(i["note"])}</li>' for i in state['accessibility']['items'])
+        editor = f'''<section id="page-editor" tabindex="-1" data-page-id="{esc(p['id'])}"><h2>{esc(p['title'])}</h2>
+<form id="output-page-metadata"><div class="form-grid"><label>Title<input name="title" value="{esc(p['title'])}" required></label><label>Slug<input name="slug" value="{esc(p['slug'])}" required></label><label>Type<select name="type"><option value="page"{' selected' if p['type']=='page' else ''}>Page</option><option value="post"{' selected' if p['type']=='post' else ''}>Article</option></select></label><label>Parent<select name="parent">{options}</select></label><label>Contents order<input type="number" min="0" name="navigation_order" value="{p['navigation_order']}"></label></div><button>Save page</button></form>
+<p><button type="button" data-page-action="reorder" data-direction="up">Move page up</button> <button type="button" data-page-action="reorder" data-direction="down">Move page down</button></p>
+<form id="output-page-merge"><label>Merge into this page<select name="other_id">{targets}</select></label><button{' disabled' if not targets else ''}>Merge pages</button></form>
+<h3>Content outline</h3><p>Reading order follows Structure. Split keeps the selected heading with the new page. Tables and image descriptions stay intact.</p><ol>{''.join(outline)}</ol>
+<h3>Review</h3><p>Structure: {esc(state['structural'])}. Page decision: {esc(p['approval']['status'])}. Recorded decisions do not certify WCAG conformance.</p><ul>{findings}</ul>
+<form id="output-page-approval"><label>Page reviewer note<textarea name="note">{esc(p['approval'].get('note'))}</textarea></label><button>Mark page reviewed</button></form>
+<h3>Preview and export</h3><label>WordPress profile<select id="output-page-profile"><option value="generic">Generic</option><option value="wsuwp">WSUWP</option></select></label>
+<p><button type="button" id="output-page-preview">Preview page</button> <button type="button" id="output-page-wordpress-preview">WordPress Preview</button> <button type="button" data-page-export="individual">Export page</button> <button type="button" data-page-export="package">Export complete package</button></p>
+<iframe id="output-page-frame" title="Output page preview" sandbox="allow-same-origin" src="/output-preview/{esc(p['slug'])}.html"></iframe></section>'''
+    body = f'''<h1>Output Pages</h1><p>Build Pages or Articles from reviewed content. Save changes locally; export drafts for manual WordPress import.</p>
+<div id="output-page-message" role="status" aria-live="polite"></div><section aria-label="Arrangement validation">{validation}</section>
+<p><button type="button" data-page-action="create">Create page</button> <button type="button" id="output-page-undo">Undo last action</button> <a href="/output-pages-contents" target="_blank">Preview contents</a></p>
+<details><summary>Grouping suggestions</summary><p>Heading levels 1 and 2 and explicit section boundaries propose groups. Applying replaces the current arrangement and can be undone.</p><ol>{proposals}</ol><button type="button" data-page-action="apply_suggestions"{' disabled' if not suggestions else ''}>Apply replacement arrangement</button></details>
+<div class="output-pages-layout"><aside aria-label="Output pages"><ol>{''.join(listing)}</ol></aside>{editor}</div>'''
+    return _page('Output Pages', 'output-pages', body)
+
+
 def _preview_page(project: dict[str, Any]) -> str:
     selected_profile = str(project.get("export", {}).get("wordpress_profile", "generic"))
     profile_options = "".join(
@@ -766,6 +822,69 @@ def create_app(config: WebAppConfig):
     async def accessibility_page(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
         require_session(session)
         return _accessibility_page(document_model(current()))
+
+    @app.get('/output-pages', response_class=HTMLResponse)
+    async def output_pages_page(page_id: str | None = None, session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+        require_session(session)
+        return _output_pages_page(document_model(current()), page_id)
+
+    @app.get('/output-pages-contents', response_class=HTMLResponse)
+    async def output_pages_contents(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+        require_session(session)
+        document = ensure_review_document(current())
+        errors = op.validate(document)
+        if errors:
+            return HTMLResponse('<p>' + html.escape('; '.join(errors)) + '</p>', status_code=400)
+        content = contents_html(document)
+        content = content.replace('href="', 'href="/output-preview/')
+        return HTMLResponse(content)
+
+    @app.post('/api/output-pages/{action}')
+    async def output_pages_action(action: str, request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
+        require_change(request, session, csrf)
+        require_editable_document()
+        try:
+            data = await request.json()
+            if action == 'export':
+                paths = export_pages(current(), data.get('page_id'), data.get('profile'))
+                return {'status': 'ok', 'downloads': [{'path': str(p.relative_to(current())), 'url': '/download/' + quote(str(p.relative_to(current())), safe='/')} for p in paths]}
+            if action == 'undo':
+                undo_last(current())
+                restored = ensure_review_document(current())
+                selected = data.get('page_id')
+                if not op.page_by_id(restored, selected):
+                    selected = op.pages(restored)[0]['id'] if op.pages(restored) else None
+            else:
+                selected = update_output_pages(current(), action, data)
+            return {'status': 'ok', 'page_id': selected}
+        except (ValueError, KeyError, PdfToWebError, OSError) as exc:
+            return error_response(exc)
+
+    @app.get('/output-preview/{slug}.html', response_class=HTMLResponse)
+    async def output_preview(slug: str, mode: str = 'semantic', profile: str = 'generic', session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+        require_session(session)
+        document = ensure_review_document(current())
+        p = next((p for p in op.pages(document) if p['slug'] == slug), None)
+        if p is None:
+            raise HTTPException(status_code=404, detail='Output page was not found')
+        if profile not in {'generic', 'wsuwp'}:
+            raise HTTPException(status_code=400, detail='Unsupported profile')
+        projected = op.page_document(document, p['id'])
+        # Same page projection and serializers; preview assets use confined local routes.
+        projected = _document_with_local_preview_media(projected)
+        for b in op.walk(projected['blocks']):
+            if b.get('type') == 'image' and b.get('wordpress_url', '').startswith('/api/preview/images/'):
+                b['src'] = b['wordpress_url']
+        config_data = load_project(current()).get('export', {})
+        if mode == 'wordpress':
+            try:
+                markup = gutenberg_exporter.render_document(projected, profile, config_data)
+                content = render_gutenberg_preview(markup).html
+            except Exception as exc:
+                content = '<p role="alert">' + html.escape(str(exc)) + '</p>'
+        else:
+            content = html_exporter.render_document(projected)
+        return HTMLResponse(content, headers={'Content-Security-Policy': "default-src 'none'; img-src 'self' data: http: https:; style-src 'self' 'unsafe-inline'; frame-ancestors 'self'"})
 
     @app.get("/preview", response_class=HTMLResponse)
     async def preview_page(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):

@@ -474,3 +474,48 @@ document.getElementById('media-wxr-form')?.addEventListener('submit', async (eve
 });
 
 document.documentElement.dataset.appReady = 'true';
+
+const pageEditor = document.getElementById('page-editor');
+const pageMessage = document.getElementById('output-page-message');
+const selectedPageId = () => pageEditor?.dataset.pageId;
+async function pageAction(action, values = {}) {
+  try {
+    const result = await api(`/api/output-pages/${action}`, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify({ page_id: selectedPageId(), ...values }) });
+    sessionStorage.setItem('output-page-announcement', 'Changes saved.');
+    const destination = `/output-pages?page_id=${encodeURIComponent(result.page_id || '')}`;
+    if (location.pathname + location.search === destination) {
+      location.hash = 'page-editor';
+      location.reload();
+    } else window.location.assign(destination + '#page-editor');
+  } catch (error) { pageMessage.textContent = error.message; }
+}
+document.querySelectorAll('[data-page-action]').forEach(button => button.addEventListener('click', () => pageAction(button.dataset.pageAction, { block_id: button.dataset.blockId, direction: button.dataset.direction })));
+for (const [id, action] of [['output-page-metadata', 'metadata'], ['output-page-merge', 'merge'], ['output-page-approval', 'approve']]) {
+  document.getElementById(id)?.addEventListener('submit', event => {
+    event.preventDefault();
+    pageAction(action, Object.fromEntries(new FormData(event.currentTarget)));
+  });
+}
+document.getElementById('output-page-undo')?.addEventListener('click', () => pageAction('undo'));
+if (pageMessage) {
+  pageMessage.textContent = sessionStorage.getItem('output-page-announcement') || '';
+  sessionStorage.removeItem('output-page-announcement');
+  if (location.hash === '#page-editor') pageEditor?.focus();
+}
+function previewOutputPage(mode) {
+  const slug = document.querySelector('#output-page-metadata [name="slug"]').value;
+  const profile = document.getElementById('output-page-profile').value;
+  document.getElementById('output-page-frame').src = `/output-preview/${encodeURIComponent(slug)}.html?mode=${mode}&profile=${profile}`;
+}
+document.getElementById('output-page-preview')?.addEventListener('click', () => previewOutputPage('semantic'));
+document.getElementById('output-page-wordpress-preview')?.addEventListener('click', () => previewOutputPage('wordpress'));
+document.querySelectorAll('[data-page-export]').forEach(button => button.addEventListener('click', async () => {
+  try {
+    const result = await api('/api/output-pages/export', { method: 'POST', headers: csrfHeaders(), body: JSON.stringify({ page_id: button.dataset.pageExport === 'individual' ? selectedPageId() : null, profile: document.getElementById('output-page-profile').value }) });
+    pageMessage.replaceChildren(document.createTextNode('Export complete. Review the manifest and manual import instructions. '));
+    for (const file of result.downloads) {
+      const link = document.createElement('a'); link.href = file.url; link.textContent = file.path;
+      pageMessage.append(link, document.createElement('br'));
+    }
+  } catch (error) { pageMessage.textContent = error.message; }
+}));
