@@ -20,6 +20,8 @@
   focus to block review. ChatGPT / other tool explicitly selects manual exchange.
 - Ollama model input is hidden for other providers; provider setup and manual
   import accordion headings are bold, bordered and easier to identify.
+- Provider help now describes only the selected provider, including after save
+  and reopening, so ChatGPT manual exchange shows no Ollama or API setup text.
 - Delayed block-focus restoration yields to active provider setup interaction.
 - Manual request ZIPs now include a CSV review sheet with image names, context
   and draft alt/caption fields; the import panel explains how to export a batch

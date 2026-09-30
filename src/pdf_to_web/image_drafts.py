@@ -408,7 +408,7 @@ def complete(root, entry, value=None, error=None):
 
 
 class OpenAIProvider:
-    """Equivalent vision integration; dedicated key only, never altTagger credentials."""
+    """Optional cloud vision integration with a dedicated app key."""
     name = 'openai'
     model = 'gpt-4.1-nano'
     def __init__(self):

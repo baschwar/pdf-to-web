@@ -16,7 +16,8 @@ Accepted fields continue to drive HTML, Gutenberg, WXR and Output Pages.
 3. Expand the bold **Provider setup** accordion, choose Local Ollama, OpenAI API
    or ChatGPT / other tool (manual exchange), and **Save provider settings**.
    Settings persist per project; saving keeps your position and focus. The Ollama
-   model field appears only for Local Ollama. ChatGPT manual exchange exports a
+   model field appears only for Local Ollama; help text describes only the selected
+   provider. ChatGPT manual exchange exports a
    request instead of calling an API. Choose **Generate drafts** or
    **Export drafting request**. Batch controls use
    the selected images. Local or cloud generation is optional.
@@ -101,10 +102,9 @@ required. Existing extraction remains deterministic and local.
   This adapter uses the local `/api/chat` JSON endpoint, disables proxies and
   redirects, and verifies the image hash before transmission. Local operation
   needs no cloud key; model suitability and draft accuracy require human review.
-- **OpenAI:** an independently implemented equivalent of altTagger's
-  `gpt-4.1-nano` vision integration. Set `PDF_TO_WEB_OPENAI_API_KEY` in the
+- **OpenAI:** optional cloud vision generation using `gpt-4.1-nano`. Set `PDF_TO_WEB_OPENAI_API_KEY` in the
   environment of the app's launch process. No key is entered into the browser,
-  saved in project state, or reused from altTagger, `llm` or another tool. The
+  saved in project state, or reused from another tool. The
   fixed endpoint is `https://api.openai.com/v1/chat/completions`; images use
   base64 data URLs and responses are requested as JSON. The UI first displays
   the selected images' identities and context. **Send selected images to OpenAI**
@@ -149,18 +149,6 @@ Undo cancels live provider jobs before a late response can reapply an undone res
 
 Public serializers continue to read accepted metadata only. They never emit
 unaccepted drafts, provider errors, request context or generation provenance.
-
-## altTagger assessment
-
-Inspected the supplied local copy at `Documents/Codex/altTagger`, including
-`generate_alt.py`, SOP and checkpoint field names. Its generation uses `llm` and
-`requests`, an image/title prompt, a URL-keyed checkpoint and periodic saves.
-No license file was present. No source was copied. The equivalent adapter uses
-standard-library HTTP and the same vision model, with structured separate
-fields, contextual identities and incremental review persistence. The original
-125-character limit, errors-as-alt behavior, URL matching, authenticated downloads,
-site settings, cookies, updater and validator were not adopted. Both supplied
-altTagger locations were read only; no WordPress operation was performed.
 
 ## Verification
 

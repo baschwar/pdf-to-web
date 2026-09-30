@@ -534,6 +534,8 @@ if (draftToolbar) {
   const providerMessage = document.getElementById('draft-provider-message');
   const updateProviderSetup = () => {
     document.getElementById('draft-model-label').hidden = providerSelect.value !== 'ollama-local';
+    const help = document.getElementById('draft-provider-help');
+    help.textContent = JSON.parse(help.dataset.providerHelp)[providerSelect.value];
   };
   providerSelect.addEventListener('change', () => {
     updateProviderSetup();

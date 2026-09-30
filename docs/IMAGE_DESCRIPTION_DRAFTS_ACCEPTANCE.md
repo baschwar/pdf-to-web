@@ -16,7 +16,7 @@ untracked `AGENTS.md` was preserved. No push, merge, tag, publication or release
   incremental completion saves.
 - Manual ZIP/image/request/template exchange and previewed JSON import validation.
 - Optional existing-local-model Ollama adapter and independently implemented
-  equivalent of altTagger's OpenAI `gpt-4.1-nano` integration, with a dedicated
+  OpenAI `gpt-4.1-nano` integration, with a dedicated
   environment key and scoped explicit cloud request review/consent.
 - Bounded concurrency, cancellation/late-response safeguards, project identity
   checks, stale-state protection and accepted-only export behavior.
@@ -62,8 +62,7 @@ Both provider integrations were tested with mocked generation/transport.
 An existing local Ollama `llava` model manifest was found, but the running service,
 model suitability and live draft quality were not tested. No model/dependency
 was installed. No WordPress site, media library, cookies, credentials, updater
-or validator was accessed. altTagger files remained unchanged; no code was copied
-because the supplied project contained no license file.
+or validator was accessed. No unrelated project files or credentials were modified or reused.
 
 ## Limitations and external acceptance
 
@@ -106,3 +105,14 @@ an export button. Extracted strings are quoted safely as text in the CSV.
 - Screenshot: `build/image-drafts/provider-settings.png`; sample ZIP:
   `build/image-drafts/manual-review-sample.zip`.
 - No live provider or WordPress call was made. External acceptance remains pending.
+
+### Provider-specific help correction
+
+Provider help now follows the current selection immediately and after save/reopen.
+ChatGPT manual exchange displays only its ZIP/CSV/JSON workflow; Local Ollama and
+OpenAI API each display their own setup. Unrelated project references were removed
+from current UI, workflow documentation and code commentary.
+
+Full suite: **181 passed** (`build/image-drafts/provider-help-tests.txt`). Updated
+targeted Chrome run: **nine checks passed**, no page errors, including help on
+selection change and after reopening. No live provider or WordPress call.
