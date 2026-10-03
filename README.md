@@ -271,6 +271,9 @@ Semantic HTML and WordPress Preview mode buttons.
 Final workflow actions align to the right throughout Document, Structure,
 Accessibility, Arrange Pages, Preview and Export, including the green completion
 handoffs and page/document export actions. Action rows wrap on narrow screens.
+A floating **Back to top** button appears at the lower right on every app screen
+after scrolling down. It returns to the top and focuses the application header
+for keyboard navigation, without animation, navigation or changes to unsaved edits.
 
 Accessibility findings identify their source page and current Reading order block
 number, including the owning list for nested-link findings. Open block controls

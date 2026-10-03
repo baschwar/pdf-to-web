@@ -27,6 +27,25 @@ function announce(message) {
   if (status) status.textContent = message;
 }
 
+const backToTop = document.getElementById('back-to-top');
+if (backToTop) {
+  const topTarget = document.getElementById('app-top');
+  const updateBackToTop = () => {
+    const atTop = window.scrollY <= 200;
+    if (atTop && document.activeElement === backToTop) topTarget?.focus({preventScroll: true});
+    backToTop.hidden = atTop;
+  };
+  backToTop.addEventListener('click', () => {
+    topTarget?.focus({preventScroll: true});
+    window.scrollTo({top: 0, behavior: 'instant'});
+    updateBackToTop();
+  });
+  window.addEventListener('scroll', updateBackToTop, {passive: true});
+  window.addEventListener('resize', updateBackToTop);
+  window.addEventListener('pageshow', updateBackToTop);
+  updateBackToTop();
+}
+
 function retainProjectWarning(result) {
   if (!result.warning) return;
   try { sessionStorage.setItem('pdf-to-web-project-warning', result.warning); }

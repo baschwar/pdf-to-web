@@ -91,6 +91,9 @@
 
 ### Added
 
+- Floating Back to top on every app screen after scrolling, with keyboard focus
+  returned to the application header and no changes to authoring state.
+
 - Save and approve beside primary block-editor save controls. The explicit action
   saves edits or retained-list recovery and approves valid final content in one
   Undo step. Validation failures leave saved state and entered fields intact;

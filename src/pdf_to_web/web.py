@@ -349,8 +349,9 @@ def _page(title: str, active: str, body: str, *, selected: bool = True, project=
     return f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(tab_title)}</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/pico.min.css"><link rel="stylesheet" href="/static/app.css"></head>
-<body><header class="app-header"><div class="container">{_nav(active, selected)}</div></header>
+<body><header class="app-header" id="app-top" tabindex="-1"><div class="container">{_nav(active, selected)}</div></header>
 <main class="container">{document_reference}{body}</main><footer class="app-footer"><div class="container">{APP_NAME} v{html.escape(__version__)} · commit {html.escape(_commit_hash())}<p>Review and automated checks do not certify WCAG conformance.</p></div></footer><div id="app-status" class="visually-hidden" role="status" aria-live="polite"></div>
+<button type="button" id="back-to-top" class="back-to-top" hidden><span aria-hidden="true">&uarr;</span> Back to top</button>
 {'<script src="/static/accessibility-scan.js"></script>' if active == 'accessibility' else ''}<script src="/static/app.js"></script></body></html>'''
 
 

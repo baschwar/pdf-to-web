@@ -3,6 +3,39 @@
 Date: 2026-09-30. Version: 0.7.0. Local implementation and external acceptance
 are separate. No automated WCAG or production WSUWP claim is made.
 
+## 2026-10-03 Floating Back to top
+
+- The shared app layout now includes a floating **Back to top** button on
+  Projects, Document, Structure, Accessibility, Arrange Pages, Preview and Export.
+  It appears after 200px of page scrolling, returns immediately to the top, and
+  focuses the application header so keyboard navigation resumes at the primary
+  links. Hiding a focused control also transfers focus to that header. The visible
+  text labels the control; the arrow is hidden from assistive technology. Its
+  44px minimum height and safe-area spacing fit narrow screens, and footer padding
+  keeps the final footer text clear. No animation, navigation, hash change or
+  authoring-state mutation is added. Exported content and preview-frame content
+  retain their existing serializers.
+- Baseline from the preceding unchanged checkout: **370 tests passed**. Focused
+  web routes: **25 passed**. Final full documented suite: **370 passed in 19.457s**
+  with `TMPDIR=/private/tmp`. The existing startup integration test now covers
+  Arrange Pages and the shared control/focus target on every app screen.
+- Chrome **154.0.8037.95**: all **14 route/viewport checks** and **five workflow
+  groups passed**, zero page errors. At 1440px and 390px, Enter/Space activation,
+  visibility, viewport fit and primary-link tab order passed on all seven screens.
+  Additional checks preserved dirty text, source selection, the block URL and
+  saved state; save/reload/Undo still worked. Reduced-motion behavior, focus when
+  the control disappears and footer clearance passed. Desktop/narrow screenshots
+  were visually inspected. JavaScript syntax and `git diff --check` passed.
+- Ignored evidence: `build/back-to-top-20261003/` contains full-suite.log,
+  browser-report.json, screenshots and QA-REPORT.md. The first browser attempt
+  passed all route and unsaved-state checks but raced a reload in the test harness;
+  main-frame/network-idle waits were corrected before the final successful pass.
+  Only a disposable synthetic project and isolated browser/server were used.
+  The user's live app and documents were not changed; restart the app to load the
+  control. Local commit only on `codex/phase3b/output-page-builder`; no push,
+  merge, tag, release or deployment. Production WSU WordPress, human VoiceOver
+  and Windows hardware acceptance remain pending.
+
 ## 2026-10-03 Save and approve
 
 - Primary text, image, table and nested-list review forms now offer **Save and

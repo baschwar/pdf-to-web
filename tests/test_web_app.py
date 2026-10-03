@@ -115,12 +115,15 @@ class WebAppTests(unittest.TestCase):
         self.bootstrap()
         self.assertEqual(self.client.cookies.get("pdf_to_web_session"), "session")
         self.assertEqual(self.client.get("/bootstrap/bootstrap").status_code, 403)
-        for route, heading in (("/", "Projects"), ("/document", "Document"), ("/structure", "Structure"), ("/accessibility", "Accessibility"), ("/preview", "Preview"), ("/export", "Export")):
+        for route, heading in (("/", "Projects"), ("/document", "Document"), ("/structure", "Structure"), ("/accessibility", "Accessibility"), ("/output-pages", "Arrange Pages"), ("/preview", "Preview"), ("/export", "Export")):
             response = self.client.get(route)
             self.assertEqual(response.status_code, 200)
             self.assertIn(f"<h1>{heading}</h1>", response.text)
             self.assertIn("PDF to Web v", response.text)
             self.assertRegex(response.text, r"PDF to Web v[0-9.]+ · commit [0-9a-f]{12}")
+            self.assertEqual(response.text.count('id="back-to-top"'), 1)
+            self.assertIn('id="app-top" tabindex="-1"', response.text)
+            self.assertIn('Back to top</button>', response.text)
         self.assertIn('name="wrap_in_section"', self.client.get("/export").text)
         self.assertIn('id="media-mapping-form"', self.client.get("/export").text)
         self.assertIn('id="media-wxr-form"', self.client.get("/export").text)
