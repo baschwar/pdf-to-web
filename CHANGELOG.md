@@ -91,6 +91,11 @@
 
 ### Added
 
+- Save and approve beside primary block-editor save controls. The explicit action
+  saves edits or retained-list recovery and approves valid final content in one
+  Undo step. Validation failures leave saved state and entered fields intact;
+  unsaved edits prevent ordinary approval from discarding authoring work.
+
 - Compact gray Undo last saved change button in Structure's sticky Reading order
   toolbar, using existing persisted snapshots, disabled when history is empty,
   and retaining the selected block after Undo.

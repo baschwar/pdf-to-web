@@ -474,7 +474,19 @@ def restore_source_links(project_dir: Path, block_ids: list[str]) -> dict[str, A
     return save_review_document(project_dir, document)
 
 
-def update_block(project_dir: Path, block_id: str, changes: dict[str, Any]) -> dict[str, Any]:
+def _approve_block(block: dict[str, Any]) -> None:
+    from .publication import list_structure_issue
+    if block.get('excluded'):
+        raise ValueError('Include the block before approving it')
+    _set_status(block, 'approved')
+    malformed = list_structure_issue(block)
+    if malformed:
+        raise ValueError(malformed['message'])
+    if block.get('type') == 'image' and not block.get('decorative') and not str(block.get('alt') or '').strip():
+        raise ValueError('Add alt text or mark the image as decorative before approving it')
+
+
+def update_block(project_dir: Path, block_id: str, changes: dict[str, Any], *, approve_after_save: bool = False) -> dict[str, Any]:
     document = ensure_review_document(project_dir)
     _siblings, _index, block = _find_location(document.get("blocks", []), block_id)
     from .publication import content_digest
@@ -626,18 +638,18 @@ def update_block(project_dir: Path, block_id: str, changes: dict[str, Any]) -> d
             raise ValueError(malformed['message'])
         if status == 'approved' and (content_digest(block) != previous_content or document.get('review', {}).get('complex_visuals', []) != previous_descriptions):
             status = 'needs_review'
-        if (
-            status == "approved"
-            and block.get("type") == "image"
-            and not block.get("decorative")
-            and not str(block.get("alt") or "").strip()
-        ):
-            raise ValueError("Add alt text or mark the image as decorative before approving it")
-        _set_status(block, status)
+        if status == 'approved':
+            _approve_block(block)
+        else:
+            _set_status(block, status)
     if content_digest(block) != previous_content or document.get('review', {}).get('complex_visuals', []) != previous_descriptions:
         if block.get('review', {}).get('status') != 'excluded':
             _set_status(block, 'needs_review')
         _mark_content_parents(document, block)
+    if approve_after_save:
+        # Explicit combined author action approves the final edited content,
+        # after recovery and invalidation, within the same saved Undo snapshot.
+        _approve_block(block)
     return save_review_document(project_dir, document)
 
 

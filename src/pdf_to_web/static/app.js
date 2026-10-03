@@ -551,6 +551,7 @@ function nextReviewBlockId(card) {
 
 document.querySelectorAll('.block-form').forEach((form) => form.addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (form.dataset.saving === 'true') return;
   const values = Object.fromEntries(new FormData(form));
   const decorative = form.querySelector('input[name="decorative"]');
   if (decorative) values.decorative = decorative.checked;
@@ -560,8 +561,15 @@ document.querySelectorAll('.block-form').forEach((form) => form.addEventListener
   });
   if (values.type === 'heading') values.level = Number(values.level);
   else delete values.level;
+  const saveAndApprove = event.submitter?.hasAttribute('data-save-and-approve');
   try {
-    const saved = await api(`/api/blocks/${encodeURIComponent(form.dataset.blockId)}`, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(values) });
+    if (saveAndApprove) {
+      const otherDirty = authoringForms.find(other => other !== form && authoringBaselines.get(other) !== authoringValue(other));
+      if (otherDirty) throw new Error('Save or undo changes in the other editor before saving and approving this block.');
+      delete values.review_status;
+    }
+    form.dataset.saving = 'true';
+    const saved = await api(`/api/blocks/${encodeURIComponent(form.dataset.blockId)}${saveAndApprove ? '/save-and-approve' : ''}`, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(values) });
     if (returnToAccessibility(form.closest('.block-card'))) return;
     const owner = form.closest('.block-card');
     sessionStorage.removeItem(reviewAdvanceKey);
@@ -570,12 +578,14 @@ document.querySelectorAll('.block-form').forEach((form) => form.addEventListener
       history.replaceState(null, '', location.pathname + location.search + '#' + encodeURIComponent(owner.id));
       if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
     }
-    announce(saved.block_status === 'needs_review' ? 'Changes saved. Review the saved content, then approve it.' : 'Block saved.');
+    announce(saveAndApprove ? 'Block saved and approved.' : saved.block_status === 'needs_review' ? 'Changes saved. Review the saved content, then approve it.' : 'Block saved.');
     window.location.reload();
   } catch (error) {
     const message = form.closest('.block-card')?.querySelector('.block-action-message');
     if (message) { message.textContent = error.message; message.hidden = false; }
     announce(error.message);
+  } finally {
+    delete form.dataset.saving;
   }
 }));
 
@@ -682,6 +692,13 @@ document.querySelectorAll('.block-action').forEach((button) => button.addEventLi
     if (!body.offset) { announce('Place the text cursor where the block should split.'); textarea?.focus(); return; }
   }
   try {
+    if (action === 'approve') {
+      const dirty = authoringForms.find(form => authoringBaselines.get(form) !== authoringValue(form));
+      if (dirty) {
+        dirty.closest('.block-card')?.querySelector('[data-save-and-approve]')?.focus();
+        throw new Error('There are unsaved edits. Use Save and approve for the edited block, or save its other edited fields first.');
+      }
+    }
     await api(`/api/blocks/${encodeURIComponent(blockId)}/${action}`, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(body) });
     if (returnToAccessibility(button.closest('.block-card'))) return;
     if (['approve', 'flag', 'exclude', 'include'].includes(action)) {

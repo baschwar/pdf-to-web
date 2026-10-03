@@ -500,19 +500,20 @@ def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool
         table = f'<p>{stats["rows"]} rows, {stats["columns"]} columns, {stats["spans"]} spanning cells</p><div class="table-scroll"><table><tbody>{rows}</tbody></table></div>'
     editable = block_type in BLOCK_TYPES
     nested_list = block_type == "list" and _list_has_nested_content(block)
+    save_and_approve = f'<button type="submit" class="review-approve" data-save-and-approve aria-label="Save and approve block {index}">Save and approve</button>'
     text_editor = f'''<form class="block-form" data-block-id="{block_id}"><div class="form-grid">
 <label>Block type<select name="type">{options}</select></label>
 <label class="heading-level"{"" if block_type == "heading" else " hidden"}>Heading level<select name="level"{"" if block_type == "heading" else " disabled"}>{levels}</select></label>
 <label>Review state<select name="review_status">{states}</select></label></div>
 <label>Text<textarea name="content" rows="3">{html.escape(content)}</textarea></label>
-<button type="submit" aria-label="Save block {index}">Save block</button></form>''' if editable and can_edit and not nested_list else ""
+<div class="button-row"><button type="submit" aria-label="Save block {index}">Save block</button>{save_and_approve}</div></form>''' if editable and can_edit and not nested_list else ""
     if has_unstructured_list_text(block) and text_editor:
         text_editor = '<p class="block-issue">The retained text is shown below. Save block recovers it as one list item and requires review. This does not reconstruct nested steps. A blank save is blocked.</p>' + text_editor
     if nested_list and can_edit:
         text_editor = f'''<div class="list-structure-preview" aria-label="Nested list structure">{_list_structure_preview(block)}</div>
 <p><small>This nested list is shown hierarchically. Whole-list text editing is disabled to preserve its structure.</small></p>
 <form class="block-form nested-list-review-form" data-block-id="{block_id}"><label>Review state<select name="review_status">{states}</select></label>
-<button type="submit" aria-label="Save review state for block {index}">Save review state</button></form>'''
+<div class="button-row"><button type="submit" aria-label="Save review state for block {index}">Save review state</button>{save_and_approve}</div></form>'''
     image_editor = ""
     if block_type == "image" and can_edit:
         image_src = str(block.get("src") or "")
@@ -529,7 +530,7 @@ def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool
 <label>Review state<select name="review_status">{states}</select></label></div>
 <label class="image-decorative"><input type="checkbox" name="decorative"{" checked" if decorative else ""}> Decorative image</label>
 <small>Decorative images export with an empty alt attribute and do not require alt text.</small>
-<button type="submit" aria-label="Save image block {index}">Save image block</button></form>'''
+<div class="button-row"><button type="submit" aria-label="Save image block {index}">Save image block</button>{save_and_approve}</div></form>'''
     table_editor = ""
     if block_type == "table" and can_edit:
         table_accessibility = block.get("table_accessibility", {})
@@ -538,7 +539,7 @@ def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool
 <label class="checkbox-label"><input type="checkbox" name="table_header_row"{" checked" if table_accessibility.get('header_row', True) else ""}> First row contains column headers</label>
 <label class="checkbox-label"><input type="checkbox" name="table_header_column"{" checked" if table_accessibility.get('header_column') else ""}> First column contains row headers</label>
 <label class="checkbox-label"><input type="checkbox" name="table_reviewed"{" checked" if table_accessibility.get('reviewed') else ""}> I reviewed the table structure</label></div>
-<button type="submit" aria-label="Save table accessibility for block {index}">Save table accessibility</button></form>'''
+<div class="button-row"><button type="submit" aria-label="Save table accessibility for block {index}">Save table accessibility</button>{save_and_approve}</div></form>'''
     link_editors = []
     def linked_runs(node):
         for run_index, run in enumerate(node.get('runs', [])):
@@ -1643,6 +1644,9 @@ def create_app(config: WebAppConfig):
             data = await request.json()
             if action in {"start", "up", "down", "end"}:
                 move_block(current(), block_id, action)
+            elif action == "save-and-approve":
+                document = update_block(current(), block_id, data, approve_after_save=True)
+                return {"status": "ok", "block_status": "approved", "progress": review_progress(document)}
             elif action == "merge":
                 merge_with_next(current(), block_id)
             elif action == "split":

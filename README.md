@@ -300,6 +300,17 @@ Without that proof, the list appears as needing review with an explanation that
 the earlier approval cannot be verified. Review it and approve the saved content;
 Undo restores the preceding decision and its evidence.
 
+Each primary block editor offers **Save and approve** beside its ordinary save
+button. It saves the displayed fields and explicitly approves the resulting block
+in one operation, with one Undo step. This includes recovering retained list text
+as one item; it does not infer nested steps. Invalid list structure or an image
+without alt text or a decorative decision prevents the operation and shows an
+inline explanation while retaining your entered fields. Ordinary Save still
+requires fresh review after content changes. Approve uses saved content; when
+there are unsaved fields it directs you to Save and approve. Save or undo edits
+in other editors first so approval cannot discard them. Separate visual-description
+decisions and affected output-page review remain required.
+
 Document shows review progress and **Review structure** at the top, with one set
 of counts. **Pending** counts remaining block and description review tasks, with
 each kind shown separately. For example, 54 reviewed blocks and five descriptions

@@ -3,6 +3,44 @@
 Date: 2026-09-30. Version: 0.7.0. Local implementation and external acceptance
 are separate. No automated WCAG or production WSUWP claim is made.
 
+## 2026-10-03 Save and approve
+
+- Primary text, image, table and nested-list review forms now offer **Save and
+  approve** alongside ordinary Save. The explicit action applies the editor's
+  fields, performs retained-list recovery where needed, validates final content
+  and stamps block approval through the existing persistence mechanism in one
+  Undo snapshot. Plain saves still invalidate changed approval. Missing image
+  alternatives or unrecovered list structure fail before persistence and show
+  inline feedback without discarding entered text. Approval cannot reload over
+  unsaved authoring fields; combined saves require other editors to be saved or
+  reverted first. Repeated submissions issue one request. The saved block retains
+  focus; separate description decisions and affected page review remain pending.
+- Baseline: **361 tests passed** earlier in the same unchanged checkout, using
+  canonical `TMPDIR=/private/tmp`. The default macOS temporary path reproduced
+  the two already-recorded alias-related failures. Final documented suite:
+  **370 passed in 19.854s**, including nine combined-action tests covering recovery,
+  rich exported content, approval stamps, one-step Undo/reopen, validation failures,
+  write rollback, image/table fields, page references/review invalidation, separate
+  description decisions, CSRF and conversion-blocked inspection.
+- Chrome **154.0.8037.95**, fresh disposable profile: **seven workflow groups
+  passed**, zero page errors, at 1440px and 390px. Checks cover keyboard approval,
+  saved status/counts, retained-list recovery, inline failures/retry, unsaved-field
+  guards, image/table/nested-list edits, reload/Undo/focus and downloaded semantic
+  HTML. Additional repeated-submit check passed with one request and one added
+  Undo snapshot. Desktop and narrow controls screenshots were visually inspected.
+  JavaScript syntax and `git diff --check` passed.
+- Evidence is ignored under `build/save-and-approve-20261003/`: final-suite.log,
+  browser-report.json, duplicate-submit.json, screenshots and QA-REPORT.md.
+  The first browser attempt passed all UI groups but the download assertion used
+  a relative URL unsupported by the test client; the harness was corrected and
+  rerun on a fresh fixture. The separate description test fixture was corrected
+  to use the required explicit block-to-description association. No production
+  document or human decision was changed. The user's live app was not restarted;
+  restart it to load these changes.
+- Local implementation on `codex/phase3b/output-page-builder`; no push, merge,
+  tag, release or deployment. Production-authoritative WSU Gutenberg/WXR, human
+  VoiceOver and actual Windows hardware acceptance remain pending.
+
 ## 2026-10-02 Poppler setup and diagnostic clarity
 
 - The authorized Homebrew installation is confirmed by the local receipt:
