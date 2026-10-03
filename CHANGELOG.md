@@ -2,7 +2,122 @@
 
 ## [Unreleased]
 
+### Stabilization
+
+- Include recorded nested paragraph/text regions in list source outlines,
+  deduplicate boxes and explain partial coverage when regions are unavailable.
+  Unoutlined text is not treated as missing content.
+- Keep text-bearing lists without items visible in editors and semantic,
+  Gutenberg/WXR and Markdown previews. Reject blank saves and approval/export
+  until their structure is recovered. Unchanged-text conversion or explicit
+  recovery preserves the text as one item with links, formatting, footnotes,
+  source provenance, fresh review and Undo; no existing project is auto-repaired.
+- Prepare an isolated, reviewable CITI step 11 nesting reconstruction. Preserve
+  original IDs and text, output-page assignment and Undo; leave actual project
+  changes and approval to the author. General mixed-type list conversion,
+  insertion, source-region drawing and OCR remain separate proposed work.
+
+- Make Image description drafts a distinct Structure section with collapsible
+  tools and direct, keyboard-focused links beside image alternatives and findings.
+  Keep imported/generated drafts separate from manual approval.
+- Show the project-local saved path for AI drafting ZIPs, with descriptive unique
+  filenames, atomic creation, output path confinement and preserved earlier
+  packages. Retain browser downloads and the existing identity/context schema.
+- Explain Merge next limits beside disabled unsupported controls and show failed
+  actions inline. Protect lists, rich/nested and excluded content from unsupported
+  merges; retain footnote IDs, positions and backlinks in supported text merges.
+  Mixed-block list conversion remains a separate design decision.
+
+- Explain Document diagnostics within the review-task summary, with recorded
+  causes, affected source/block links, publication impact and recovery guidance.
+  Count affected reviews once; preserve manual decisions, resolved history and
+  Undo. Identify missing source copies or targets without broken recovery links.
+- Document Poppler as a separate system dependency, with Homebrew setup,
+  verification and restart/PATH troubleshooting. Include standard Homebrew
+  executable paths in the macOS launcher. Verified fresh CITI source-page
+  rendering with Homebrew Poppler 26.08.0 on an isolated PDF copy; Pillow remains
+  a separate supplemental-extraction dependency.
+
+- Let new projects use an explicitly chosen destination folder as their exact
+  root. Show full working paths, preserve original PDFs and loose files, reject
+  conflicting working directories, and retain/report partial conversion files
+  without switching away from the previous project. Defaults remain explicit.
+  Report global Recent projects write failures without blocking saved projects.
+
+- Show actionable source-page rendering failures in Structure, with original PDF
+  access and Retry. Outline source regions only after the page image loads, and
+  prevent older page requests from replacing the current selection. Missing
+  Poppler is reported without creating an empty render-cache directory.
+
+- Refresh Export counts, exact review links and its enabled state immediately
+  after XML/CSV media mapping and Undo. Keep manual approval invalidation for
+  changed media, preserve authored fields, and retain state after failed imports.
+
+- Group Export's image preparation/Undo and title Copy/content Export buttons
+  into rows, and align media file chooser/action controls horizontally. Rows wrap
+  at narrow widths; forward actions are green and Undo/Copy are gray.
+- Explain empty reading-order filters beside disabled navigation, with a visible
+  Show all blocks recovery link in the sticky toolbar. Keep the active filter
+  after its last approval and preserve unsaved edits when recovering to All.
+- Show aggregate pending block/description review tasks without changing block
+  totals. Description links visibly select the exact editor and expose truthful
+  reasons, affected fields after actual Reviewed edits, and manual next actions.
+- Remove repeated status/guidance and duplicate Export readiness targets across
+  the review UI; consistently bold field labels while keeping values/help normal.
+  Retain useful preview handoffs and title-export help.
+- Use the same manual description-review readiness in Document, Structure,
+  Accessibility and Export. Filled Reclassified descriptions remain pending;
+  Export findings link to exact items with readable source context.
+- Recover existing legacy list approvals only from matching retained local
+  history, recording versioned evidence without new approval decisions. Lists
+  with uncertain history remain actionable and explain why review is needed.
+- Restore reading-order selection after reload; recover an adjacent matching
+  block after filter changes and explain empty
+  filters. Explain fresh approval after a previously approved block changes,
+  retaining that reason through reopen and Undo without an edit log.
+- Require current source approval before HTML, Markdown, Gutenberg, WXR and page
+  package generation. Reject pending or stale publication downloads and copying;
+  retain previews, reports and image/draft preparation during review.
+- Invalidate approval after content edits; require a fresh decision for edited
+  Reviewed descriptions. Protect unsaved authoring forms during draft refresh and
+  import, and preserve current alternatives/captions when mapping a media CSV.
+- Retain Undo snapshots and roll back current state after failed persistence.
+- Preserve retained list item identities and destinations on insertion/reordering,
+  preserve list starts after reorder/reopen, retain trailing formatting during
+  resource-link edits, and default new exports to nested heading hierarchy.
+- Keep edited footnote source bodies and exported note text consistent through
+  save, fresh approval and Undo. Use the existing Reviewed page decision for page
+  publication eligibility and apply download gates to canonical resolved paths.
+
 ### Added
+
+- Compact gray Undo last saved change button in Structure's sticky Reading order
+  toolbar, using existing persisted snapshots, disabled when history is empty,
+  and retaining the selected block after Undo.
+
+- View tested rules dialog for Automated HTML checks, showing the current scan's
+  passed, detected, human-review and not-applicable rule results with descriptions,
+  rule IDs, element counts, WCAG criteria and guidance. Opens to passed rules and
+  supports keyboard closing and a compact scrolling layout.
+
+- Document filename above every workflow screen and in browser tab titles;
+  reading-order filters for approved, pending and excluded blocks.
+- Explicit Reviewed and Not applicable visual-description choices, current
+  readiness feedback, optional-field guidance, and linked pending items on Export.
+- WordPress template-title export with a separate copyable HTML body and page
+  title; H2 section or orderly nested heading options, saved with Undo.
+- Editable link labels that preserve destinations and formatting, with inline
+  Accessibility findings for URLs used as visible link text.
+
+- Separate image ZIP preparation before content export, with a saved document-based
+  or custom filename prefix, Undo, ZIP/CSV download links and visible media-mapping
+  progress. WordPress media XML matching and optional manual CSV import precede
+  final HTML/Gutenberg/WXR export and copying.
+
+- Free bundled axe-core 4.13.0 checks run automatically in Accessibility against
+  local semantic HTML using WCAG 2.2 A/AA rules. Detected issues and checks needing
+  human review show rule guidance, affected HTML and Structure links. Scan failures
+  remain visible; existing review decisions and export behavior are preserved.
 
 - Structure completion message when all blocks are approved or excluded, with a
   keyboard-accessible Continue to Accessibility link and focus after final approval.
@@ -21,6 +136,63 @@
 
 ### Changed
 
+- Accessibility findings show the Reading order block number after the source
+  page; Open block controls align right, including related extraction findings.
+
+- Right-align final workflow actions consistently, including Structure's green
+  Continue to Accessibility, the Accessibility handoff, and page/document exports.
+
+- Saving block content, link text or review state stays at the saved block below
+  Structure's sticky toolbar, including nested links and All/Approved filters.
+  If its status leaves the filter, All opens to retain the saved block in view.
+
+- Reading order filters include current counts in parentheses; the compact
+  visible/total block count sits on the same line when space permits.
+
+- Structure filters are small text links with an emphasized active choice.
+  Longer image descriptions has direct review guidance and collapsed extraction
+  help. Arrange Pages separates Continue to Preview from its four page actions;
+  Preview aligns both Continue to Export buttons right and spaces its mode buttons.
+
+- Accessibility block corrections return to the issue list with a fresh scan.
+  Open block uses a compact button; Save decision has a compact width. Resolved
+  extraction notes move into history with explicit no-action guidance. A green
+  Arrange Pages handoff appears only after document and current HTML checks clear.
+- Arrange Pages Undo is gray; Preview has green Export buttons at top and bottom.
+  Export omits passing readiness checks and empty diagnostic warnings, identifies
+  unmapped images, and confirms Copied beside Copy page title.
+- Document review progress and Review structure move above metadata, with one
+  count summary, larger bold metadata labels, and Structure's green Accessibility
+  handoff when review is complete. Empty diagnostic counts no longer warn.
+- Structure collapses description tools and saved Undo history to emphasize Source
+  and Reading order. Description links expand the relevant panel; pending counts
+  remain visible. Manual response steps are ordered, and approved blocks have a
+  disabled gray Approve button, including after a linked description saves.
+
+- Output Pages is named Arrange Pages, with its optional purpose explained at the
+  top, green Preview contents and Continue to Preview controls. Button groups
+  have space between actions. The WCAG notice appears once in the screen footer.
+- Automated Accessibility results use tables with prominent counts. Media XML
+  matching brings a visible, focused result into view and lists each unmatched
+  or ambiguous image by filename, description, source page and Structure link.
+- Publication outputs keep one H1 title and repair heading skips; WordPress
+  content omits that H1 when the template provides it. Source blocks stay intact.
+- Completed extraction block-review notes are labeled resolved and collapsed;
+  unchanged visual saves preserve image approval, and incomplete equivalents
+  suppress Structure's green completion message.
+
+- Output Pages is explicitly optional for splitting documents; long documents can
+  use Preview and Export directly. Its arrangement outline is collapsed, and
+  unassigned content can be included in the selected page or all content kept on
+  one page, with Undo. Invalid arrangements disable export with a visible reason.
+- Exported image names include the document or chosen prefix and remain stable
+  across reading-order edits. The images ZIP includes all included local images.
+  Semantic HTML uses copied named assets or mapped WordPress URLs. Media mapping
+  changes clear stale content export controls until regeneration.
+- Accessibility shows current results immediately without a generation or download
+  step. Extraction diagnostics link to affected blocks with current status and
+  source location. Structure shows reviewed, pending and excluded counts.
+
 - Imported and generated image drafts fill empty alt, caption and long-description
   fields directly, retaining existing text and requiring human review. Previously
   imported drafts can populate empty fields in one batch, with Undo.
@@ -30,6 +202,14 @@
 
 ### Fixed
 
+- Arranged semantic previews load retained local images even for WordPress-mapped
+  content. Whole-list edits and unchanged saves retain links and item state;
+  nested link-label edits synchronize the parent text editor. PDF link annotations
+  preserve destinations when extraction damages only the visible URL's hyphens.
+- WordPress Media XML matching preserves newer reviewed alt text and captions,
+  skips subsequently excluded images, and supports Undo of attachment mappings.
+- Initial output-page assignments retain excluded block references so restoring
+  content cannot leave it accidentally unassigned in newly initialized projects.
 - Imported image-description cards now resolve retained image paths correctly,
   show the image short alt, and keep it synchronized when either editor saves.
 - Visual review saves confirm beside the button, preserve focus, and retain

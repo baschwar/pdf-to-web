@@ -58,6 +58,17 @@ class AccessibilityTests(unittest.TestCase):
         self.assertIn("structure:list", structural_ids)
         self.assertNotIn("structure:item", structural_ids)
 
+    def test_diagnostic_retains_current_block_locations_and_statuses(self):
+        document = fixture_document()
+        document['review']['issues'][0]['block_ids'] = ['image', 'unknown', 'missing']
+        related = next(item for item in assess_document(document)['items'] if item['category'] == 'diagnostics')['related_blocks']
+        self.assertEqual([block['id'] for block in related], ['image', 'unknown'])
+        self.assertEqual(related[0]['position'], 3)
+        self.assertEqual(related[0]['source_page'], 1)
+        document['blocks'][2]['review']['status'] = 'approved'
+        related = next(item for item in assess_document(document)['items'] if item['category'] == 'diagnostics')['related_blocks']
+        self.assertEqual(related[0]['status'], 'approved')
+
     def test_reports_are_machine_and_human_readable(self):
         with tempfile.TemporaryDirectory() as directory:
             paths = write_reports(Path(directory), fixture_document())

@@ -58,7 +58,9 @@ class ReviewStateTests(unittest.TestCase):
         reopened = ensure_review_document(self.project)
         block = reopened["blocks"][3]
         self.assertEqual((block["type"], block["level"], block["content"]), ("heading", 3, "Corrected"))
-        self.assertEqual(block["review"]["status"], "approved")
+        self.assertEqual(block["review"]["status"], "needs_review")
+        update_block(self.project, block["id"], {"review_status": "approved"})
+        self.assertEqual(ensure_review_document(self.project)["blocks"][3]["review"]["status"], "approved")
         self.assertEqual(self.read_original()["blocks"][3]["type"], "unknown")
 
     def test_excluded_block_is_omitted_from_all_current_exports(self):
@@ -125,7 +127,8 @@ class ReviewStateTests(unittest.TestCase):
         image = ensure_review_document(self.project)["blocks"][-1]
         self.assertEqual(image["alt"], "Student completing the registration form")
         self.assertEqual(image["caption"], "Registration step")
-        self.assertEqual(image["review"]["status"], "approved")
+        self.assertEqual(image["review"]["status"], "needs_review")
+        update_block(self.project, "image-1", {"review_status": "approved"})
         self.assertIn('alt="Student completing the registration form"', html.render_document(ensure_review_document(self.project)))
 
         update_block(self.project, "image-1", {"decorative": True, "review_status": "approved"})

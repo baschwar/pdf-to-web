@@ -1,3 +1,4 @@
+from review_helpers import stamp_fixture_approvals
 import json
 import tempfile
 import unittest
@@ -52,6 +53,14 @@ class ExportGateTests(unittest.TestCase):
         create_project(project, "Validation")
         document = json.loads(FIXTURE.read_text(encoding="utf-8"))
         document["review"] = {"status": status, "issues": []}
+        def approve(blocks):
+            for block in blocks:
+                block['review'] = {'status': 'approved'}
+                approve(block.get('children', []))
+        approve(document['blocks'])
+        for note in document.get('footnotes', []):
+            note['review'] = {'status': 'approved'}
+        stamp_fixture_approvals(document)
         destination = project / "extraction" / "normalized" / "document.json"
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(json.dumps(document), encoding="utf-8")
@@ -107,9 +116,10 @@ class ExportGateTests(unittest.TestCase):
             project = self._project(Path(directory), "conversion_blocked")
             json_path, _ = validate_project_exports(project)
             report = json.loads(json_path.read_text(encoding="utf-8"))
-            self.assertEqual(report["result"], "PASS")
+            self.assertEqual(report["result"], "FAIL")
+            self.assertFalse(report["formats"]["semantic_html"]["generated"])
             self.assertTrue(report["formats"]["gutenberg"]["blocked_as_expected"])
-            self.assertTrue(report["formats"]["wordpress-xml"]["blocked_as_expected"])
+            self.assertTrue(report["formats"]["wxr"]["blocked_as_expected"])
 
     def test_cli_returns_success_for_passing_gate(self):
         with tempfile.TemporaryDirectory() as directory:

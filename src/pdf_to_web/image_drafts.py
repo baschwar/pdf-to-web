@@ -12,10 +12,11 @@ import os
 import uuid
 import zipfile
 from pathlib import Path
+from datetime import datetime, timezone
 from urllib.request import Request
 from typing import Protocol
 
-from .project import utc_now
+from .project import utc_now, load_project, slugify
 from .review_state import ensure_review_document, save_review_document, _find_location, _walk, image_description_visual
 
 SCHEMA = 'pdf-to-web-image-drafts-v1'
@@ -251,7 +252,12 @@ def import_response(root, payload, *, commit=False):
 
 
 def exchange_package(root, entries):
+    root = root.expanduser().resolve()
     output = root / 'output/image-drafts'
+    try:
+        output.resolve().relative_to(root)
+    except ValueError as exc:
+        raise ValueError('Drafting package output must stay inside this project.') from exc
     output.mkdir(parents=True, exist_ok=True)
     manifest = {'schema_version': EXCHANGE, 'prompt_version': PROMPT_VERSION, 'instructions': INSTRUCTIONS, 'requests': []}
     template = {'schema_version': EXCHANGE, 'responses': []}
@@ -259,36 +265,46 @@ def exchange_package(root, entries):
     columns = ['image_file', 'source_image_name', 'block_id', 'source_page', 'current_alt', 'current_caption', 'draft_alt', 'draft_caption', 'draft_long_description', 'purpose', 'heading', 'nearby_text', *[key for key in IDENTITY if key != 'block_id']]
     writer = csv.DictWriter(sheet, fieldnames=columns)
     writer.writeheader()
-    package = output / ('request-' + uuid.uuid4().hex + '.zip')
+    prefix = slugify(str(load_project(root).get('title') or 'document'))[:64].rstrip('-') or 'document'
+    stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+    package = output / f'{prefix}-image-drafting-request-{stamp}-{uuid.uuid4().hex[:12]}.zip'
+    temporary = output / ('.' + package.name + '.tmp')
     document = ensure_review_document(root)
     if any(stale(root, document, entry) for entry in entries):
         raise ValueError('Context changed; choose New manual request for a fresh identity')
-    with zipfile.ZipFile(package, 'w', zipfile.ZIP_DEFLATED) as archive:
-        for entry in entries:
-            asset = confined(root, entry['asset_path'])
-            if hashlib.sha256(asset.read_bytes()).hexdigest() != entry['asset_hash']:
-                raise ValueError('Image changed before request export')
-            name = f"images/{entry['request_id']}{asset.suffix.lower()}"
-            archive.write(asset, name)
-            context = entry['context']
-            row = {k: entry[k] for k in IDENTITY} | {
-                'image_file': name, 'source_image_name': asset.name,
-                'source_page': context.get('source_page') or '',
-                'current_alt': context.get('current_alt', ''), 'current_caption': context.get('current_caption', ''),
-                'draft_alt': '', 'draft_caption': '', 'draft_long_description': '',
-                'purpose': context.get('purpose', ''), 'heading': context.get('heading', ''),
-                'nearby_text': '\n'.join(item['text'] for item in context.get('nearby_text', []))}
-            # Keep extracted text as text when reviewers open this CSV in a spreadsheet.
-            def text_cell(value):
-                text = str(value)
-                return "'" + text if text.lstrip().startswith(('=', '+', '-', '@')) or text.startswith(('\t', '\r')) else text
-            writer.writerow({key: text_cell(value) for key, value in row.items()})
-            manifest['requests'].append({k: entry[k] for k in IDENTITY} | {'image_file': name, 'context': entry['context']})
-            template['responses'].append({k: entry[k] for k in IDENTITY} | {'alt': '', 'caption': None, 'long_description': None, 'warnings': [], 'decorative': False})
-        archive.writestr('review-sheet.csv', '\ufeff' + sheet.getvalue())
-        archive.writestr('request.json', json.dumps(manifest, indent=2, ensure_ascii=False))
-        archive.writestr('response-template.json', json.dumps(template, indent=2))
-        archive.writestr('INSTRUCTIONS.txt', INSTRUCTIONS + '\nManually attach the images and request.json to your chosen tool. Opening its website does not attach or send files. Use review-sheet.csv to organize manual writing or AI batch review. Copy final drafts into response-template.json with its identities unchanged; CSV is a companion, not an import format. Return response-template.json with completed fields. Import and review drafts locally; nothing is approved automatically.\n')
+    try:
+        with zipfile.ZipFile(temporary, 'x', zipfile.ZIP_DEFLATED) as archive:
+            for entry in entries:
+                asset = confined(root, entry['asset_path'])
+                if hashlib.sha256(asset.read_bytes()).hexdigest() != entry['asset_hash']:
+                    raise ValueError('Image changed before request export')
+                name = f"images/{entry['request_id']}{asset.suffix.lower()}"
+                archive.write(asset, name)
+                context = entry['context']
+                row = {k: entry[k] for k in IDENTITY} | {
+                    'image_file': name, 'source_image_name': asset.name,
+                    'source_page': context.get('source_page') or '',
+                    'current_alt': context.get('current_alt', ''), 'current_caption': context.get('current_caption', ''),
+                    'draft_alt': '', 'draft_caption': '', 'draft_long_description': '',
+                    'purpose': context.get('purpose', ''), 'heading': context.get('heading', ''),
+                    'nearby_text': '\n'.join(item['text'] for item in context.get('nearby_text', []))}
+                # Keep extracted text as text when reviewers open this CSV in a spreadsheet.
+                def text_cell(value):
+                    text = str(value)
+                    return "'" + text if text.lstrip().startswith(('=', '+', '-', '@')) or text.startswith(('\t', '\r')) else text
+                writer.writerow({key: text_cell(value) for key, value in row.items()})
+                manifest['requests'].append({k: entry[k] for k in IDENTITY} | {'image_file': name, 'context': entry['context']})
+                template['responses'].append({k: entry[k] for k in IDENTITY} | {'alt': '', 'caption': None, 'long_description': None, 'warnings': [], 'decorative': False})
+            archive.writestr('review-sheet.csv', '\ufeff' + sheet.getvalue())
+            archive.writestr('request.json', json.dumps(manifest, indent=2, ensure_ascii=False))
+            archive.writestr('response-template.json', json.dumps(template, indent=2))
+            archive.writestr('INSTRUCTIONS.txt', INSTRUCTIONS + '\nManually attach the images and request.json to your chosen tool. Opening its website does not attach or send files. Use review-sheet.csv to organize manual writing or AI batch review. Copy final drafts into response-template.json with its identities unchanged; CSV is a companion, not an import format. Return response-template.json with completed fields. Import and review drafts locally; nothing is approved automatically.\n')
+        # Publish a complete archive atomically without replacing any prior ZIP.
+        os.link(temporary, package)
+    except OSError as exc:
+        raise ValueError(f'Could not save drafting request ZIP in {output}: {exc.strerror or str(exc)}. Check folder permissions and free space; earlier packages are preserved.') from exc
+    finally:
+        temporary.unlink(missing_ok=True)
     return package
 
 
@@ -362,6 +378,9 @@ def mutate(root, action, data):
                 fields = data.get('fields')
                 if not isinstance(fields, list) or not fields or len(set(fields)) != len(fields) or any(f not in FIELDS for f in fields):
                     raise ValueError('Select alt, caption or long_description fields')
+                previous_visual = copy.deepcopy(visual_for(document, block))
+                if previous_visual:
+                    previous_visual.setdefault('accessibility', {})['short_alt'] = block.get('alt') or ''
                 for field in fields:
                     value = entry['draft'][field]
                     if value is None:
@@ -376,7 +395,15 @@ def mutate(root, action, data):
                 visual = visual_for(document, block)
                 if visual and visual.get('source_block_id') == str(block['id']):
                     visual.setdefault('accessibility', {})['short_alt'] = block.get('alt') or ''
-                # Existing authoring rules: applying never approves; preserve structural status.
+                from .review_state import _set_status, _mark_content_parents
+                if block.get('review', {}).get('status') != 'excluded':
+                    _set_status(block, 'needs_review')
+                    _mark_content_parents(document, block)
+                if visual and visual.get('status') == 'reviewed':
+                    visual['status'] = 'reclassified'
+                if visual and previous_visual:
+                    from .review_state import _mark_visual_changes
+                    _mark_visual_changes(visual, previous_visual)
                 entry['current_context_hash'] = current_identity(root, document, block_id)[0]['context_hash']
                 entry.setdefault('applied_fields', []).extend(fields)
             entry['edit_revision'] += 1

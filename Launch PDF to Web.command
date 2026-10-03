@@ -2,6 +2,10 @@
 
 set -u
 
+# Finder launches may inherit only the system paths. Include both standard
+# Homebrew locations so installed Poppler utilities are available to the app.
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
 SCRIPT_DIR="${0:A:h}"
 cd "$SCRIPT_DIR" || exit 1
 

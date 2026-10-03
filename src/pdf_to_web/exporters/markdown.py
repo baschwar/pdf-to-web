@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .common import is_excluded, table_cell
+from .common import is_excluded, table_cell, list_render_items
 
 
 def _block(block: dict[str, Any], depth: int = 0) -> str:
@@ -20,7 +20,7 @@ def _block(block: dict[str, Any], depth: int = 0) -> str:
         return "\n".join(f"> {line}" for line in content.splitlines())
     if block_type == "list":
         lines: list[str] = []
-        for number, child in enumerate(block.get("children", []), start=1):
+        for number, child in enumerate(list_render_items(block), start=1):
             marker = f"{number}." if block.get("ordered") else "-"
             lines.append(f"{'  ' * depth}{marker} {child.get('content', '')}")
             for nested in child.get("children", []):

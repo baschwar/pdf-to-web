@@ -18,7 +18,7 @@ async function main() {
   };
   try {
     await page.goto(url);
-    await page.getByRole('link', {name: 'Output Pages', exact: true}).click();
+    await page.getByRole('link', {name: 'Arrange Pages', exact: true}).click();
     await page.waitForURL('**/output-pages');
     const read = () => JSON.parse(fs.readFileSync(path.join(project, 'review/current.json')));
     let current = read();
@@ -75,7 +75,7 @@ async function main() {
     report.checks.approvalInvalidation = true;
     await page.getByRole('link', {name: 'Projects', exact: true}).click();
     await change(page.locator('.open-project').first(), true);
-    await page.getByRole('link', {name: 'Output Pages', exact: true}).click();
+    await page.getByRole('link', {name: 'Arrange Pages', exact: true}).click();
     await page.locator(`aside a[href*="${initial[1]}"]`).click();
     assert.equal(await page.locator('#output-page-metadata [name="slug"]').inputValue(), 'policy-final');
     report.checks.saveAndReopen = true;

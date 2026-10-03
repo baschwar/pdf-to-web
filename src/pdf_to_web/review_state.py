@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import re
+import uuid
+from difflib import SequenceMatcher
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -102,6 +105,8 @@ def ensure_review_document(project_dir: Path) -> dict[str, Any]:
         changed = ensure_pages(document) or changed
         from .image_drafts import ensure_state
         changed = ensure_state(document) or changed
+        changed = _invalidate_changed_blocks(document, previous) or changed
+        changed = _restore_legacy_owner_approvals(project_dir, document) or changed
         if changed:
             if "output_pages" in previous:
                 from .output_pages import reconcile
@@ -140,31 +145,195 @@ def _snapshot(project_dir: Path, current: dict[str, Any]) -> Path:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
     path = directory / f"{stamp}.json"
     _atomic_write(path, current)
-    revisions = sorted(directory.glob("*.json"))
-    for stale in revisions[:-50]:
-        stale.unlink(missing_ok=True)
     return path
 
 
 def save_review_document(project_dir: Path, document: dict[str, Any], *, snapshot: bool = True) -> dict[str, Any]:
     project_dir = project_dir.expanduser().resolve()
     path = review_path(project_dir)
+    original_bytes = path.read_bytes() if path.is_file() else None
+    project_path = project_dir / 'project.json'
+    project_bytes = project_path.read_bytes()
+    revision_path = None
     if snapshot and path.is_file():
         previous = _read_document(path)
+        _sync_footnote_bodies(document, previous)
+        _invalidate_changed_blocks(document, previous)
         from .output_pages import reconcile
         reconcile(document, previous)
-        _snapshot(project_dir, previous)
+        revision_path = _snapshot(project_dir, previous)
     now = utc_now()
     session = document.setdefault("review_session", {})
     session["schema_version"] = REVIEW_SCHEMA
     session.setdefault("created_at", now)
     session["updated_at"] = now
     session["revision"] = int(session.get("revision", 0)) + 1
-    _atomic_write(path, document)
-    project = load_project(project_dir)
-    project["review_revision_at"] = now
-    save_project(project_dir, project)
+    try:
+        _atomic_write(path, document)
+        project = load_project(project_dir)
+        project["review_revision_at"] = now
+        save_project(project_dir, project)
+    except Exception:
+        # Retain both the current state and Undo history if either write fails.
+        if original_bytes is not None and path.read_bytes() != original_bytes:
+            restore = path.with_suffix('.rollback')
+            restore.write_bytes(original_bytes)
+            restore.replace(path)
+        if project_path.read_bytes() != project_bytes:
+            restore = project_path.with_suffix('.rollback')
+            restore.write_bytes(project_bytes)
+            restore.replace(project_path)
+        if revision_path:
+            revision_path.unlink(missing_ok=True)
+        raise
+    for stale in sorted((project_dir / 'review/revisions').glob('*.json'))[:-50]:
+        stale.unlink(missing_ok=True)
     return document
+
+
+def _invalidate_changed_blocks(document, previous):
+    """Share approval invalidation between authoring saves and load-time repair."""
+    from .publication import content_digest
+    old_blocks = {str(b.get('id')): b for b in _walk(previous.get('blocks', []))}
+    changed = False
+    for block in _walk(document.get('blocks', [])):
+        old = old_blocks.get(str(block.get('id')))
+        review = block.get('review', {})
+        current = content_digest(block)
+        stamp = review.get('content_sha256')
+        material_edit = old and content_digest(old) != current
+        if review.get('status') == 'approved' and stamp != current and (stamp or material_edit):
+            _set_status(block, 'needs_review')
+            changed = True
+            review['reason'] = 'changed_after_approval'
+        elif material_edit and old.get('review', {}).get('status') == 'approved' and review.get('status') == 'needs_review':
+            review['reason'] = 'changed_after_approval'
+            changed = True
+    return changed
+
+
+def block_review_reason(block):
+    from .publication import block_review_issue, list_structure_issue
+    malformed = list_structure_issue(block)
+    if malformed:
+        return malformed['message']
+    review = block.get('review', {})
+    issue = block_review_issue(block) if review.get('status') == 'approved' else None
+    if issue and issue['code'] == 'legacy_approval_unverified':
+        return 'Earlier approval cannot be verified for these nested items. Review this list, then approve it.'
+    if review.get('status') == 'needs_review' and review.get('reason') == 'changed_after_approval':
+        return 'Needs approval because this block changed after approval. Review the saved content, then approve it.'
+    return ''
+
+
+def _review_time(value):
+    try:
+        parsed = datetime.fromisoformat(value)
+        return parsed if parsed.tzinfo is not None else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _restore_legacy_owner_approvals(project_dir, document):
+    """Add evidence for an existing decision, never a new approval decision."""
+    from .publication import content_digest, pending_descendants
+    from .exporters.common import is_excluded
+    project_id = document.get('output_pages', {}).get('project_id')
+    session = document.get('review_session', {})
+    if not project_id or session.get('schema_version') != REVIEW_SCHEMA or not _review_time(session.get('created_at')) or not _review_time(session.get('updated_at')):
+        return False
+    all_ids = [str(b.get('id')) for b in _walk(document.get('blocks', []))]
+    candidates = {}
+    for block in document.get('blocks', []):
+        review = block.get('review', {})
+        identity = str(block.get('id'))
+        approved_at = _review_time(review.get('updated_at'))
+        if is_excluded(block) or review.get('status') != 'approved' or review.get('content_sha256') or not pending_descendants(block) or all_ids.count(identity) != 1:
+            continue
+        if not approved_at or approved_at > _review_time(session.get('updated_at')):
+            continue
+        if any(all_ids.count(str(child.get('id'))) != 1 for child in _walk(block.get('children', []))):
+            continue
+        def prior_children(nodes):
+            for child in nodes:
+                if is_excluded(child):
+                    continue
+                timestamp = _review_time(child.get('review', {}).get('updated_at'))
+                if (child.get('review', {}).get('status') == 'needs_review' and not timestamp) or (timestamp and timestamp > approved_at) or not prior_children(child.get('children', [])):
+                    return False
+            return True
+        if prior_children(block.get('children', [])):
+            candidates[identity] = block
+    if not candidates:
+        return False
+    changed = False
+    directory = project_dir / 'review/revisions'
+    if directory.is_symlink() or (project_dir / 'review').is_symlink():
+        return False
+    snapshots = []
+    newer_time = _review_time(session.get('updated_at'))
+    for path in sorted(directory.glob('*.json'), reverse=True)[:50]:
+        try:
+            if path.is_symlink() or not path.is_file() or path.resolve().parent != directory.resolve():
+                return False
+            raw = path.read_bytes()
+            snapshot = json.loads(raw)
+            prior_session = snapshot.get('review_session', {})
+            if snapshot.get('schema_version') != 'pdf-to-web-normalized-v1' or prior_session.get('schema_version') != REVIEW_SCHEMA:
+                return False
+            if snapshot.get('output_pages', {}).get('project_id') != project_id or prior_session.get('created_at') != session['created_at']:
+                continue
+            recorded_at = _review_time(prior_session.get('updated_at'))
+            if not recorded_at or recorded_at > newer_time:
+                return False  # Filename and recorded chronology must agree.
+            newer_time = recorded_at
+            snapshots.append((path, raw, snapshot, recorded_at))
+        except (OSError, ValueError, TypeError, AttributeError):
+            return False  # Unknown history cannot prove an unchanged decision.
+    for path, raw, snapshot, recorded_at in snapshots:
+        if not candidates:
+            break
+        try:
+            prior_ids = [str(b.get('id')) for b in _walk(snapshot.get('blocks', []))]
+            owners = {str(b.get('id')): b for b in snapshot.get('blocks', [])}
+            for identity, block in list(candidates.items()):
+                previous = owners.get(identity)
+                review = block['review']
+                old_review = previous.get('review', {}) if previous else {}
+                previous_nodes = [previous, *_walk(previous.get('children', []))] if previous else []
+                ambiguous_identity = any(prior_ids.count(str(node.get('id'))) != 1 for node in previous_nodes)
+                # The newest trusted state is decisive; older matches cannot
+                # override a later change, revocation, or different decision.
+                candidates.pop(identity)
+                if not previous or ambiguous_identity or is_excluded(previous) or old_review.get('status') != 'approved' or old_review.get('updated_at') != review.get('updated_at') or recorded_at < _review_time(review['updated_at']) or content_digest(previous) != content_digest(block) or (old_review.get('content_sha256') and old_review['content_sha256'] != content_digest(previous)):
+                    continue
+                review['content_sha256'] = content_digest(block)
+                review['approval_evidence'] = {'schema_version': 'pdf-to-web-legacy-owner-approval-v1', 'snapshot': path.name,
+                    'snapshot_sha256': hashlib.sha256(raw).hexdigest(), 'approved_at': review['updated_at'], 'project_id': project_id}
+                changed = True
+        except (OSError, ValueError, TypeError, AttributeError):
+            break  # Unreadable/invalid newer history makes older proof uncertain.
+    return changed
+
+
+def _sync_footnote_bodies(document, previous):
+    """Keep the existing derived note text consistent with edited source bodies."""
+    old_blocks = {str(b.get('id')): b for b in _walk(previous.get('blocks', []))}
+    notes = {str(n.get('id')): n for n in document.get('footnotes', [])}
+    from .normalize import _footnote_marker_and_text
+    for block in _walk(document.get('blocks', [])):
+        note = notes.get(str(block.get('footnote_body_id')))
+        old = old_blocks.get(str(block.get('id')))
+        if not note or not old or old.get('content') == block.get('content'):
+            continue
+        # Source raw fields are immutable evidence, not the current authored text.
+        authored = {'content': block.get('content', '')}
+        parsed = _footnote_marker_and_text(authored)
+        original = _footnote_marker_and_text({'content': old.get('content', '')})
+        marked_source = original and original[0] == str(note.get('marker'))
+        if marked_source and parsed and parsed[0] != str(note.get('marker')):
+            raise ValueError('Footnote marker changes require structural review; keep the existing marker while editing its body.')
+        note['text'] = parsed[1] if parsed and parsed[0] == str(note.get('marker')) else str(block.get('content') or '').strip()
 
 
 def _find_location(
@@ -187,12 +356,143 @@ def _set_status(block: dict[str, Any], status: str) -> None:
         raise ValueError(f"Unsupported review status: {status}")
     review = block.setdefault("review", {})
     review["status"] = status
+    review.pop('approval_evidence', None)
+    if status != 'needs_review':
+        review.pop('reason', None)
+    if status == 'approved':
+        from .publication import content_digest
+        review['content_sha256'] = content_digest(block)
+    else:
+        review.pop('content_sha256', None)
     review["updated_at"] = utc_now()
+
+
+def _rewrite_inline(block: dict[str, Any], content: str) -> None:
+    """Keep formatting/destinations for edits contained within a single run."""
+    runs = block.get('runs')
+    old = str(block.get('content') or '')
+    if not isinstance(runs, list) or ''.join(str(r.get('text', '')) for r in runs) != old:
+        block.pop('runs', None)
+        block['content'] = content
+        return
+    spans, cursor = [], 0
+    for run in runs:
+        end = cursor + len(str(run.get('text', '')))
+        spans.append((cursor, end, run))
+        cursor = end
+    for index, (start, end, run) in enumerate(spans):
+        suffix = old[end:]
+        if content.startswith(old[:start]) and content.endswith(suffix) and len(content) >= start + len(suffix):
+            replacement = content[start:len(content) - len(suffix) if suffix else len(content)]
+            block['runs'] = copy.deepcopy(runs)
+            block['runs'][index]['text'] = replacement
+            block['runs'] = [value for value in block['runs'] if value.get('text')]
+            block['content'] = content
+            return
+    # A retained punctuation delimiter gives an exact label boundary even if
+    # both the label and trailing prose changed (for example a parenthesized URL).
+    links = [(a, b, r) for a, b, r in spans if r.get('type') == 'link']
+    if len(links) == 1:
+        start, end, run = links[0]
+        boundary = re.match(r'[^\w\s]+', old[end:])
+        if boundary and content.startswith(old[:start]):
+            marker = boundary.group()
+            tail = content[start:]
+            if tail.count(marker) == 1:
+                stop = start + tail.index(marker)
+                index = next(i for i, (_, _, r) in enumerate(spans) if r is run)
+                trailing = {'content': old[end:], 'runs': copy.deepcopy(runs[index + 1:])}
+                _rewrite_inline(trailing, content[stop:])
+                block['runs'] = [*copy.deepcopy(runs[:index]),
+                                 {**copy.deepcopy(run), 'text': content[start:stop]},
+                                 *trailing.get('runs', [{'type': 'text', 'text': content[stop:]}])]
+                block['content'] = content
+                return
+            if tail.count(marker) > 1:
+                raise ValueError('This edit has an ambiguous link boundary. Edit its link label separately, then edit the surrounding text.')
+    updated = []
+    def append(text, run=None):
+        if not text:
+            return
+        value = {**(run or {'type': 'text'}), 'text': text}
+        if updated and {k: v for k, v in updated[-1].items() if k != 'text'} == {k: v for k, v in value.items() if k != 'text'}:
+            updated[-1]['text'] += text
+        else:
+            updated.append(value)
+    for action, start, end, new_start, new_end in SequenceMatcher(None, old, content, autojunk=False).get_opcodes():
+        if action == 'equal':
+            for a, b, run in spans:
+                lo, hi = max(a, start), min(b, end)
+                if lo < hi:
+                    append(old[lo:hi], run)
+        elif action in {'replace', 'insert'}:
+            owner = next((run for a, b, run in spans if (a <= start < end <= b if action == 'replace' else a < start < b)), None)
+            if owner is None and any(a < end and b > start and run.get('type') == 'link' for a, b, run in spans):
+                raise ValueError('This edit crosses a link boundary. Edit its link label separately, then edit the surrounding text.')
+            append(content[new_start:new_end], owner)
+    block['content'] = content
+    block['runs'] = updated
+
+
+def _mark_content_parents(document, block):
+    def visit(nodes):
+        for node in nodes:
+            if node is block:
+                return True
+            if visit(node.get('children', [])):
+                if node.get('type') == 'list':
+                    node['content'] = '\n'.join(str(child.get('content') or '') for child in node.get('children', []))
+                if node.get('review', {}).get('status') != 'excluded':
+                    _set_status(node, 'needs_review')
+                return True
+        return False
+    visit(document.get('blocks', []))
+
+
+def restore_source_links(project_dir: Path, block_ids: list[str]) -> dict[str, Any]:
+    """Explicitly recover selected lost links from immutable source evidence."""
+    from .normalize import _apply_link_annotations
+    original = _read_document(original_path(project_dir))
+    annotations = original.get('source_links', [])
+    if annotations:
+        _apply_link_annotations(original, annotations)
+    document = ensure_review_document(project_dir)
+    for block_id in block_ids:
+        _, _, source = _find_location(original.get('blocks', []), block_id)
+        _, _, block = _find_location(document.get('blocks', []), block_id)
+        if block.get('runs'):
+            continue
+        recovered = copy.deepcopy(source)
+        _rewrite_inline(recovered, str(block.get('content') or ''))
+        if not any(run.get('type') == 'link' for run in recovered.get('runs', [])):
+            raise ValueError(f'No unambiguous retained link could be recovered for {block_id}')
+        block['runs'] = recovered['runs']
+        block['source_links'] = copy.deepcopy(recovered.get('source_links', []))
+        if block.get('review', {}).get('status') != 'excluded' and not block.get('excluded'):
+            _set_status(block, 'needs_review')
+        _mark_content_parents(document, block)
+    return save_review_document(project_dir, document)
 
 
 def update_block(project_dir: Path, block_id: str, changes: dict[str, Any]) -> dict[str, Any]:
     document = ensure_review_document(project_dir)
     _siblings, _index, block = _find_location(document.get("blocks", []), block_id)
+    from .publication import content_digest
+    previous_content = content_digest(block)
+    from .exporters.common import has_unstructured_list_text, retained_list_text
+    malformed_list = has_unstructured_list_text(block)
+    retained_text = retained_list_text(block) if malformed_list else str(block.get('content') or '')
+    converting_to_list = changes.get('type') == 'list' and block.get('type') != 'list'
+    if converting_to_list and 'content' not in changes:
+        changes = {**changes, 'content': str(block.get('content') or '')}
+    if (malformed_list or converting_to_list and str(block.get('content') or '').strip()) and 'content' in changes and not str(changes['content']).strip():
+        raise ValueError('This list retains text without items. A blank save would lose that text. Keep the displayed text or exclude the block; Undo can restore earlier changes.')
+    if (malformed_list or converting_to_list) and block.get('footnote_references') and 'content' in changes and str(changes['content']) != retained_text:
+        raise ValueError('Keep this text unchanged while recovering its footnote references. Review text edits separately so their positions remain accurate.')
+    if malformed_list and 'content' in changes and not str(block.get('content') or '').strip():
+        block['content'] = retained_text
+    previous_alt = block.get('alt') or ''
+    previous_descriptions = copy.deepcopy(document.get('review', {}).get('complex_visuals', []))
     if "type" in changes:
         block_type = str(changes["type"])
         if block_type not in BLOCK_TYPES:
@@ -208,32 +508,86 @@ def update_block(project_dir: Path, block_id: str, changes: dict[str, Any]) -> d
         if block.get("type") not in TEXT_BLOCK_TYPES and block.get("type") != "list":
             raise ValueError("Text editing is not supported for this block type")
         content = str(changes["content"])
-        block["content"] = content
-        block.pop("runs", None)
-        if block.get("type") == "list":
+        old_content = str(block.get('content') or '')
+        _rewrite_inline(block, content)
+        if block.get("type") == "list" and not block.get('children') and content.strip() and (
+                content == old_content or malformed_list or block.get('runs') or block.get('footnote_references') or block.get('source_links')):
+            # A type change or explicit recovery keeps the whole text as one
+            # item; line breaks do not prove semantic item boundaries.
+            child = copy.deepcopy(block)
+            child['id'] = f'{block_id}-item-{uuid.uuid4().hex[:12]}'
+            child['type'] = 'list_item'
+            child['children'] = []
+            child.setdefault('normalization', {})['preserve_list_text'] = True
+            for field in ('ordered', 'start', 'marker_style', 'level'):
+                child.pop(field, None)
+            child.setdefault('provenance', {}).setdefault('review_changes', []).append(
+                {'action': 'recover_list_text' if malformed_list else 'convert_text_to_list', 'source_block_id': block_id, 'at': utc_now()})
+            _set_status(child, 'needs_review')
+            for field in ('runs', 'footnote_references', 'source_links'):
+                block.pop(field, None)
+            for note in document.get('footnotes', []):
+                for reference in note.get('references', []):
+                    if reference.get('block_id') == block_id:
+                        reference['block_id'] = child['id']
+            block['children'] = [child]
+            block.setdefault('normalization', {})['manual_list_edit'] = True
+        elif block.get("type") == "list" and content != old_content:
+            block.setdefault('normalization', {})['manual_list_edit'] = True
             old_children = block.get("children", [])
-            provenance = copy.deepcopy(block.get("provenance", {}))
-            block["children"] = [
-                {
-                    "id": str(old_children[index].get("id"))
-                    if index < len(old_children)
-                    else f"{block_id}-item-{index + 1}",
-                    "type": "list_item",
-                    "content": line.strip(),
-                    "children": [],
-                    "provenance": copy.deepcopy(
-                        old_children[index].get("provenance", provenance)
-                        if index < len(old_children)
-                        else provenance
-                    ),
-                    "review": {"status": "needs_review", "updated_at": utc_now()},
-                }
-                for index, line in enumerate(content.splitlines())
-                if line.strip()
-            ]
+            lines = [line.strip() for line in content.splitlines() if line.strip()]
+            old_labels = [str(child.get('content') or '') for child in old_children]
+            if len(set(old_labels)) != len(old_labels) or len(set(lines)) != len(lines):
+                raise ValueError('Repeated list text makes item identity ambiguous. Edit individual items instead.')
+            by_label = {str(child.get('content') or ''): child for child in old_children}
+            removed = [c for c in old_children if c.get('content') not in lines]
+            inserted = [line for line in lines if line not in by_label]
+            renamed = None
+            if len(lines) == len(old_children) and len(removed) == len(inserted) == 1 and old_labels.index(removed[0]['content']) == lines.index(inserted[0]):
+                renamed = removed.pop()
+                by_label[inserted[0]] = renamed
+            if any(c.get('children') or c.get('excluded') or c.get('review', {}).get('status') == 'excluded' for c in removed):
+                raise ValueError('Edit individual items to preserve nested or excluded list content.')
+            children = []
+            for line in lines:
+                child = copy.deepcopy(by_label[line]) if line in by_label else {
+                    'id': f'{block_id}-item-{uuid.uuid4().hex[:12]}', 'type': 'list_item', 'content': line,
+                    'children': [], 'provenance': {'review_changes': [{'action': 'author_insert', 'at': utc_now()}]}}
+                if line not in by_label:
+                    _set_status(child, 'needs_review')
+                elif child.get('content') != line:
+                    _rewrite_inline(child, line)
+                    if child.get('review', {}).get('status') != 'excluded':
+                        _set_status(child, 'needs_review')
+                children.append(child)
+            block['children'] = children
+    if 'link_index' in changes or 'link_text' in changes:
+        try:
+            run_index = int(changes['link_index'])
+            runs = block['runs']
+            if run_index < 0:
+                raise ValueError('Invalid link index')
+            run = runs[run_index]
+        except (KeyError, IndexError, TypeError, ValueError):
+            raise ValueError('Choose an existing link to edit') from None
+        if run.get('type') != 'link' or not (run.get('url') or run.get('href')):
+            raise ValueError('Choose an existing link to edit')
+        label = str(changes.get('link_text') or '').strip()
+        if not label:
+            raise ValueError('Link text cannot be empty')
+        if label != run.get('text'):
+            if block.get('footnote_references'):
+                raise ValueError('Link text in a block with footnote offsets needs a structural review before editing')
+            run['text'] = label
+            block['content'] = ''.join(str(r.get('text', '')) for r in runs)
+            _set_status(block, 'needs_review')
+            _mark_content_parents(document, block)
     if any(field in changes for field in ("alt", "caption", "decorative", "long_description")):
         if block.get("type") != "image":
             raise ValueError("Image accessibility fields can only be set on an image block")
+        previous_visual = copy.deepcopy(image_description_visual(document, block))
+        if previous_visual:
+            previous_visual.setdefault('accessibility', {})['short_alt'] = previous_alt
         if "decorative" in changes:
             value = changes["decorative"]
             block["decorative"] = value if isinstance(value, bool) else str(value).lower() in {"1", "true", "yes", "on"}
@@ -251,6 +605,8 @@ def update_block(project_dir: Path, block_id: str, changes: dict[str, Any]) -> d
         visual = image_description_visual(document, block)
         if visual and visual.get("source_block_id") == str(block["id"]):
             visual.setdefault("accessibility", {})["short_alt"] = block.get("alt") or ""
+            if previous_visual:
+                _mark_visual_changes(visual, previous_visual)
     if any(field in changes for field in ("table_header_row", "table_header_column", "table_caption", "table_reviewed")):
         if block.get("type") != "table":
             raise ValueError("Table accessibility fields can only be set on a table block")
@@ -264,6 +620,12 @@ def update_block(project_dir: Path, block_id: str, changes: dict[str, Any]) -> d
             block["caption"] = str(changes["table_caption"]).strip()
     if "review_status" in changes:
         status = str(changes["review_status"])
+        from .publication import list_structure_issue
+        malformed = list_structure_issue(block)
+        if status == 'approved' and malformed:
+            raise ValueError(malformed['message'])
+        if status == 'approved' and (content_digest(block) != previous_content or document.get('review', {}).get('complex_visuals', []) != previous_descriptions):
+            status = 'needs_review'
         if (
             status == "approved"
             and block.get("type") == "image"
@@ -272,6 +634,10 @@ def update_block(project_dir: Path, block_id: str, changes: dict[str, Any]) -> d
         ):
             raise ValueError("Add alt text or mark the image as decorative before approving it")
         _set_status(block, status)
+    if content_digest(block) != previous_content or document.get('review', {}).get('complex_visuals', []) != previous_descriptions:
+        if block.get('review', {}).get('status') != 'excluded':
+            _set_status(block, 'needs_review')
+        _mark_content_parents(document, block)
     return save_review_document(project_dir, document)
 
 
@@ -292,17 +658,53 @@ def move_block(project_dir: Path, block_id: str, direction: str) -> dict[str, An
     return save_review_document(project_dir, document)
 
 
+def merge_next_reason(block: dict[str, Any], following: dict[str, Any] | None) -> str:
+    """Share merge limits between the controls and saved-state validation."""
+    if following is None:
+        return 'There is no following block to merge.'
+    if block.get('type') == 'list' or following.get('type') == 'list':
+        return 'Merge next cannot join list containers or create a list from mixed blocks. Edit the list items separately.'
+    if block.get('type') not in TEXT_BLOCK_TYPES or block.get('type') != following.get('type'):
+        return 'Merge next only joins adjacent text blocks of the same type. It does not convert headings or paragraphs into list items.'
+    if any(node.get('excluded') or node.get('review', {}).get('status') == 'excluded' for node in (block, following)):
+        return 'Restore excluded content before merging; excluded content must remain recoverable.'
+    if any(node.get('children') or node.get('footnote_body_id') or node.get('source_links')
+           or any(not isinstance(run, dict) or run.get('type', 'text') != 'text' for run in (node.get('runs') or [])) for node in (block, following)):
+        return 'These blocks contain links, formatting, notes or nested content that Merge next cannot preserve. Edit them separately.'
+    for index, node in enumerate((block, following)):
+        content = str(node.get('content') or '')
+        leading = len(content) - len(content.lstrip()) if index else 0
+        ending = len(content) if index else len(content.rstrip())
+        for ref in node.get('footnote_references', []):
+            if not isinstance(ref.get('start'), int) or not isinstance(ref.get('end'), int) or not leading <= ref['start'] < ref['end'] <= ending:
+                return 'These footnote positions cannot be preserved by Merge next. Edit the blocks separately.'
+    if block.get('type') == 'heading' and block.get('level') != following.get('level'):
+        return 'These headings have different levels. Keep their hierarchy separate.'
+    return ''
+
+
 def merge_with_next(project_dir: Path, block_id: str) -> dict[str, Any]:
     document = ensure_review_document(project_dir)
     siblings, index, block = _find_location(document.get("blocks", []), block_id)
-    if index + 1 >= len(siblings):
-        raise ValueError("There is no following block to merge")
-    following = siblings[index + 1]
-    if block.get("type") not in TEXT_BLOCK_TYPES or block.get("type") != following.get("type"):
-        raise ValueError("Only adjacent text blocks of the same type can be merged")
+    following = siblings[index + 1] if index + 1 < len(siblings) else None
+    reason = merge_next_reason(block, following)
+    if reason:
+        raise ValueError(reason)
     first = str(block.get("content", "")).rstrip()
     second = str(following.get("content", "")).lstrip()
+    references = copy.deepcopy(block.get('footnote_references', []))
+    offset = len(first) + (2 if first and second else 0) - (len(str(following.get('content', ''))) - len(second))
+    for reference in copy.deepcopy(following.get('footnote_references', [])):
+        reference['start'] += offset
+        reference['end'] += offset
+        references.append(reference)
     block["content"] = f"{first}\n\n{second}" if first and second else first or second
+    if references:
+        block['footnote_references'] = references
+        for note in document.get('footnotes', []):
+            for reference in note.get('references', []):
+                if reference.get('block_id') == following.get('id'):
+                    reference['block_id'] = block['id']
     block.pop("runs", None)
     provenance = block.setdefault("provenance", {})
     provenance.setdefault("review_changes", []).append(
@@ -354,8 +756,9 @@ def undo_last(project_dir: Path) -> dict[str, Any]:
         raise ValueError("There are no review actions to undo")
     latest = revisions[-1]
     restored = _read_document(latest)
+    saved = save_review_document(project_dir, restored, snapshot=False)
     latest.unlink()
-    return save_review_document(project_dir, restored, snapshot=False)
+    return saved
 
 
 def image_description_visual(document, block, *, create=False):
@@ -374,6 +777,17 @@ def image_description_visual(document, block, *, create=False):
     return visual
 
 
+def _mark_visual_changes(visual, previous):
+    fields = [field for field in ('short_alt', 'long_description', 'adjacent_text')
+              if str(previous.get('accessibility', {}).get(field) or '').strip() != str(visual.get('accessibility', {}).get(field) or '').strip()]
+    fields += [field for field in ('type', 'recovered_text') if previous.get(field, '') != visual.get(field, '')]
+    if fields and (previous.get('status') == 'reviewed' or previous.get('review_reason') == 'changed_after_approval'):
+        visual['review_reason'] = 'changed_after_approval'
+        visual['review_change_fields'] = sorted(set(previous.get('review_change_fields', [])) | set(fields))
+        if previous.get('status') == 'reviewed':
+            visual['status'] = 'reclassified'
+
+
 def update_complex_visual(
     project_dir: Path, visual_id: str, changes: dict[str, Any]
 ) -> dict[str, Any]:
@@ -382,9 +796,13 @@ def update_complex_visual(
     visual = next((item for item in visuals if str(item.get("id")) == visual_id), None)
     if visual is None:
         raise KeyError(f"Complex visual was not found: {visual_id}")
+    previous_visual = copy.deepcopy(visual)
+    if visual.get('source_block_id'):
+        source = _find_location(document.get('blocks', []), str(visual['source_block_id']))[2]
+        previous_visual.setdefault('accessibility', {})['short_alt'] = source.get('alt') or ''
     if "status" in changes:
         status = str(changes["status"])
-        if status not in {"needs_text_equivalent", "excluded", "reclassified"}:
+        if status not in {"needs_text_equivalent", "excluded", "reclassified", 'reviewed', 'not_applicable'}:
             raise ValueError(f"Unsupported complex visual status: {status}")
         visual["status"] = status
     if "type" in changes:
@@ -395,6 +813,7 @@ def update_complex_visual(
     if "recovered_text" in changes:
         visual["recovered_text"] = str(changes["recovered_text"])
     accessibility = visual.setdefault("accessibility", {})
+    previous_text = {field: str(previous_visual.get('accessibility', {}).get(field) or '').strip() for field in ('short_alt', 'long_description', 'adjacent_text')}
     for field in ("short_alt", "long_description", "adjacent_text"):
         if field in changes:
             accessibility[field] = str(changes[field]).strip()
@@ -405,8 +824,21 @@ def update_complex_visual(
         if "short_alt" in changes:
             block["alt"] = "" if block.get("decorative") else accessibility["short_alt"]
             accessibility["short_alt"] = block["alt"]
-        if any(field in changes for field in ("short_alt", "long_description", "adjacent_text")) and block.get("review", {}).get("status") != "excluded":
+        changed_text = any(field in changes and previous_text[field] != accessibility.get(field, '') for field in previous_text)
+        if changed_text and block.get("review", {}).get("status") != "excluded":
             _set_status(block, "needs_review")
+    if 'review_note' in changes:
+        visual['review_note'] = str(changes['review_note']).strip()
+    _mark_visual_changes(visual, previous_visual)
+    if visual.get('status') == 'reviewed':
+        from .accessibility import visual_readiness
+        if not visual_readiness(document, visual)['complete']:
+            raise ValueError('Add short alt text and either a long description or adjacent text before marking the description reviewed')
+        if previous_visual.get('status') != 'reviewed' and changes.get('status') == 'reviewed' and visual.get('source_block_id') and block.get('review', {}).get('status') != 'excluded':
+            _set_status(block, 'approved')
+    if visual.get('status') in {'reviewed', 'not_applicable', 'excluded'}:
+        visual.pop('review_reason', None)
+        visual.pop('review_change_fields', None)
     visual["reviewed_at"] = utc_now()
     return save_review_document(project_dir, document)
 
@@ -422,13 +854,20 @@ def update_accessibility_decision(
 
 
 def review_progress(document: dict[str, Any]) -> dict[str, int]:
+    from .publication import effective_block_status
     counts = {state: 0 for state in BLOCK_REVIEW_STATES}
     blocks = list(document.get("blocks", []))
     for block in blocks:
-        status = str(block.get("review", {}).get("status", _default_block_status(block)))
+        status = effective_block_status(block)
         counts[status if status in counts else "unreviewed"] += 1
     reviewed = counts["approved"] + counts["needs_review"] + counts["excluded"]
-    return {"total": len(blocks), "reviewed": reviewed, **counts}
+    from .accessibility import visual_readiness
+    visuals = document.get('review', {}).get('complex_visuals', [])
+    pending_blocks = counts['unreviewed'] + counts['needs_review']
+    pending_descriptions = sum(not visual_readiness(document, visual)['complete'] for visual in visuals)
+    return {"total": len(blocks), "reviewed": reviewed, **counts,
+            'pending_blocks': pending_blocks, 'pending_descriptions': pending_descriptions,
+            'pending_tasks': pending_blocks + pending_descriptions, 'description_total': len(visuals)}
 
 
 def archive_review_document(project_dir: Path, reason: str) -> Path | None:

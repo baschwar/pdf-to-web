@@ -473,7 +473,7 @@ def _clean_list_markers(blocks: list[dict[str, Any]]) -> None:
                     style = source_style
                     block["marker_style"] = source_style
             first_item = next((child for child in children if child.get("type") == "list_item"), None)
-            if ordered and first_item is not None:
+            if ordered and first_item is not None and not block.get('normalization', {}).get('manual_list_edit'):
                 original_marker_text = str(
                     first_item.get("provenance", {}).get("raw", {}).get("content")
                     or first_item.get("content", "")
@@ -487,6 +487,10 @@ def _clean_list_markers(blocks: list[dict[str, Any]]) -> None:
                         block["start"] = start
             for child in children:
                 if child.get("type") != "list_item":
+                    continue
+                if child.get('normalization', {}).get('preserve_list_text'):
+                    # Explicit one-item recovery retains literal text and
+                    # footnote offsets; source heuristics must not rewrite it.
                     continue
                 original = str(child.get("content", ""))
                 content = LIST_MARKER_RE.sub("", original, count=1).strip()
@@ -872,13 +876,23 @@ def _apply_link_annotations(document: dict[str, Any], annotations: list[dict[str
             and _bbox_overlap(block.get("provenance", {}).get("bounding_box"), bbox) > 0
         ]
         visible_variants = tuple(dict.fromkeys((url, unquote(url))))
+        def visible_url(block):
+            content = str(block.get('content', ''))
+            exact = next((visible for visible in visible_variants if visible in content), None)
+            if exact:
+                return exact
+            # The PDF annotation supplies the destination. Match only an otherwise
+            # identical visible URL with extraction-added/missing hyphens.
+            matches = [match.group() for match in re.finditer(r'https?://[^\s<>()]+', content)
+                       if match.group().replace('-', '') in {value.replace('-', '') for value in visible_variants}]
+            return matches[0] if len(set(matches)) == 1 else None
         content_matches = [
             block for block in candidates
-            if any(visible in str(block.get("content", "")) for visible in visible_variants)
+            if visible_url(block)
         ]
         block = max(
             content_matches or candidates,
-            key=lambda item: _bbox_overlap(item.get("provenance", {}).get("bounding_box"), bbox),
+            key=lambda item: (not bool(item.get('children')), _bbox_overlap(item.get("provenance", {}).get("bounding_box"), bbox)),
             default=None,
         )
         record = dict(annotation)
@@ -886,7 +900,7 @@ def _apply_link_annotations(document: dict[str, Any], annotations: list[dict[str
         record["inline_preserved"] = False
         if block:
             content = str(block.get("content", ""))
-            for visible in visible_variants:
+            for visible in [visible_url(block)] if visible_url(block) else []:
                 start = content.find(visible)
                 if start >= 0:
                     ranges.setdefault(str(block.get("id")), []).append((start, start + len(visible), url))

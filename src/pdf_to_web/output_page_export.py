@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import html as escaping
 import json
 import shutil
@@ -13,7 +12,7 @@ from pathlib import Path
 
 from . import __version__
 from .errors import PdfToWebError
-from .export import _write_media_manifest, _local_image_path
+from .export import _write_media_manifest, _html_with_local_assets
 from .exporters import html, gutenberg, wxr
 from .output_pages import page_document, pages, status, validate
 from .project import load_project
@@ -48,6 +47,8 @@ def export_pages(project_dir: Path, page_id=None, profile=None):
     selected = [p for p in pages(document) if page_id is None or p['id'] == page_id]
     if not selected:
         raise PdfToWebError('Output page was not found')
+    from .publication import require_ready, register_artifacts
+    require_ready(document, selected)
     output = project_dir / 'output'
     output.mkdir(exist_ok=True)
     destination = output / ('pages' if page_id is None else 'page-' + str(pages(document).index(selected[0]) + 1))
@@ -76,15 +77,11 @@ def export_pages(project_dir: Path, page_id=None, profile=None):
             if any(i.get('kind') == 'footnote' for i in projected['output_unresolved_targets']):
                 raise PdfToWebError('Recover missing footnote bodies before exporting this page')
             # Pack local semantic-preview assets; WordPress still uses explicit mapping/placeholder policy.
-            for block in projected['blocks']:
-                if block.get('type') == 'image':
-                    source = _local_image_path(project_dir, str(block.get('src') or ''))
-                    if source:
-                        name = hashlib.sha256(source.read_bytes()).hexdigest()[:16] + source.suffix
-                        shutil.copy2(source, stage / 'assets' / name)
-                        block['src'] = 'assets/' + name
-                        if block['src'] not in dependencies:
-                            dependencies.append(block['src'])
+            projected, assets = _html_with_local_assets(project_dir, projected, stage, name_document=document)
+            for asset in assets:
+                relative = str(asset.relative_to(stage))
+                if relative not in dependencies:
+                    dependencies.append(relative)
             markup = gutenberg.render_document(projected, profile, config)
             files = {'html': p['slug'] + '.html', 'gutenberg': p['slug'] + '.gutenberg.html', 'wxr': p['slug'] + '.xml'}
             (stage / files['html']).write_text(html.render_document(projected), encoding='utf-8')
@@ -164,6 +161,7 @@ def export_pages(project_dir: Path, page_id=None, profile=None):
             raise
         if backup.exists():
             shutil.rmtree(backup)
+        register_artifacts(project_dir, document, load_project(project_dir), [archive, *destination.rglob('*')])
         return [archive, destination / 'manifest.json', destination / 'contents.html', destination / 'publications.xml',
                 *[destination / f for p in manifest['pages'] for f in p['files'].values()]]
     finally:

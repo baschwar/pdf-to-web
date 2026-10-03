@@ -11,6 +11,49 @@ from .project import utc_now
 ACCESSIBILITY_SCHEMA = "pdf-to-web-accessibility-v1"
 DECISIONS = {"unresolved", "approved", "not_applicable"}
 
+
+def visual_readiness(document: dict[str, Any], visual: dict[str, Any]) -> dict[str, Any]:
+    block, source_excluded = next(((b, excluded) for b, excluded in _walk_visibility(document.get('blocks', [])) if str(b.get('id')) == str(visual.get('source_block_id'))), (None, False))
+    status = visual.get('status')
+    if status in {'excluded', 'not_applicable'} or source_excluded:
+        return {'complete': True, 'text_complete': True, 'review_complete': True, 'label': 'Not applicable' if status == 'not_applicable' else 'Excluded', 'block_id': visual.get('source_block_id'), 'reason': '', 'action': '', 'reason_code': ''}
+    if block and block.get('decorative'):
+        return {'complete': True, 'text_complete': True, 'review_complete': True, 'label': 'Decorative image', 'block_id': block['id'], 'reason': '', 'action': '', 'reason_code': ''}
+    a = visual.get('accessibility', {})
+    short = block.get('alt', '') if block else a.get('short_alt', '')
+    text_complete = bool(str(short).strip() and (str(a.get('long_description') or '').strip() or str(a.get('adjacent_text') or '').strip()))
+    reviewed = status == 'reviewed'
+    complete = text_complete and reviewed
+    label = 'Reviewed' if complete else 'Text complete; manual review pending' if text_complete else 'Text equivalent needed'
+    reason_code = '' if complete else 'changed_after_approval' if visual.get('review_reason') == 'changed_after_approval' else 'text_equivalent_incomplete' if not text_complete else 'reclassified_pending' if status == 'reclassified' else 'manual_review_pending'
+    reason = ''
+    if reason_code == 'changed_after_approval':
+        labels = {'short_alt': 'short alt text', 'long_description': 'long description', 'adjacent_text': 'adjacent text equivalent', 'type': 'classification', 'recovered_text': 'recovered source text'}
+        fields = [labels[field] for field in visual.get('review_change_fields', []) if field in labels]
+        reason = 'Changed since Reviewed: ' + ', '.join(fields) + '.' if fields else 'This description changed after it was marked Reviewed.'
+    elif reason_code == 'reclassified_pending':
+        reason = 'Reclassified is not a completed review decision.'
+    elif reason_code == 'text_equivalent_incomplete':
+        reason = 'The required text equivalent is incomplete.'
+    elif reason_code:
+        reason = 'No current Reviewed decision is recorded for this description.'
+    action = '' if complete else ('Review the saved text' if text_complete else 'Add short alt text and either a long description or adjacent text equivalent') + ', then choose Reviewed and save. Choose Not applicable if short alt text is sufficient.'
+    return {'complete': complete, 'text_complete': text_complete, 'review_complete': reviewed, 'label': label, 'block_id': visual.get('source_block_id'), 'reason_code': reason_code, 'reason': reason, 'action': action}
+
+
+def _walk_visibility(blocks, ancestor_excluded=False):
+    from .exporters.common import is_excluded
+    for block in blocks:
+        excluded = ancestor_excluded or is_excluded(block)
+        yield block, excluded
+        yield from _walk_visibility(block.get('children', []), excluded)
+
+
+def _walk(blocks):
+    for b in blocks:
+        yield b
+        yield from _walk(b.get('children', []))
+
 def _page(block: dict[str, Any]) -> int | None:
     value = block.get("provenance", {}).get("source_page")
     return int(value) if isinstance(value, (int, float)) else None
@@ -45,21 +88,27 @@ def _link_items(block: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         text = str(run.get("text") or "").strip()
         normalized = re.sub(r"\s+", " ", text).lower()
-        if not text or normalized in {"click here", "here", "more", "read more", "link"}:
+        raw_url = bool(re.match(r"^(?:https?://|www\.)", text, re.I))
+        if raw_url or not text or normalized in {"click here", "here", "more", "read more", "link"}:
             items.append(
                 _item(
                     f"link:{block.get('id')}:{index}",
                     "links",
-                    "Link purpose needs review",
-                    f'The link text "{text or "(empty)"}" may not identify its destination.',
+                    "URL used as link text" if raw_url else "Link purpose needs review",
+                    (f'The link text "{text}" is a URL. Use a descriptive label in Structure, or record why the visible URL is needed.' if raw_url else f'The link text "{text or "(empty)"}" may not identify its destination.'),
                     block=block,
                     decision_allowed=True,
                 )
             )
+    for child in block.get('children', []):
+        for item in _link_items(child):
+            item['block_id'] = str(block.get('id'))
+            items.append(item)
     return items
 
 
 def assess_document(document: dict[str, Any]) -> dict[str, Any]:
+    from .publication import effective_block_status
     items: list[dict[str, Any]] = []
     decisions = document.get("accessibility_review", {}).get("decisions", {})
     headings: list[dict[str, Any]] = []
@@ -71,14 +120,15 @@ def assess_document(document: dict[str, Any]) -> dict[str, Any]:
             continue
         block_id = str(block.get("id") or "unknown")
         block_type = block.get("type")
-        review_status = block.get("review", {}).get("status", "unreviewed")
+        review_status = effective_block_status(block)
         if review_status in {"unreviewed", "needs_review"}:
+            from .review_state import block_review_reason
             items.append(
                 _item(
                     f"structure:{block_id}",
                     "structure",
                     "Structural review incomplete",
-                    f"This {block_type or 'unknown'} block is {str(review_status).replace('_', ' ')}.",
+                    block_review_reason(block) or f"This {block_type or 'unknown'} block is {str(review_status).replace('_', ' ')}.",
                     block=block,
                 )
             )
@@ -146,30 +196,24 @@ def assess_document(document: dict[str, Any]) -> dict[str, Any]:
         )
 
     for visual in document.get("review", {}).get("complex_visuals", []):
-        if visual.get("status") == "excluded":
+        readiness = visual_readiness(document, visual)
+        if readiness['complete']:
             continue
         visual_id = str(visual.get("id") or "unknown")
-        equivalent = visual.get("accessibility", {})
-        if not str(equivalent.get("short_alt") or "").strip() or not (
-            str(equivalent.get("long_description") or "").strip()
-            or str(equivalent.get("adjacent_text") or "").strip()
-        ):
-            items.append(
-                {
-                    **_item(
-                        f"complex:{visual_id}",
-                        "complex_visuals",
-                        "Complex visual needs a text equivalent",
-                        "Provide short alt text and either a long description or adjacent text equivalent.",
-                    ),
-                    "source_page": visual.get("source_page"),
-                    "visual_id": visual_id,
-                }
-            )
+        items.append({
+            **_item(f"complex:{visual_id}", "complex_visuals", "Description needs manual review" if readiness['text_complete'] else "Complex visual needs a text equivalent",
+                    readiness['reason'] + ' ' + readiness['action']),
+            "source_page": visual.get("source_page"), "visual_id": visual_id,
+            "block_id": visual.get("source_block_id"),
+        })
 
     for issue in document.get("review", {}).get("issues", []):
         code = str(issue.get("code") or "diagnostic")
         key = f"diagnostic:{code}:{issue.get('page', 'document')}"
+        referenced = {str(value) for value in issue.get('block_ids', [])}
+        if issue.get('block_id') is not None:
+            referenced.add(str(issue['block_id']))
+        existing = {str(block.get('id')) for block in _walk(document.get('blocks', []))}
         items.append(
             {
                 **_item(
@@ -180,6 +224,15 @@ def assess_document(document: dict[str, Any]) -> dict[str, Any]:
                     decision_allowed=True,
                 ),
                 "source_page": issue.get("page"),
+                "missing_block_ids": sorted(referenced - existing),
+                "related_blocks": [
+                    {"id": str(block["id"]), "position": index,
+                     "source_page": _page(block), "type": block.get("type", "unknown"),
+                     "status": effective_block_status(block),
+                     "preview": str(block.get("content") or block.get("alt") or block.get("caption") or "")[:160]}
+                    for index, block in enumerate(document.get("blocks", []), 1)
+                    if any(str(node.get('id')) in referenced for node in _walk([block]))
+                ],
             }
         )
 
@@ -189,8 +242,16 @@ def assess_document(document: dict[str, Any]) -> dict[str, Any]:
         item["status"] = decision if decision in DECISIONS else "unresolved"
         item["note"] = str(saved.get("note") or "")
         item["updated_at"] = saved.get("updated_at")
+        if item['category'] == 'diagnostics' and item['id'].startswith('diagnostic:block_review_required:'):
+            related = item.get('related_blocks', [])
+            if related and not item.get('missing_block_ids') and all(b['status'] in {'approved', 'excluded'} for b in related):
+                item['original_message'] = item['message']
+                item['message'] = 'The blocks flagged during extraction are now approved or excluded. No block review remains for this note.'
+                item['resolved_by_review'] = True
+                if item['status'] == 'unresolved':
+                    item['status'] = 'resolved'
 
-    counts = {"total": len(items), "unresolved": 0, "approved": 0, "not_applicable": 0}
+    counts = {"total": len(items), "unresolved": 0, "approved": 0, "not_applicable": 0, 'resolved': 0}
     categories: dict[str, int] = {}
     for item in items:
         counts[item["status"]] += 1

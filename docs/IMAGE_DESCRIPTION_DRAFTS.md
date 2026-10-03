@@ -6,7 +6,10 @@ Accepted fields continue to drive HTML, Gutenberg, WXR and Output Pages.
 
 ## Review workflow
 
-1. Open Structure. Images needing descriptions are selected by default; approved,
+1. Open Structure and the distinct **Image description drafts** section, then
+   expand **Open drafting tools (optional)**. **Draft image descriptions** beside
+   an image's alternatives or Accessibility finding opens and focuses it directly.
+   Images needing descriptions are selected by default; approved,
    excluded and decorative images are not. Select individual images as needed.
 2. Inspect the image, current alt/caption, nearby text and source page. Expand
    **Image and context** to confirm an asset when extraction supplied only page
@@ -25,7 +28,9 @@ Accepted fields continue to drive HTML, Gutenberg, WXR and Output Pages.
    the selected images. The toolbar shows selected and pending counts.
    **Export pending images ZIP** uses images needing descriptions that have no
    ready or rejected draft and are not currently generating, regardless of the
-   checkboxes. Export displays and focuses a ZIP download link; click it to save.
+   checkboxes. Export saves the ZIP in this project's `output/image-drafts/`,
+   displays its full saved path and focuses a browser download link for a copy.
+   Repeated exports use descriptive unique filenames and preserve earlier ZIPs.
    Cancel controls appear only for selected awaiting-response or generating requests.
    Local or cloud generation is optional.
 4. Refresh results to review ready drafts beside the accepted fields. Polling
@@ -46,6 +51,22 @@ Accepted fields continue to drive HTML, Gutenberg, WXR and Output Pages.
 6. Continue Structure/Accessibility and Output Pages review, then preview and
    export accepted content. Undo includes draft edits, imports, associations and
    field application. Save/reopen retains both drafts and accepted content.
+
+Drafts are not generated automatically when a project is created or reopened.
+Manual exchange requires attaching the package to the chosen tool and importing
+its completed response JSON; it does not inherit another project's descriptions.
+Local Ollama and paid OpenAI generation require the explicit generation action
+and their existing provider setup/consent. Importing drafts never grants approval.
+
+Request packages use the existing project output root, including chosen folders:
+`output/image-drafts/<project>-image-drafting-request-<UTC time>-<unique suffix>.zip`.
+Their ZIP instructions, images, context and identity fields retain the existing
+exchange schema. ZIP creation stages a temporary file in that directory and
+publishes a complete file without overwriting an earlier package. A failed write
+cleans up the incomplete temporary file and reports folder/space guidance. Output
+paths that resolve outside the project are rejected. Older `request-<uuid>.zip`
+packages remain usable. This is an AI drafting handoff, separate from publication
+and WordPress media-upload packages; the browser download matches the saved file.
 
 **Regenerate / retry** explicitly requests a replacement through the selected
 provider. **New manual request** explicitly creates a replacement exchange request.

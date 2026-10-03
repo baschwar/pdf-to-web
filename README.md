@@ -49,8 +49,39 @@ OpenDataLoader requires Python 3.10 or newer and Java 11 or newer. The doctor
 command checks both and looks for common Homebrew Java installations when the
 default `java` command is too old.
 
-Poppler's `pdfinfo` and `pdftoppm` commands are also required for source-page
-rendering. Node.js 20.19 or newer and `npm install` are required only for the
+Poppler is a separate system dependency for source-page rendering; installing
+the Python project does not install its `pdfinfo` and `pdftoppm` commands.
+On macOS with [Homebrew](https://formulae.brew.sh/formula/poppler) already set up:
+
+```sh
+brew install poppler
+command -v pdfinfo
+command -v pdftoppm
+pdftoppm -v
+.venv/bin/pdf-to-web doctor
+```
+
+On Debian/Ubuntu, use `sudo apt-get install poppler-utils`. On Windows, install
+Poppler through your approved package source and add its executable directory
+to `PATH`; verify with `where.exe pdfinfo`, `where.exe pdftoppm`, and
+`pdf-to-web doctor`. Respect any administrator or security prompt.
+
+If Structure reports **Poppler pdftoppm was not found on the app’s PATH**,
+finish setup, stop and relaunch PDF to Web, then reopen the same project. The
+macOS launcher includes `/opt/homebrew/bin` and `/usr/local/bin` so standard
+Homebrew installations work even with a minimal Finder/Terminal PATH. For a
+custom installation, launch from a terminal whose PATH includes Poppler.
+Moving the PDF or creating another project does not supply the renderer, and
+project regeneration is unnecessary. **Retry source page** handles transient
+failures; **Open source PDF** remains available for comparison.
+
+Extracted image assets are different from rendered source pages. Existing
+`review/source-pages/page-*.png` files can display even without Poppler, while
+uncached pages need it. A supplemental-extraction error mentioning **Pillow**
+concerns the Python image package, not Poppler; inspect that separate error
+before installing anything or re-extracting a project.
+
+Node.js 20.19 or newer and `npm install` are required only for the
 WordPress Preview; Semantic Preview and the other Python workflows do not need
 Node.js.
 
@@ -62,8 +93,8 @@ Control-click the file, choose **Open**, and approve it. Windows users can
 double-click `Launch PDF to Web.bat` after setup. Both launchers use the local
 `.venv` and run the same `pdf-to-web serve` command documented below.
 
-The launchers intentionally report missing setup rather than installing
-software or changing the computer automatically.
+The launchers report missing setup without installing software. The macOS
+launcher adds the standard Homebrew executable paths for its app process only.
 
 ### Platform support
 
@@ -112,21 +143,52 @@ metadata are written to `output/wordpress/assets/` and
 `output/wordpress/reports/media-manifest.{json,md}` for later Media Library
 mapping. Direct upload is intentionally outside the current scope.
 
-For a credential-free Media Library workflow, export Gutenberg or WXR and use
-the generated `output/wordpress/media-upload.zip` plus
-`output/wordpress/reports/media-mapping.csv`. Upload the ZIP contents through
-WordPress, enter each resulting attachment ID and full media URL in the CSV,
-and import that CSV on PDF to Web's Export screen. The stable `block_id` column
-correlates each WordPress attachment with its source figure even when WordPress
-renames the uploaded file. Regenerate Gutenberg or WXR after import to replace
-the upload placeholders with proper Image blocks. Rows without a URL are left
-unresolved; decorative images are excluded from the upload package.
+On **Export**, first choose an **Image filename prefix** and select **Prepare
+images ZIP and mapping CSV**. The default uses the document title; for example,
+`citi-training-` produces `citi-training-image1.png`, `citi-training-image2.png`,
+etc. Original assets are unchanged. Names follow immutable extraction order and
+remain stable when content is reordered, excluded or arranged into output pages.
+The prefix persists with review state and supports **Undo last change**.
+
+Export step 1 groups **Prepare images ZIP and mapping CSV** with **Undo last
+change**. In step 2, each media file chooser and its matching/import button share
+a row. Step 3 groups **Copy page title** and **Export reviewed document** in one
+action row. These rows wrap on narrow screens. Primary actions that move the
+export workflow forward are green; Undo and Copy are gray, and disabled actions
+remain visibly disabled.
+
+Download `output/wordpress/media-upload.zip` and
+`output/wordpress/reports/media-mapping.csv` before exporting content. The ZIP
+contains all included local image assets, including decorative images; excluded
+content stays excluded, and repeated references share a file. Decorative images
+do not need mapping rows. Missing local assets are reported in the media manifest.
 
 Instead of entering every URL and attachment ID manually, use WordPress Tools >
 Export to download a Media WXR/XML file after uploading the images, then choose
 **Match WordPress media** on PDF to Web's Export screen. Exact filenames are
 matched into `media-mapping.csv`; unmatched or duplicate filenames are left for
-manual review rather than guessed.
+manual review rather than guessed. XML matching preserves current reviewed alt
+text and captions, even if they changed after preparing the CSV.
+
+Mapping instructions appear as ordered steps. Matching scrolls to a result table
+with prominent totals and lists every unmatched or ambiguous image's filename,
+description, source page and link to its Structure block. Download the current
+CSV from that result to finish any remaining mappings manually.
+
+Alternatively, enter each full WordPress media URL and optional attachment ID in
+the CSV and import it under **Map images manually with a CSV**. Stable `block_id`
+values correlate attachments with source figures even when WordPress renames
+files. After mapping, **Export and copy content** generates the HTML, Gutenberg
+or WXR with mapped URLs. Unresolved meaningful images remain visible WordPress
+upload placeholders. Mapping changes clear stale copy/download results until
+export is regenerated. When a mapping changes an approved image, its source
+block needs a fresh manual approval. Counts, review links and the Export button
+update immediately after XML/CSV mapping and Undo; follow Export readiness links
+to review the changed blocks before exporting. Identical mappings preserve
+existing approvals, and a failed import leaves saved review state unchanged. Standalone semantic HTML copies unmapped local images to
+its `assets/` folder with the same meaningful names and uses mapped URLs when
+available. Changing the prefix after uploading requires manual filename matching
+or a new upload. This workflow needs no WordPress credentials in PDF to Web.
 
 Authenticated WordPress media upload and direct draft publishing are deferred
 in `docs/FUTURE_FEATURES.md`.
@@ -140,8 +202,31 @@ pdf-to-web serve
 ```
 
 The Projects screen can create a project, import its source PDF, run extraction
-and normalization, open an existing project, and reopen recent projects. New
-projects are stored under `~/Documents/PDF to Web Projects`. The command prints
+and normalization, open an existing project, and reopen recent projects. Choose
+**Folder I choose** and **Choose destination folder** to use that exact folder as
+the project root. The name does not add another directory below it. **Default
+location** creates a named folder under `~/Documents/PDF to Web Projects`; the
+full destination is shown before you choose the input PDF. The input PDF's folder
+and project folder are separate choices. The original is preserved and a copy
+is placed in `source/` (a PDF already there is used in place).
+
+Each project contains its own `project.json`, source copy, extraction/assets,
+review/history/source-page cache and exports. The full working path appears on
+every workflow page and in Recent projects. Existing loose files are preserved,
+but an existing project or conflicting `extraction`, `review` or `output` entry
+is rejected. An existing `source` folder may contain only regular PDF files;
+filename collisions use a suffix without overwriting. Picker cancellation
+creates no files. A later conversion failure retains the partial project at its
+reported destination and leaves the previous project open. Reopen the retained
+folder to inspect its incomplete status; correct the error, use the existing CLI
+to import the PDF if its source copy is missing, then finish extraction and
+normalization before reviewing. No existing projects
+are moved. Global Recent projects preferences remain in the application config
+directory described below. A failure to update that list displays a warning;
+the saved project can still be opened directly. Choosing a folder does not install
+the PDF renderer.
+
+The command prints
 and opens a one-use bootstrap URL, binds only to `127.0.0.1`, and keeps all
 project data local. Use `--project /path/to/my-report` to open a known project at
 startup or `--no-browser` to print the URL without opening it automatically.
@@ -167,6 +252,139 @@ installed by `npm install`; it never requires WordPress, PHP, MySQL, Docker, or
 an external service. See `docs/GUTENBERG_PREVIEW.md` for its compatibility and
 security boundaries.
 
+The original document filename appears above each workflow screen and in the
+browser tab title. Button groups have spacing, and small text links below
+Previous/Next filter reading order to all blocks, approved blocks, blocks needing
+review, or excluded blocks. Each filter includes its current count in parentheses;
+the visible/total block count shares that line when space permits and wraps on
+narrow screens. The active link is emphasized and selection persists
+when the screen reloads. A direct finding link reveals and focuses its block even
+when filtered out. Saving block content, link text or review state returns to that
+block below the sticky toolbar. Nested link edits return to their owning list;
+if the saved block no longer matches the active filter, All opens to keep it
+visible. Corrections opened from Accessibility still return to the finding.
+Arrange Pages keeps **Continue to Preview** separate from the
+four arrangement actions, aligned to the right. Preview's top and bottom
+**Continue to Export** buttons also align to the right, with space between the
+Semantic HTML and WordPress Preview mode buttons.
+
+Final workflow actions align to the right throughout Document, Structure,
+Accessibility, Arrange Pages, Preview and Export, including the green completion
+handoffs and page/document export actions. Action rows wrap on narrow screens.
+
+Accessibility findings identify their source page and current Reading order block
+number, including the owning list for nested-link findings. Open block controls
+align to the right; numbering follows reordering and Undo and includes excluded
+blocks in the same numbering used by Structure.
+
+Visual-description cards show current text-equivalent readiness instead of an
+unconditional warning. Short alt text plus either a long description or adjacent
+equivalent is required for a complex image; adjacent text is optional when a long
+description is present, and recovered source text is always optional. The long
+description or its adjacent-text fallback is included beside the image in exports. **Reviewed**
+explicitly approves the linked image too. **Not applicable** records that this
+description is unnecessary without excluding the image. Saving unchanged text
+preserves image approval. All changes support Undo. Structure's green completion
+message requires resolved block decisions and reviewed or inapplicable descriptions.
+Filled text alone does not complete a description: **Reclassified** still needs a
+manual **Reviewed** or **Not applicable** decision. Document, Structure,
+Accessibility and Export use this same distinction. Export findings link directly
+to the affected block or description, with its source page and readable context.
+
+For older approved lists containing pending nested items, reopening can preserve
+the existing approval only when a local retained snapshot proves the exact same
+content, project, review session and approval timestamp, with no newer conflicting
+history or child edit. The versioned evidence records the snapshot filename and
+SHA-256 without approving children or changing the original decision timestamp.
+Without that proof, the list appears as needing review with an explanation that
+the earlier approval cannot be verified. Review it and approve the saved content;
+Undo restores the preceding decision and its evidence.
+
+Document shows review progress and **Review structure** at the top, with one set
+of counts. **Pending** counts remaining block and description review tasks, with
+each kind shown separately. For example, 54 reviewed blocks and five descriptions
+needing review show **Pending 5 review tasks** and **Total 54 blocks**. The same
+task summary appears in Structure, Accessibility, Arrange Pages, Preview and
+Export. Once block decisions and required descriptions are resolved, it offers
+the same green **Continue to Accessibility** handoff as Structure. Remaining
+Accessibility findings are reviewed there; an empty diagnostic count does not
+produce a yellow warning. Unresolved extraction diagnostics appear inside this
+same summary, with the recorded cause, publication impact and links to the
+affected block or description. A diagnostic concerning one of 54 pending block
+reviews does not make 55 review tasks. Checks without a block target explain
+their source-page or document scope and offer the original PDF and Accessibility
+decision link. Missing targets are identified rather than replaced with guessed
+links. Manual approval or exclusion resolves historical block-review notes;
+Undo restores them, and resolved notes remain in Accessibility history.
+Metadata labels are larger and bold above their values.
+
+Description links open the exact editor and keep a visible selection outline and
+**Selected description for review** marker. Each editor shows status once, source
+context, the reason review is needed and the next action. Reclassified text needs
+a manual decision; a saved timestamp alone does not prove earlier approval.
+Only an actual edit invalidating a recorded Reviewed decision adds a changed
+since Reviewed reason and the affected field names. Fresh review clears that
+reason; save/reopen and Undo preserve it. These optional review annotations use
+the existing stored document and do not migrate or approve existing data.
+
+Field labels are consistently bold, including generated controls; values and help
+remain ordinary weight. Export has one readiness list per target, Arrange Pages
+labels its separate Structure and Page decisions, and repeated status/guidance is
+removed. Title-export details remain available in **How the title is exported**.
+Preview retains forward actions at the top and bottom of its long content.
+
+Structure gives **Image description drafts** a distinct heading and outlined
+section. **Open drafting tools (optional)** keeps its longer tools collapsed;
+**Draft image descriptions** links beside image alternatives and in Accessibility
+open and focus that workflow. **Longer image descriptions** also stays collapsed
+so Source page and Reading order stay in view. The description summary
+shows how many need review; finding links expand and focus the relevant card.
+The section explains when to add a longer description and when to choose
+**Not applicable** because short alt text is sufficient. Extraction details are
+collapsed under **Why these images appear here**.
+Extraction flags pages with at least five retained images or assets as possible
+complex visuals. This heuristic requires human classification; a saved image
+long description also creates a description record. All images remain in Reading
+order, and completed descriptions remain available for editing and export.
+Manual response instructions use four ordered steps. Approved blocks have a
+disabled gray Approve button until an edit or Needs review action requires review
+again. **Saved review history** contains Undo, including earlier sessions' saved
+changes. A compact gray **Undo last saved change** button is also available in
+the sticky Reading order toolbar while editing blocks. Both restore the most
+recent saved project change and are disabled when no revision snapshots remain.
+Undo keeps the selected block in view when that block remains in the restored
+document. Unsaved typing is not a saved revision.
+
+Historical extraction block-review notes collapse under **Resolved extraction
+note** after their referenced blocks are approved or excluded. Other Accessibility
+findings can still need review. URL-as-link-text warnings link to Structure, where
+**Link text** edits preserve the destination and rich formatting; edits require
+review again. Link-label edits with footnote offsets are held for structural
+review rather than changing citation positions silently.
+
+Reload keeps the selected reading-order block. Changing the filter selects the
+next matching block (or the previous match) when necessary; an empty filter
+shows a contextual explanation and **Show all blocks** link beside the disabled
+navigation in the sticky toolbar. An empty Needing review filter says no items
+are left in that filter; other description or Accessibility tasks may remain.
+Recovery restores All and focuses the remembered block (or the first available
+block) without reloading or discarding unsaved typing. Filters do not switch
+automatically when the last matching block is approved.
+When saved evidence shows an approved block changed, Structure and Accessibility
+explain why fresh approval is needed. Never-approved blocks keep their ordinary
+review status. Undo restores both the content and its approval reason.
+
+In Export, **My WordPress template supplies the page title (H1)** defaults to on.
+Copy the displayed page title into WordPress's title field, then paste the generated
+body or Gutenberg blocks. Semantic HTML provides both a standalone page with one
+H1 and a separate `.body.html` without the title heading; only the body gets the
+copy action in this mode. Gutenberg and WXR omit the title heading. **Body headings**
+defaults to H2 sections; choose nested headings to retain hierarchy without skipped
+levels. Settings persist in the review document and support Undo. Source heading
+IDs, text, provenance and review decisions are retained. Legacy CLI exports keep
+their title unless template mode was saved, and all publication heading projections
+limit title H1s to one. The page template must supply its own single H1.
+
 Reviewed content is stored in `review/current.json`; immutable normalized input
 remains in `extraction/normalized/document.json`, and revision snapshots are
 kept under `review/revisions/`. Files under `extraction/raw/` are never changed
@@ -174,12 +392,71 @@ by review operations. See `docs/PHASE2_REVIEW_APP.md` for the architecture,
 security model, and current limits. The completion evidence and remaining
 external acceptance checks are recorded in `docs/PHASE2_CLOSEOUT.md`.
 
+Accessibility automatically runs bundled axe-core 4.13.0 against the current
+semantic HTML when the screen opens. WCAG 2.2 A/AA findings and uncertain checks
+appear separately from document review, with links to affected Structure blocks
+where available. No generate button, account, API key, Node runtime or external
+request is needed for this browser scan. Reopening or refreshing Accessibility
+checks the latest edits. Summary and finding tables emphasize rule and
+affected-element counts. **View tested rules** opens a compact dialog, initially
+showing the passed rules. Filter by result to see each rule's name, ID, purpose,
+element count, WCAG criteria and guidance. Not-applicable rules found no matching
+content; passed rule counts are not counts of WCAG success criteria. The dialog
+uses the current scan and does not change review decisions.
+Results are for the semantic document at desktop width; individual arranged pages,
+final WordPress styling/plugins and human assistive
+technology testing remain separate. CLI archival reports contain document review,
+not browser axe results. To update the bundled engine, install the pinned npm
+package and copy `axe.min.js` and `LICENSE` into the package's static directory.
+
+Accessibility's **Open block** buttons carry a return to the originating finding.
+Saving an edit or review action on that block returns to Accessibility and reruns
+the HTML scan. Ordinary Structure edits stay in Structure. Label edits still need
+block review; approving that block from the same return link also returns to the
+issue list. Resolved extraction notes are collapsed under a history heading and
+require no action. Save decision buttons use a compact width. Once document
+findings are resolved and the current scan has neither detected issues nor
+uncertain checks, a green **Continue to Arrange Pages** button appears at the bottom.
+
+Arranged semantic page previews use the retained local images even when WordPress
+URLs have been mapped. Arrange Pages' Undo is gray. Preview offers green
+**Continue to Export** buttons above and below the preview. Export shows only
+outstanding readiness checks and extraction diagnostics, lists unmapped images,
+and confirms **Copied** beside Copy page title. Unresolved images still need
+WordPress URL mapping; content WXR import is optional and does not
+replace Media XML/CSV mapping when pasting Gutenberg.
+
+Whole-list text edits preserve existing item IDs, source metadata, nested content,
+exclusions and links when editing their labels. Unchanged list saves preserve
+review decisions and rich formatting. Dedicated link-label edits update the parent
+list editor too, so a later list save cannot restore an old label. Source PDF
+annotations can recover a visible URL damaged only by missing or added hyphens;
+the PDF supplies the destination, while the extracted words remain unchanged.
+
+If a list retains text but has no items, Structure displays that text and the
+reason it needs recovery. **Save block** recovers the displayed text as one item;
+it does not infer nested steps from indentation. Unchanged-text conversion to
+List also preserves one item, including existing links and formatting. Review
+the result before approving it. Blank saves are rejected, and publication stays
+blocked until the structure is recovered and reviewed. Preview serializers keep
+the retained content visible. Existing projects are not automatically repaired;
+Undo restores the prior state.
+
+List source outlines include recorded regions for nested text, including
+paragraphs. If an element has no recorded region, the source status explains
+that coverage is partial; unoutlined text may still be present in the block.
+No source coordinates are invented.
+
 The Accessibility screen derives review items from the current reviewed
 document, including incomplete structural decisions, image alternatives,
 complex-visual text equivalents, table semantics, heading hierarchy, link
 purpose, unknown content, and extraction diagnostics. Reviewer decisions and
-notes are stored in `review/current.json`. Generate
-`output/reports/accessibility-review.html` and `.json` from that screen or with:
+notes are stored in `review/current.json`. Results appear immediately on the
+Accessibility screen; extraction diagnostics link to affected blocks and show
+their current status. Structure shows Reviewed (approved), Pending (unreviewed
+or needs review), and Excluded counts. Excluded content remains recoverable.
+For archival reports, generate
+`output/reports/accessibility-review.html` and `.json` with:
 
 ```sh
 pdf-to-web export accessibility --project /path/to/my-report
@@ -187,9 +464,10 @@ pdf-to-web export accessibility --project /path/to/my-report
 
 These reports document human review. They do not certify WCAG conformance.
 
-**Structure** shows “All blocks have been reviewed” when every block is approved
-or excluded and offers **Continue to Accessibility**. Unreviewed or Needs review
-blocks keep the message hidden. Final approval brings the message into view; Undo
+**Structure** shows “Structure review complete” when every block is approved
+or excluded, with required descriptions reviewed or inapplicable, and offers
+**Continue to Accessibility**. Pending blocks or descriptions keep the message
+hidden. Final approval brings the message into view; Undo
 or a new pending review decision removes it. This completes block review, while
 Accessibility remains a separate step.
 
@@ -199,7 +477,13 @@ generate through an existing local Ollama
 vision model or an explicitly authorized paid OpenAI request, or export a manual
 request ZIP for your chosen tool. **Export pending images ZIP** includes images
 needing drafts without individual selection; the toolbar shows selected and pending
-counts and brings the download link into view. Cancel controls appear only for
+counts and brings the download link into view. Each request ZIP is saved in the
+current project's `output/image-drafts/` folder, including explicitly chosen
+project roots. The saved full path appears beside its browser download link.
+Names contain the project title, `image-drafting-request`, UTC time and a unique
+suffix; repeated exports retain earlier packages. Completed ZIPs appear atomically
+and failed writes preserve earlier packages. This drafting exchange is separate
+from publication exports and WordPress's `media-upload.zip`. Cancel controls appear only for
 active requests. Validate and import responses to fill empty alt, caption and long-description
 fields directly. Existing text is preserved; use Apply to replace it deliberately.
 Long descriptions are editable beside the image and retained through exports.
@@ -213,12 +497,48 @@ Undo remain available; populated images still need human approval. No key or net
 exchange. See [workflow, providers and exchange schema](docs/IMAGE_DESCRIPTION_DRAFTS.md)
 and [acceptance evidence](docs/IMAGE_DESCRIPTION_DRAFTS_ACCEPTANCE.md).
 
-The **Output Pages** workspace builds multiple independently previewable Pages or
+**Merge next** joins adjacent matching text blocks; it does not combine list
+containers or convert mixed headings/paragraphs into one list. Unsupported
+controls are disabled with an explanation, and failed actions show feedback
+beside the block. Linked, formatted, nested and excluded content is protected
+from merges that would discard it. Supported text merges preserve footnote
+references and backlinks, retain source pages, require fresh approval and support
+Undo. A mixed-block list conversion needs an explicit item/nesting design rather
+than a bulk type-change workaround.
+
+Publication exports require current manual approval of included source blocks and
+visual descriptions. Arranged-page exports also require approval of each exported
+page. Changes to saved content return its review owner to Needs review; save the
+changes first, then approve the saved content. Editing a previously Reviewed
+description requires a fresh Reviewed decision. Undo preserves its saved snapshot
+when either document or project persistence fails, allowing a retry.
+
+Import, Populate and Refresh draft actions ask you to save or undo unsaved
+Structure edits before replacing the screen. Completed media CSVs associate
+WordPress URLs and attachment IDs without replacing current alt text or captions.
+New list items receive new identities; retained items keep their links, source
+provenance and list start after reordering. Editing a footnote source body updates
+its exported text while retaining note IDs, markers and backlinks. Ambiguous
+changes involving repeated, nested or excluded items require individual edits. Nested headings are the default; an explicitly saved H2 sections
+choice remains available.
+
+Generated publication downloads and clipboard reads must match the current saved
+document and export settings. Pending, changed, unstamped or outdated publications
+are blocked; review and regenerate them. Existing files remain on disk. Internal
+previews, accessibility reports, and media/draft exchange preparation remain
+available during review. Validation reports fail without generating publication
+files when review is incomplete.
+
+**Arrange Pages** (previously Output Pages) is optional: a long document can stay on one web page using
+**Preview** and **Export** directly. The workspace builds independently previewable Pages or
 Articles from one reviewed document. Inspect heading-based grouping suggestions,
 apply an arrangement, move whole content blocks, split or merge pages, edit
 metadata and internal Page parents, set contents order, and Undo changes. Page
 arrangements persist with the reviewed document. Unassigned content and invalid
 arrangements remain visible and block page exports.
+Use **Include unassigned content in this page** to recover missing assignments,
+or **Keep everything on one page** to replace the arrangement without editing
+content. Both support Undo. The arrangement outline is collapsed until needed.
 
 Export one page or the complete ZIP package with HTML, Gutenberg, WXR, media,
 contents, review findings, a versioned manifest and manual import instructions.
@@ -263,6 +583,11 @@ and CSV comparison summaries. `sample_files/` and `sample_runs/` are ignored by
 Git because source publications may contain internal or copyrighted material.
 
 ## Current boundary
+
+Proposed source-recovery workflows and observed review edge cases are tracked
+in [Future Features](docs/FUTURE_FEATURES.md). The backlog distinguishes missing
+text from nested text whose source outline is incomplete; it does not imply
+these features or corrections are already implemented.
 
 Phase 2 structural review and Phase 3A accessibility authoring are complete.
 The application does not include OCR remediation, a spreadsheet-like table

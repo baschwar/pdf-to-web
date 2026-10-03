@@ -52,7 +52,7 @@ class WordPressPreviewTests(unittest.TestCase):
         )
         self.assertIn('<section class="wsu-preview-hero hero-class"', preview.html)
         self.assertIn('<img src="https://example.edu/hero.jpg"', preview.html)
-        self.assertIn("<h2>Preview {Hero}</h2>", preview.html)
+        self.assertIn("<h1>Preview {Hero}</h1>", preview.html)
         self.assertIn("Program caption", preview.html)
         self.assertIn('<section id="main" class="wsu-preview-section section-class">', preview.html)
         self.assertIn("<p>Visit", preview.html)

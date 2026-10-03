@@ -5,8 +5,9 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from pdf_to_web.export import export_project
+from pdf_to_web.export import export_project, _write_media_manifest
 from pdf_to_web.project import create_project, save_project
+from pdf_to_web.review_state import ensure_review_document, save_review_document, move_block, update_block
 
 
 class WordPressMediaExportTests(unittest.TestCase):
@@ -35,6 +36,8 @@ class WordPressMediaExportTests(unittest.TestCase):
                 {"id": "invalid-config", "type": "image", "src": "images/missing.png", "wordpress_url": "/local/not-publishable.png", "alt": "Invalid mapping", "caption": "", "decorative": False, "provenance": {"source_page": 6}},
             ],
         }
+        for block in document['blocks']:
+            block['review'] = {'status': 'approved'}
         normalized = project / "extraction" / "normalized" / "document.json"
         normalized.parent.mkdir(parents=True, exist_ok=True)
         normalized.write_text(json.dumps(document), encoding="utf-8")
@@ -58,7 +61,7 @@ class WordPressMediaExportTests(unittest.TestCase):
             self.assertIn("decorative unresolved image omitted", markup)
 
             assets = project / "output" / "wordpress" / "assets"
-            self.assertEqual({path.name for path in assets.iterdir()}, {"photo.png", "photo-2.png", "decor.png"})
+            self.assertEqual({path.name for path in assets.iterdir()}, {"media-fixture-image1.png", "media-fixture-image2.png", "media-fixture-image3.png"})
             manifest = json.loads((project / "output" / "wordpress" / "reports" / "media-manifest.json").read_text())
             self.assertEqual(manifest["summary"], {"total": 6, "resolved": 2, "unresolved": 3, "decorative": 1, "copied_assets": 3})
             first = next(item for item in manifest["items"] if item["block_id"] == "local-1")
@@ -74,7 +77,48 @@ class WordPressMediaExportTests(unittest.TestCase):
             self.assertEqual({row["block_id"] for row in rows}, {"local-1", "local-2", "resolved-id", "resolved-url", "invalid-config"})
             package = project / "output" / "wordpress" / "media-upload.zip"
             with zipfile.ZipFile(package) as archive:
-                self.assertEqual(set(archive.namelist()), {"photo.png", "photo-2.png"})
+                self.assertEqual(set(archive.namelist()), {"media-fixture-image1.png", "media-fixture-image2.png", "media-fixture-image3.png"})
+                self.assertEqual(archive.read('media-fixture-image1.png'), b'first')
+            self.assertEqual((project / 'extraction/raw/images/photo.png').read_bytes(), b'first')
+
+    def test_custom_names_stable_after_reorder_exclusion_and_prefix_change(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = self._project(Path(directory))
+            document = ensure_review_document(project)
+            document['media_export'] = {'image_prefix': 'citi-training-'}
+            save_review_document(project, document)
+            _, first = _write_media_manifest(project, document)
+            before = {item['block_id']: item['asset_filename'] for item in first['items']}
+            move_block(project, 'local-2', 'start')
+            update_block(project, 'local-1', {'review_status': 'excluded'})
+            document = ensure_review_document(project)
+            _, later = _write_media_manifest(project, document)
+            second = next(item for item in later['items'] if item['block_id'] == 'local-2')
+            self.assertEqual(second['asset_filename'], before['local-2'])
+            self.assertEqual(second['asset_filename'], 'citi-training-image2.png')
+            document['media_export']['image_prefix'] = 'new-prefix-'
+            _write_media_manifest(project, document)
+            with zipfile.ZipFile(project / 'output/wordpress/media-upload.zip') as archive:
+                self.assertEqual(set(archive.namelist()), {'new-prefix-image2.png', 'new-prefix-image3.png'})
+
+    def test_semantic_html_copies_named_assets_and_uses_mapped_urls(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = self._project(Path(directory))
+            outputs = export_project(project, 'html')
+            markup = outputs[0].read_text()
+            self.assertIn('src="assets/media-fixture-image1.png"', markup)
+            self.assertIn('src="https://cdn.example.edu/resolved.png"', markup)
+            self.assertTrue((outputs[0].parent / 'assets/media-fixture-image1.png').is_file())
+
+    def test_excluded_parent_does_not_package_nested_images(self):
+        with tempfile.TemporaryDirectory() as directory:
+            project = self._project(Path(directory))
+            document = ensure_review_document(project)
+            document['blocks'] = [{'id': 'parent', 'type': 'list', 'excluded': True, 'children': document['blocks']}]
+            _, manifest = _write_media_manifest(project, document)
+            self.assertEqual(manifest['summary']['total'], 0)
+            with zipfile.ZipFile(project / 'output/wordpress/media-upload.zip') as archive:
+                self.assertEqual(archive.namelist(), [])
 
     def test_wxr_never_serializes_local_image_paths(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -37,13 +37,13 @@ def render_source_page(project_dir: Path, page: int) -> Path:
     if not source.is_file() or source.suffix.lower() != ".pdf":
         raise PdfToWebError("Source PDF is unavailable")
     cache = project_dir / "review" / "source-pages"
-    cache.mkdir(parents=True, exist_ok=True)
     output = cache / f"page-{page:04d}.png"
     if output.is_file():
         return output
     executable = shutil.which("pdftoppm")
     if not executable:
-        raise PdfToWebError("Poppler pdftoppm is required to render source-page context")
+        raise PdfToWebError("Poppler pdftoppm was not found on the app’s PATH. Install Poppler PDF utilities, then restart PDF to Web.")
+    cache.mkdir(parents=True, exist_ok=True)
     prefix = cache / f"page-{page:04d}"
     try:
         completed = subprocess.run(
@@ -67,6 +67,8 @@ def render_source_page(project_dir: Path, page: int) -> Path:
         )
     except subprocess.TimeoutExpired as exc:
         raise PdfToWebError(f"Source page {page} rendering timed out") from exc
+    except OSError as exc:
+        raise PdfToWebError(f"Could not start the PDF renderer: {exc}. Check the Poppler installation, then restart PDF to Web.") from exc
     if completed.returncode != 0 or not output.is_file():
         detail = completed.stderr.strip() or "pdftoppm did not create a page image"
         raise PdfToWebError(f"Could not render source page {page}: {detail}")

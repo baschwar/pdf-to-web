@@ -30,7 +30,8 @@ class ComplexImageReviewTests(unittest.TestCase):
         self.assertIn('name="short_alt" rows="3">Accepted ALT</textarea>', card)
         url = re.search(r'<img[^>]+src="([^"]+)"', card).group(1)
         self.assertEqual(self.client.get(url).content, b'fixture image bytes')
-        self.assertIn('Image description - review required', card)
+        self.assertIn('>Image description</h3>', card)
+        self.assertEqual(card.count('Text complete; manual review pending'), 1)
 
     def test_exact_asset_paths_are_supported_without_basename_guessing(self):
         doc = ensure_review_document(self.root)

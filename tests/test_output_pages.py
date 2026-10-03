@@ -1,3 +1,4 @@
+from review_helpers import approve_publication_fixture
 import copy
 import json
 import tempfile
@@ -117,6 +118,43 @@ class OutputPagesTests(unittest.TestCase):
                 if case == 'reserved': b['slug'] = 'contents'
                 self.assertTrue(op.validate(d))
 
+    def test_unassigned_recovery_persists_exports_and_supports_undo(self):
+        d = ensure_review_document(self.root)
+        op.pages(d)[0]['block_ids'].remove('p2')
+        save_review_document(self.root, d)
+        with self.assertRaisesRegex(PdfToWebError, 'Unassigned content: p2'):
+            export_pages(self.root)
+        update_output_pages(self.root, 'assign_unassigned', {'page_id': self.first})
+        recovered = ensure_review_document(self.root)
+        self.assertEqual(op.pages(recovered)[0]['block_ids'], [b['id'] for b in recovered['blocks']])
+        self.assertEqual(recovered['blocks'], d['blocks'])
+        self.assertEqual(recovered['accessibility_review'], d['accessibility_review'])
+        approve_publication_fixture(self.root)
+        export_pages(self.root)
+        self.assertIn('More text', (self.root / 'output/pages/handbook.html').read_text())
+        undo_last(self.root)
+        self.assertIn('Unassigned content: p2', op.validate(ensure_review_document(self.root)))
+
+    def test_keep_everything_on_one_page_restores_arrangement_with_undo(self):
+        d, group = self.group()
+        previous = copy.deepcopy(group)
+        update_output_pages(self.root, 'single_page', {'page_id': group[1]['id']})
+        current = ensure_review_document(self.root)
+        self.assertEqual(len(op.pages(current)), 1)
+        self.assertEqual(op.pages(current)[0]['id'], group[1]['id'])
+        self.assertEqual(op.validate(current), [])
+        self.assertEqual(current['blocks'], d['blocks'])
+        undo_last(self.root)
+        self.assertEqual(op.pages(ensure_review_document(self.root)), previous)
+
+    def test_legacy_exclusion_keeps_assignment_when_restored(self):
+        d = fixture()
+        d['blocks'][2]['review']['status'] = 'excluded'
+        op.ensure_pages(d)
+        self.assertIn('p2', op.pages(d)[0]['block_ids'])
+        d['blocks'][2]['review']['status'] = 'approved'
+        self.assertEqual(op.validate(d), [])
+
     def test_invalid_split_is_atomic(self):
         before = review_path(self.root).read_bytes()
         with self.assertRaises(ValueError):
@@ -158,6 +196,7 @@ class OutputPagesTests(unittest.TestCase):
     def test_exports_manifest_xml_metadata_and_single_page(self):
         d, group = self.group()
         update_output_pages(self.root, 'metadata', {'page_id': group[1]['id'], 'title': 'Policy <& "', 'parent': group[0]['id'], 'navigation_order': 3})
+        approve_publication_fixture(self.root)
         paths = export_pages(self.root)
         manifest = json.loads((self.root / 'output/pages/manifest.json').read_text())
         self.assertEqual(len(manifest['pages']), 2)
@@ -181,11 +220,14 @@ class OutputPagesTests(unittest.TestCase):
         d, group = self.group()
         update_output_pages(self.root, 'approve', {'page_id': group[0]['id']})
         update_block(self.root, 'p1', {'review_status': 'needs_review'})
-        export_pages(self.root)
-        manifest = json.loads((self.root / 'output/pages/manifest.json').read_text())
-        self.assertGreater(manifest['pages'][0]['review']['accessibility']['summary']['unresolved'], 0)
+        before = review_path(self.root).read_bytes()
+        with self.assertRaisesRegex(PdfToWebError, 'needs review'):
+            export_pages(self.root)
+        self.assertEqual(review_path(self.root).read_bytes(), before)
+        self.assertFalse((self.root / 'output/pages/manifest.json').exists())
 
     def test_incomplete_export_and_failure_preserve_state_and_previous_package(self):
+        approve_publication_fixture(self.root)
         export_pages(self.root)
         before = (self.root / 'output/pages/manifest.json').read_bytes()
         state = review_path(self.root).read_bytes()
@@ -217,6 +259,7 @@ class OutputPagesTests(unittest.TestCase):
         for rendered in [html.render_document(projected), gutenberg.render_document(projected)]:
             self.assertIn('scope="col"', rendered)
             self.assertIn('Meaningful figure', rendered)
+        approve_publication_fixture(self.root)
         export_pages(self.root)
         manifest = json.loads((self.root / 'output/pages/manifest.json').read_text())
         self.assertEqual(manifest['manual_media_actions'][0]['block_id'], 'image')
@@ -241,6 +284,7 @@ class OutputPagesTests(unittest.TestCase):
         d = ensure_review_document(self.root)
         d['footnotes'] = []
         save_review_document(self.root, d)
+        approve_publication_fixture(self.root)
         before = review_path(self.root).read_bytes()
         with self.assertRaisesRegex(PdfToWebError, 'missing footnote'):
             export_pages(self.root)
@@ -295,12 +339,14 @@ class OutputPagesTests(unittest.TestCase):
 
     def test_xml_control_characters_fail_with_actionable_error(self):
         update_output_pages(self.root, 'metadata', {'page_id': self.first, 'title': 'Bad\x00title'})
+        approve_publication_fixture(self.root)
         before = review_path(self.root).read_bytes()
         with self.assertRaisesRegex(PdfToWebError, 'control characters'):
             export_pages(self.root)
         self.assertEqual(before, review_path(self.root).read_bytes())
 
     def test_zip_failure_keeps_previous_complete_package(self):
+        approve_publication_fixture(self.root)
         export_pages(self.root)
         previous = (self.root / 'output/pages/manifest.json').read_bytes()
         previous_zip = (self.root / 'output/pages.zip').read_bytes()
@@ -320,6 +366,7 @@ class OutputPagesTests(unittest.TestCase):
         project['export']['hero']['enabled'] = True
         project['export']['wrap_in_section'] = True
         save_project(self.root, project)
+        approve_publication_fixture(self.root)
         export_pages(self.root, profile='wsuwp')
         markup = (self.root / 'output/pages/handbook.gutenberg.html').read_text()
         self.assertIn('wp:wsuwp/hero', markup)

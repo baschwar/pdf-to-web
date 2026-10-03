@@ -20,7 +20,15 @@ accessibility contract in `PHASE3_ACCESSIBILITY.md`.
 
 ## Using the builder
 
-Open a reviewed project and select **Output Pages**. Older projects start with
+**Arrange Pages** (previously Output Pages) is optional. For one long web page, use **Preview** and **Export**
+directly; PDF length does not require splitting. Use this builder for several
+Pages or Articles. **Arrange content across pages (optional)** is collapsed until
+needed. **Include unassigned content in this page** repairs omitted assignments;
+**Keep everything on one page** replaces the arrangement while retaining the
+selected page identity and metadata, all block content, decisions and exclusions.
+Both support Undo. Invalid arrangements show the reason and disable export.
+
+Open a reviewed project and select **Arrange Pages**. Older projects start with
 one page containing every included top-level block; no heading grouping is
 applied on load. Expand **Grouping suggestions** to inspect proposed headings,
 start boundaries, counts and source ranges. **Apply replacement arrangement**
@@ -41,6 +49,9 @@ slug collisions, invalid parents and cycles remain visible and block all page
 publication exports. Articles have no hierarchical parent. `contents` and
 `publications` are reserved package filenames. Excluded content remains excluded.
 A missing reference can be recovered with Undo or explicitly removed.
+Initial references include excluded blocks so they remain assigned if restored.
+Existing arrangements are preserved; their unassigned content requires the explicit
+recovery action above.
 
 **Preview page** and **WordPress Preview** use the existing HTML and Gutenberg
 serializers over the same page projection as export. Choose Generic or WSUWP
@@ -121,6 +132,12 @@ unresolved link targets are displayed and recorded, never assigned guessed URLs.
 Preview uses confined local media routes. Semantic packages copy local assets;
 WordPress output uses existing explicit URL/attachment mappings or visible upload
 placeholders. That deliberate media-preview substitution follows the existing app.
+Prepare images on **Export** before copying publication markup: save a filename
+prefix, download the ZIP, upload to WordPress, and import Media XML or a completed
+mapping CSV. The optional `media_export.image_prefix` value lives in the same review
+document and revision/Undo system; legacy files need no migration. Original image
+files keep their names. Publication and semantic-package assets use the same prefix
+and extraction-order numbering. Changing arrangements does not rename them.
 
 ## Links, footnotes and WordPress import
 

@@ -26,24 +26,28 @@ def project_file(project_dir: Path) -> Path:
     return project_dir / "project.json"
 
 
-def create_project(project_dir: Path, title: str | None = None) -> dict[str, Any]:
+def validate_project_destination(project_dir: Path) -> Path:
+    """Allow loose input files, but never reuse another project's working data."""
     project_dir = project_dir.expanduser().resolve()
-    if project_file(project_dir).exists():
-        raise PdfToWebError(f"A PDF to Web project already exists at {project_dir}")
+    if project_dir.exists() and not project_dir.is_dir():
+        raise PdfToWebError(f"Project destination is not a folder: {project_dir}")
+    if (project_dir / 'project.json').exists() or (project_dir / 'project.json').is_symlink():
+        raise PdfToWebError(f"A PDF to Web project already exists at {project_dir}. Open it instead, or choose a different folder.")
+    for name in ('extraction', 'review', 'output'):
+        entry = project_dir / name
+        if entry.exists() or entry.is_symlink():
+            raise PdfToWebError(f"The destination already contains {name}: {project_dir}. Choose a folder without existing project working directories; no files were changed.")
+    source = project_dir / 'source'
+    if source.exists() or source.is_symlink():
+        if source.is_symlink() or not source.is_dir():
+            raise PdfToWebError(f"The source entry is not a safe local folder: {source}")
+        if any(p.is_symlink() or not p.is_file() or p.suffix.lower() != '.pdf' for p in source.iterdir()):
+            raise PdfToWebError(f"The existing source folder must contain only regular PDF files: {source}")
+    return project_dir
 
-    for relative in (
-        "source",
-        "extraction/raw/images",
-        "extraction/assets/images",
-        "extraction/normalized",
-        "output/markdown",
-        "output/html",
-        "output/wordpress/blocks",
-        "output/wordpress/wxr",
-        "output/reports",
-    ):
-        (project_dir / relative).mkdir(parents=True, exist_ok=True)
 
+def create_project(project_dir: Path, title: str | None = None) -> dict[str, Any]:
+    project_dir = validate_project_destination(project_dir)
     now = utc_now()
     data: dict[str, Any] = {
         "schema_version": PROJECT_SCHEMA,
@@ -73,7 +77,40 @@ def create_project(project_dir: Path, title: str | None = None) -> dict[str, Any
         "created_at": now,
         "updated_at": now,
     }
-    save_project(project_dir, data)
+    directories = ('source', 'extraction/raw/images', 'extraction/assets/images',
+                   'extraction/normalized', 'review/revisions', 'review/source-pages',
+                   'output/markdown', 'output/html', 'output/wordpress/blocks',
+                   'output/wordpress/wxr', 'output/reports')
+    needed = set()
+    for relative in directories:
+        folder = project_dir / relative
+        while not folder.exists():
+            if folder.is_symlink():
+                raise PdfToWebError(f"Project folder contains a broken link: {folder}")
+            needed.add(folder)
+            folder = folder.parent
+    created = []
+    metadata_created = False
+    try:
+        for folder in sorted(needed, key=lambda p: len(p.parts)):
+            folder.mkdir()
+            created.append(folder)
+        # Exclusive creation prevents a collision from overwriting project data.
+        with project_file(project_dir).open('x', encoding='utf-8') as output:
+            metadata_created = True
+            output.write(json.dumps(data, indent=2, ensure_ascii=False) + '\n')
+    except Exception:
+        if metadata_created:
+            try:
+                project_file(project_dir).unlink(missing_ok=True)
+            except OSError:
+                pass
+        for folder in reversed(created):
+            try:
+                folder.rmdir()  # Remove only newly created, still-empty folders.
+            except OSError:
+                pass
+        raise
     return data
 
 
@@ -112,14 +149,19 @@ def import_pdf(project_dir: Path, source_pdf: Path) -> dict[str, Any]:
     if not source_pdf.is_file() or source_pdf.suffix.lower() != ".pdf":
         raise PdfToWebError(f"Source is not a readable PDF file: {source_pdf}")
 
-    destination = project_dir / "source" / source_pdf.name
+    source_dir = project_dir / 'source'
+    if source_dir.is_symlink() or source_dir.resolve() != source_dir or not source_dir.is_dir():
+        raise PdfToWebError(f"Project source folder is not a confined local directory: {source_dir}")
+    destination = source_dir / source_pdf.name
+    if destination.is_symlink():
+        raise PdfToWebError(f"Project source filename is a link: {destination}")
     if destination.exists() and destination.resolve() != source_pdf:
         counter = 2
         while True:
             candidate = destination.with_name(
                 f"{destination.stem}-{counter}{destination.suffix}"
             )
-            if not candidate.exists():
+            if not candidate.exists() and not candidate.is_symlink():
                 destination = candidate
                 break
             counter += 1

@@ -14,6 +14,70 @@ def is_footnote_body(block: dict[str, Any]) -> bool:
     return bool(block.get("export_as_footnote_body"))
 
 
+def retained_list_text(block: dict[str, Any]) -> str:
+    content = str(block.get('content') or '')
+    return content if content.strip() else ''.join(str(run.get('text') or '') for run in block.get('runs', []) if isinstance(run, dict))
+
+
+def has_unstructured_list_text(block: dict[str, Any]) -> bool:
+    return (block.get('type') == 'list' and not block.get('children')
+            and bool(retained_list_text(block).strip()))
+
+
+def list_render_items(block: dict[str, Any]) -> list[dict[str, Any]]:
+    """Keep recoverable legacy list text visible without changing stored state."""
+    if has_unstructured_list_text(block):
+        return [{**block, 'type': 'list_item', 'content': retained_list_text(block), 'children': []}]
+    return block.get('children', [])
+
+
+def publication_document(document: dict[str, Any], *, template_title: bool = False) -> dict[str, Any]:
+    """Heading projection only; reviewed IDs, content, provenance and state stay intact."""
+    result = copy.deepcopy(document)
+    def headings(blocks):
+        for b in blocks:
+            if is_excluded(b) or is_footnote_body(b) or b.get('export_as_part_of_image'):
+                continue
+            if b.get('type') == 'heading':
+                yield b
+            yield from headings(b.get('children', []))
+    group = list(headings(result.get('blocks', [])))
+    title = next((b for b in group if int(b.get('level', 2)) == 1), None)
+    metadata_title = str(result.get('metadata', {}).get('title') or '').strip()
+    if title is None:
+        title = next((b for b in group if str(b.get('content') or '').strip() == metadata_title), None) if metadata_title else None
+    if title is None and metadata_title:
+        ids = set()
+        def collect(blocks):
+            for b in blocks:
+                ids.add(str(b.get('id')))
+                collect(b.get('children', []))
+        collect(result.get('blocks', []))
+        identity, n = 'publication-title', 1
+        while identity in ids:
+            identity, n = f'publication-title-{n}', n + 1
+        title = {'id': identity, 'type': 'heading', 'level': 1, 'content': metadata_title, 'provenance': {'publication_generated': True}}
+        result.setdefault('blocks', []).insert(0, title)
+        group.insert(0, title)
+    settings = result.get('publication', {})
+    style = settings.get('heading_style', 'nested')
+    previous = 1
+    changes = []
+    for b in group:
+        original = int(b.get('level', 2))
+        b.pop('publication_title_only', None)
+        level = 1 if b is title else 2 if style == 'sections' else min(max(2, original), previous + 1, 6)
+        b['level'] = level
+        if b is title and template_title:
+            b['publication_title_only'] = True
+        if level != original:
+            changes.append({'block_id': b.get('id'), 'from': original, 'to': level})
+        previous = level
+    result['publication_heading_changes'] = changes
+    result['publication_title'] = str(title.get('content') or metadata_title) if title else metadata_title
+    return result
+
+
 def _reference_link(reference: dict[str, Any]) -> str:
     ref_id = html.escape(str(reference.get("id", "")), quote=True)
     footnote_id = html.escape(str(reference.get("footnote_id", "")), quote=True)
@@ -153,7 +217,8 @@ def blocks_with_image_descriptions(document):
             visual = visuals.get(str(block.get('complex_visual_id')))
             if block.get('type') != 'image' or is_excluded(block) or block.get('decorative') or not visual or visual.get('status') == 'excluded':
                 continue
-            text = visual.get('accessibility', {}).get('long_description')
+            accessibility = visual.get('accessibility', {})
+            text = accessibility.get('long_description') or accessibility.get('adjacent_text')
             if text:
                 result.append({'id': str(block['id']) + '-description', 'type': 'paragraph', 'content': text})
         return result

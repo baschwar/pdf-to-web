@@ -43,7 +43,7 @@ def ensure_pages(document):
         return False
     document['output_pages'] = {'schema_version': SCHEMA, 'project_id': 'project-' + uuid.uuid4().hex, 'pages': [new_page(
         document.get('metadata', {}).get('title') or 'Document',
-        [str(b['id']) for b in document.get('blocks', []) if not is_excluded(b)])]}
+        [str(b['id']) for b in document.get('blocks', [])])]}
     return True
 
 
@@ -221,6 +221,7 @@ def reconcile(document, previous):
             changed |= page_document(previous, p['id']).get('output_unresolved_targets') != page_document(document, p['id']).get('output_unresolved_targets')
         # Document-level diagnostics and human decisions apply to every page.
         changed |= previous.get('review') != document.get('review') or previous.get('accessibility_review') != document.get('accessibility_review')
+        changed |= previous.get('publication') != document.get('publication')
         if changed:
             p['approval'] = {'status': 'needs_review', 'note': p.get('approval', {}).get('note', '')}
 
@@ -228,6 +229,12 @@ def reconcile(document, previous):
 def mutate(document, action, data):
     group = pages(document)
     p = page_by_id(document, data.get('page_id'))
+    if action == 'single_page':
+        p = p or (group[0] if group else new_page(document.get('metadata', {}).get('title') or 'Document'))
+        p['block_ids'] = [str(b['id']) for b in document.get('blocks', [])]
+        p['parent'], p['navigation_order'] = None, 0
+        document['output_pages']['pages'] = [p]
+        return p['id']
     if action == 'apply_suggestions':
         document['output_pages']['pages'] = [new_page(s['title'], s['block_ids'], slug=s['slug'], navigation_order=i) for i, s in enumerate(suggest(document))]
         return document['output_pages']['pages'][0]['id'] if group else None
@@ -238,7 +245,12 @@ def mutate(document, action, data):
         return p['id']
     if p is None:
         raise ValueError('Select an existing output page')
-    if action == 'metadata':
+    if action == 'assign_unassigned':
+        assigned = {ref for item in group for ref in item['block_ids']}
+        for block in included(document):
+            if str(block['id']) not in assigned:
+                mutate(document, 'assign', {'page_id': p['id'], 'block_id': block['id']})
+    elif action == 'metadata':
         for key in ('title', 'slug', 'type', 'parent', 'navigation_order'):
             if key in data:
                 p[key] = int(data[key]) if key == 'navigation_order' else data[key] or (None if key == 'parent' else '')

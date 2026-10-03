@@ -2,6 +2,23 @@
 
 ## Architecture
 
+### Source-page renderer setup
+
+Source comparison requires system Poppler (`pdfinfo` and `pdftoppm`), separately
+from Python extraction dependencies. With Homebrew already installed on macOS,
+run `brew install poppler`, verify `command -v pdftoppm` and `pdftoppm -v`, then
+run `.venv/bin/pdf-to-web doctor`. See [README setup](../README.md#development-setup)
+for Linux/Windows and troubleshooting. The macOS launcher includes both standard
+Homebrew bin directories; custom installations must be on the launching PATH.
+Stop and relaunch after setup, then reopen the same project. Do not regenerate
+extraction or move project data to solve a missing renderer.
+
+Existing page PNGs in `review/source-pages/` can work without an installed
+renderer; uncached pages require Poppler. The 21 extracted CITI image assets
+are not source-page renders. Missing Pillow during supplemental asset extraction
+is a separate issue and does not explain missing `pdftoppm`. Structure keeps
+the original PDF link and a Retry action when rendering fails.
+
 The local browser application is a thin review layer over the existing project
 and export modules:
 

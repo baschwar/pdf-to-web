@@ -6,6 +6,7 @@ from unittest import mock
 
 from pdf_to_web.project import create_project, save_project
 from pdf_to_web.source_pages import render_source_page
+from pdf_to_web.errors import PdfToWebError
 
 
 class SourcePageTests(unittest.TestCase):
@@ -22,6 +23,41 @@ class SourcePageTests(unittest.TestCase):
     def test_rejects_out_of_range_page(self):
         with self.assertRaises(ValueError):
             render_source_page(self.project, 3)
+
+    @mock.patch("pdf_to_web.source_pages.shutil.which", return_value=None)
+    def test_missing_renderer_is_actionable_and_does_not_create_cache(self, _which):
+        source = self.project / 'source/original.pdf'
+        before = source.read_bytes()
+        (self.project / 'review/source-pages').rmdir()  # Legacy project without a render-cache folder.
+        with self.assertRaisesRegex(PdfToWebError, 'Install Poppler PDF utilities, then restart'):
+            render_source_page(self.project, 1)
+        self.assertFalse((self.project / 'review/source-pages').exists())
+        self.assertEqual(source.read_bytes(), before)
+
+    @mock.patch("pdf_to_web.source_pages.shutil.which", return_value=None)
+    def test_existing_cached_page_is_available_without_renderer(self, which):
+        page = self.project / 'review/source-pages/page-0001.png'
+        page.parent.mkdir(parents=True, exist_ok=True)
+        page.write_bytes(b'cached image')
+        self.assertEqual(render_source_page(self.project, 1), page.resolve())
+        which.assert_not_called()
+
+    @mock.patch("pdf_to_web.source_pages.shutil.which", return_value="/usr/bin/pdftoppm")
+    @mock.patch("pdf_to_web.source_pages.subprocess.run", side_effect=OSError('renderer cannot start'))
+    def test_renderer_start_failure_has_setup_guidance(self, _run, _which):
+        with self.assertRaisesRegex(PdfToWebError, 'Check the Poppler installation'):
+            render_source_page(self.project, 1)
+
+    @mock.patch("pdf_to_web.source_pages.shutil.which", return_value="/usr/bin/pdftoppm")
+    @mock.patch("pdf_to_web.source_pages.subprocess.run")
+    def test_renderer_failure_retains_detail_and_source(self, run, _which):
+        source = self.project / 'source/original.pdf'
+        before = source.read_bytes()
+        run.return_value = mock.Mock(returncode=1, stderr='Synthetic invalid source')
+        with self.assertRaisesRegex(PdfToWebError, 'Synthetic invalid source'):
+            render_source_page(self.project, 1)
+        self.assertEqual(source.read_bytes(), before)
+        self.assertFalse((self.project / 'review/source-pages/page-0001.png').exists())
 
     @mock.patch("pdf_to_web.source_pages.shutil.which", return_value="/usr/bin/pdftoppm")
     @mock.patch("pdf_to_web.source_pages.subprocess.run")

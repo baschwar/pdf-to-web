@@ -34,6 +34,16 @@ license and notices.
 These packages support the optional local WordPress Preview. Exact resolved
 versions and transitive dependency licenses are recorded in `package-lock.json`.
 
+## Bundled accessibility engine
+
+- [axe-core](https://github.com/dequelabs/axe-core), version 4.13.0 - MPL-2.0
+
+The unmodified `static/axe.min.js` retains its upstream notice; the complete
+license is included as `static/axe-LICENSE.txt`. Corresponding source is at
+https://github.com/dequelabs/axe-core/tree/v4.13.0. The npm version is pinned in
+`package.json` and `package-lock.json`. The bundled engine runs locally without
+an account, API key or paid service.
+
 ## Bundled user interface dependency
 
 - [Pico CSS](https://picocss.com/), version 2.1.1 - MIT

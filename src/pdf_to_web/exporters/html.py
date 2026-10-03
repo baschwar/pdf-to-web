@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 from typing import Any
 
-from .common import blocks_with_image_descriptions, block_anchors, image_src, is_excluded, is_footnote_body, render_footnotes_list, render_inline, table_cell
+from .common import blocks_with_image_descriptions, block_anchors, image_src, is_excluded, is_footnote_body, render_footnotes_list, render_inline, table_cell, publication_document, list_render_items
 
 
 def _list(block: dict[str, Any]) -> str:
@@ -12,7 +12,7 @@ def _list(block: dict[str, Any]) -> str:
     type_attr = f' type="{style_types[block["marker_style"]]}"' if block.get("ordered") and block.get("marker_style") in style_types else ""
     start_attr = f' start="{int(block["start"])}"' if block.get("ordered") and int(block.get("start", 1)) != 1 else ""
     items: list[str] = []
-    for child in block.get("children", []):
+    for child in list_render_items(block):
         if is_excluded(child) or is_footnote_body(child):
             continue
         if child.get("type") == "list_item":
@@ -53,7 +53,7 @@ def _table(block: dict[str, Any]) -> str:
 
 
 def _block(block: dict[str, Any]) -> str:
-    if is_excluded(block) or is_footnote_body(block):
+    if is_excluded(block) or is_footnote_body(block) or block.get('publication_title_only'):
         return ""
     block_type = block.get("type")
     if block.get("export_as_part_of_image"):
@@ -83,14 +83,22 @@ def _block(block: dict[str, Any]) -> str:
     return f'<div data-pdf-to-web-type="unknown"{role_attr}>{render_inline(block)}</div>'
 
 
-def render_document(document: dict[str, Any]) -> str:
+def render_document(document: dict[str, Any], *, annotate_blocks: bool = False, body_only: bool = False, template_title: bool = False) -> str:
+    document = publication_document(document, template_title=body_only and template_title)
     title = html.escape(str(document.get("metadata", {}).get("title", "Untitled document")))
     anchors = set(document.get("output_anchor_ids", []))
-    body_parts = [block_anchors(block, anchors) + _block(block) for block in blocks_with_image_descriptions(document)]
+    body_parts = []
+    for block in blocks_with_image_descriptions(document):
+        markup = _block(block)
+        if annotate_blocks and markup:
+            markup = markup.replace('>', f' data-pdf-block-id="{html.escape(str(block.get("id", "")), quote=True)}">', 1)
+        body_parts.append(block_anchors(block, anchors) + markup)
     footnotes = render_footnotes_list(document)
     if footnotes:
         body_parts.append(footnotes)
     body = "\n".join(body_parts)
+    if body_only:
+        return body + '\n'
     return (
         "<!doctype html>\n"
         '<html lang="en">\n<head>\n<meta charset="utf-8">\n'

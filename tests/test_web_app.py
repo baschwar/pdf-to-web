@@ -1,3 +1,4 @@
+from review_helpers import approve_publication_fixture
 import json
 import tempfile
 import unittest
@@ -66,7 +67,7 @@ class WebAppTests(unittest.TestCase):
         self.bootstrap()
         response = self.client.get('/output-pages')
         self.assertEqual(response.status_code, 200)
-        self.assertIn('<h1>Output Pages</h1>', response.text)
+        self.assertIn('<h1>Arrange Pages</h1>', response.text)
         from pdf_to_web.review_state import ensure_review_document
         from pdf_to_web.output_pages import pages
         p = pages(ensure_review_document(self.project))[0]
@@ -77,6 +78,7 @@ class WebAppTests(unittest.TestCase):
         preview = self.client.get('/output-preview/renamed.html')
         self.assertIn('<title>Renamed</title>', preview.text)
         self.assertEqual(self.client.get('/output-preview/absent.html').status_code, 404)
+        approve_publication_fixture(self.project)
         exported = self.client.post('/api/output-pages/export', headers=self.headers(), json={})
         self.assertEqual(exported.status_code, 200, exported.text)
         for file in exported.json()['downloads']:
@@ -122,6 +124,9 @@ class WebAppTests(unittest.TestCase):
         self.assertIn('name="wrap_in_section"', self.client.get("/export").text)
         self.assertIn('id="media-mapping-form"', self.client.get("/export").text)
         self.assertIn('id="media-wxr-form"', self.client.get("/export").text)
+        export_screen = self.client.get('/export').text
+        self.assertLess(export_screen.index('id="media-export-form"'), export_screen.index('id="media-wxr-form"'))
+        self.assertLess(export_screen.index('id="media-wxr-form"'), export_screen.index('id="export-form"'))
         placeholder = self.client.get("/api/preview/MEDIA_URL_REQUIRED")
         self.assertEqual(placeholder.status_code, 200)
         self.assertEqual(placeholder.headers["content-type"], "image/svg+xml")
@@ -132,6 +137,70 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("fixture.pdf", source.headers["content-disposition"])
         self.assertEqual(source.headers["cache-control"], "private, no-store")
 
+    def test_media_preparation_without_content_export_persists_prefix_and_undo(self):
+        import csv
+        import zipfile
+        from pdf_to_web.review_state import ensure_review_document
+        self.bootstrap()
+        document = json.loads(original_path(self.project).read_text())
+        document['blocks'].append({'id': 'image', 'type': 'image', 'src': 'images/imageFile2.png', 'alt': 'Registration screen'})
+        original_path(self.project).write_text(json.dumps(document))
+        source = self.project / 'extraction/raw/images/imageFile2.png'
+        source.write_bytes(b'synthetic-image')
+        denied = self.client.post('/api/media-export', json={'image_prefix': 'citi-training-'})
+        self.assertEqual(denied.status_code, 403)
+        result = self.client.post('/api/media-export', headers=self.headers(), json={'image_prefix': 'citi-training-'})
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json()['media']['copied_assets'], 1)
+        self.assertEqual(len(result.json()['downloads']), 2)
+        for download in result.json()['downloads']:
+            self.assertEqual(self.client.get(download['url']).status_code, 200)
+        with zipfile.ZipFile(self.project / 'output/wordpress/media-upload.zip') as archive:
+            self.assertEqual(archive.namelist(), ['citi-training-image1.png'])
+            self.assertEqual(archive.read('citi-training-image1.png'), source.read_bytes())
+        with (self.project / 'output/wordpress/reports/media-mapping.csv').open() as stream:
+            row = next(csv.DictReader(stream))
+        self.assertEqual(row['block_id'], 'image')
+        self.assertEqual(row['asset_filename'], 'citi-training-image1.png')
+        self.assertFalse(list((self.project / 'output/wordpress/blocks').glob('*.html')))
+        self.assertEqual(ensure_review_document(self.project)['media_export']['image_prefix'], 'citi-training-')
+        self.assertIn('value="citi-training-"', self.client.get('/export').text)
+        response = self.client.post('/api/media-export/undo', headers=self.headers(), json={})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertNotIn('media_export', ensure_review_document(self.project))
+
+    def test_invalid_image_prefix_does_not_change_review_or_outputs(self):
+        from pdf_to_web.review_state import ensure_review_document, review_path
+        self.bootstrap()
+        ensure_review_document(self.project)
+        before = review_path(self.project).read_bytes()
+        for prefix in ('../bad', '', 'a/b', '<unsafe>', 'a' * 81):
+            response = self.client.post('/api/media-export', headers=self.headers(), json={'image_prefix': prefix})
+            self.assertEqual(response.status_code, 400, response.text)
+        self.assertEqual(review_path(self.project).read_bytes(), before)
+        self.assertFalse((self.project / 'output/wordpress/media-upload.zip').exists())
+
+    def test_unassigned_page_export_displays_action_and_avoids_silent_omission(self):
+        from pdf_to_web.review_state import ensure_review_document, save_review_document
+        self.bootstrap()
+        document = ensure_review_document(self.project)
+        first = document['output_pages']['pages'][0]
+        first['block_ids'].remove('p2')
+        save_review_document(self.project, document)
+        screen = self.client.get('/output-pages').text
+        self.assertIn('Optional: arrange', screen)
+        self.assertIn('Include unassigned content in this page', screen)
+        self.assertIn('data-page-export="package" disabled', screen)
+        self.assertIn('<details id="content-outline">', screen)
+        bad_export = self.client.post('/api/output-pages/export', headers=self.headers(), json={})
+        self.assertEqual(bad_export.status_code, 400)
+        self.assertIn('Unassigned content: p2', bad_export.text)
+        result = self.client.post('/api/output-pages/assign_unassigned', headers=self.headers(), json={'page_id': first['id']})
+        self.assertEqual(result.status_code, 200, result.text)
+        approve_publication_fixture(self.project)
+        exported = self.client.post('/api/output-pages/export', headers=self.headers(), json={})
+        self.assertEqual(exported.status_code, 200, exported.text)
+
     def test_accessibility_decisions_and_report_downloads(self):
         document = json.loads(original_path(self.project).read_text())
         document["blocks"].append({"id": "image", "type": "image", "src": "images/missing.png", "alt": "", "decorative": False, "provenance": {"source_page": 1}})
@@ -140,7 +209,7 @@ class WebAppTests(unittest.TestCase):
         self.bootstrap()
         page = self.client.get("/accessibility")
         self.assertIn("Image needs an accessibility decision", page.text)
-        self.assertIn("it cannot be approved as an exception", page.text)
+        self.assertIn("required corrections, which cannot be waived", page.text)
         saved = self.client.post("/api/accessibility/diagnostic:manual_check:1", headers=self.headers(), json={"status": "approved", "note": "Reviewed with content owner."})
         self.assertEqual(saved.status_code, 200, saved.text)
         reopened = self.client.get("/api/document").json()["document"]
@@ -185,7 +254,7 @@ class WebAppTests(unittest.TestCase):
         self.assertIn('id="source-page-next"', response.text)
         self.assertIn('data-page-count="2"', response.text)
         self.assertRegex(response.text, r'data-source-key="[0-9a-f]{16}"')
-        self.assertRegex(response.text, r'src="/source-page/1\.png\?v=[0-9a-f]{16}"')
+        self.assertRegex(response.text, r'data-source-url="/source-page/1\.png\?v=[0-9a-f]{16}"')
         self.assertIn('aria-label="Move block 1 to start" disabled', response.text)
         self.assertIn('aria-label="Move block 1 up" disabled', response.text)
         self.assertIn('aria-label="Move block 3 to end" disabled', response.text)
@@ -209,16 +278,33 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("--structure-scroll-offset", app_script.text)
         self.assertIn("card.scrollIntoView({ block: 'start' })", app_script.text)
         self.assertIn("`Page ${cards[index].dataset.page}`", app_script.text)
-        self.assertIn("sourceImage.src = `/source-page/${requestedPage}.png?v=${sourceKey}`", app_script.text)
+        self.assertIn("await loadSourcePageImage(`/source-page/${requestedPage}.png?v=${sourceKey}`)", app_script.text)
         self.assertIn("firstCard = blockCards().find", app_script.text)
         self.assertIn("else delete values.level", app_script.text)
         self.assertIn("querySelector('select').disabled", app_script.text)
         self.assertIn("async function copyExportHtml(file)", app_script.text)
-        self.assertIn("copyButton.textContent = 'Copy HTML'", app_script.text)
+        self.assertIn("file.kind === 'template_body' ? 'Copy content for template' : 'Copy HTML'", app_script.text)
         self.assertIn("navigator.clipboard.writeText(content)", app_script.text)
         metadata = self.client.get("/api/source-page/1")
         self.assertEqual(metadata.json(), {"page": 1, "width": 612.0, "height": 792.0})
         page_size.assert_called_once_with(self.project.resolve(), 1)
+
+    @mock.patch('pdf_to_web.web.render_source_page')
+    def test_source_image_failure_reports_detail_without_changing_review(self, render):
+        from pdf_to_web.errors import PdfToWebError
+        from pdf_to_web.review_state import ensure_review_document, review_path
+        self.bootstrap()
+        ensure_review_document(self.project)
+        before = review_path(self.project).read_bytes()
+        render.side_effect = PdfToWebError('Poppler pdftoppm was not found. Install Poppler, then restart.')
+        response = self.client.get('/source-page/1.png?v=synthetic-source-key')
+        self.assertEqual(response.status_code, 404)
+        self.assertIn('Install Poppler', response.json()['detail'])
+        self.assertEqual(review_path(self.project).read_bytes(), before)
+        page = self.client.get('/structure').text
+        self.assertIn('id="source-page-render-status" role="status" aria-live="polite"', page)
+        self.assertIn('id="source-page-retry"', page)
+        self.assertIn('Open source PDF page 1', page)
 
     def test_project_loading_requires_server_issued_selection(self):
         self.bootstrap()
@@ -235,7 +321,7 @@ class WebAppTests(unittest.TestCase):
         first_page = self.client.get("/")
         self.assertIn("Web fixture", first_page.text)
         self.assertIn(f"/{self.project.parent.name}/{self.project.name}", first_page.text)
-        self.assertNotIn(str(self.project.resolve()), first_page.text)
+        self.assertIn(str(self.project.resolve()), first_page.text)
         self.assertIn("Last opened", first_page.text)
 
         reopened_config = WebAppConfig(
@@ -273,13 +359,15 @@ class WebAppTests(unittest.TestCase):
     @mock.patch("pdf_to_web.web.choose_pdf_file", return_value=Path("/tmp/source.pdf"))
     def test_project_creation_runs_browser_workflow(self, choose, intake, extract, normalize):
         self.bootstrap()
+        choose.return_value = self.project / 'source/original.pdf'
+        normalize.side_effect = lambda root: original_path(root).write_bytes(original_path(self.project).read_bytes())
         result = self.client.post(
             "/api/projects/create", headers=self.headers(), json={"title": "New Report"}
         )
         self.assertEqual(result.status_code, 200, result.text)
         created = (self.config.projects_root / "new-report").resolve()
         self.assertTrue((created / "project.json").is_file())
-        intake.assert_called_once_with(created, Path("/tmp/source.pdf"))
+        intake.assert_called_once_with(created, choose.return_value)
         extract.assert_called_once_with(created, False)
         normalize.assert_called_once_with(created)
         self.assertEqual(self.client.app.state.get_active_project(), created)
@@ -312,6 +400,7 @@ class WebAppTests(unittest.TestCase):
     def test_preview_and_exports_use_reviewed_state(self):
         self.bootstrap()
         self.client.post("/api/blocks/p1", headers=self.headers(), json={"content": "Reviewed export text", "review_status": "approved"})
+        approve_publication_fixture(self.project)
         preview = self.client.get("/api/preview/html")
         self.assertIn("Reviewed export text", preview.text)
         for target in ("html", "gutenberg", "wordpress-xml"):
@@ -367,11 +456,12 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(edited_image.status_code, 200, edited_image.text)
         semantic = self.client.get("/api/preview/html")
         self.assertIn('alt="Updated login screen"', semantic.text)
-        self.assertIn('src="images/screen.png"', semantic.text)
+        self.assertIn('src="/api/preview/images/screen.png"', semantic.text)
         self.assertEqual(self.client.get("/api/preview/images/screen.png").status_code, 200)
         with mock.patch("pdf_to_web.web.render_gutenberg_preview", return_value=WordPressPreview("<p>preview</p>", ("core/image",), ()) ) as render:
             self.client.get("/api/preview/wordpress")
         self.assertIn('src="/api/preview/images/screen.png"', render.call_args.args[0])
+        approve_publication_fixture(self.project)
         result = self.client.post("/api/export", headers=self.headers(), json={"target": "gutenberg", "profile": "generic", "post_type": "page"})
         self.assertEqual(result.status_code, 200, result.text)
         self.assertEqual(result.json()["media"]["unresolved"], 1)
@@ -382,6 +472,7 @@ class WebAppTests(unittest.TestCase):
         imported = self.client.post("/api/media-mapping", headers=self.headers(), json={"csv": mapping})
         self.assertEqual(imported.status_code, 200, imported.text)
         self.assertEqual(imported.json()["mapped"], 1)
+        approve_publication_fixture(self.project)
         regenerated = self.client.post("/api/export", headers=self.headers(), json={"target": "gutenberg", "profile": "generic", "post_type": "page"})
         markup = (self.project / regenerated.json()["files"][0]).read_text()
         self.assertIn('src="https://example.edu/uploads/screen.png"', markup)
@@ -410,7 +501,7 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(result.status_code, 400)
         self.assertIn("blocked", result.json()["error"].lower())
         html_result = self.client.post("/api/export", headers=self.headers(), json={"target": "html", "profile": "generic", "post_type": "page"})
-        self.assertEqual(html_result.status_code, 200)
+        self.assertEqual(html_result.status_code, 400)
         preview_result = self.client.get("/api/preview/wordpress")
         self.assertEqual(preview_result.status_code, 200)
         self.assertIn("Gutenberg export is blocked", preview_result.text)

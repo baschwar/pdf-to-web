@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import csv
-import filecmp
+import copy
 import json
 import re
 import shutil
@@ -16,6 +16,7 @@ from .normalize import load_normalized
 from .project import load_project, slugify
 from .media_mapping import MAPPING_FIELDS
 from .accessibility import write_reports
+from .exporters.common import is_excluded
 
 
 def _walk(blocks: list[dict[str, Any]]):
@@ -56,16 +57,69 @@ def _local_image_path(project_dir: Path, source: str) -> Path | None:
     return None
 
 
-def _copy_media_asset(source: Path, destination_dir: Path) -> Path:
-    clean_name = re.sub(r"[^A-Za-z0-9._-]", "-", source.name) or "image"
-    destination = destination_dir / clean_name
-    index = 2
-    while destination.exists() and not filecmp.cmp(source, destination, shallow=False):
-        destination = destination_dir / f"{Path(clean_name).stem}-{index}{Path(clean_name).suffix}"
-        index += 1
-    if not destination.exists():
-        shutil.copy2(source, destination)
+def media_prefix(document: dict[str, Any]) -> str:
+    prefix = document.get('media_export', {}).get('image_prefix')
+    return prefix if prefix is not None else slugify(str(document.get('metadata', {}).get('title') or 'document'))[:80] + '-'
+
+
+def validate_media_prefix(prefix: str) -> str:
+    prefix = prefix.strip().rstrip('-')
+    if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,79}', prefix):
+        raise ValueError('Use an image prefix of 1–80 lowercase letters, digits or hyphens, starting with a letter or digit')
+    return prefix.rstrip('-') + '-'
+
+
+def _media_asset_names(project_dir: Path, document: dict[str, Any]) -> dict[Path, str]:
+    # Immutable extraction order keeps filenames stable through reading-order edits,
+    # exclusions and output-page arrangements. New assets follow the original set.
+    original = project_dir / 'extraction/normalized/document.json'
+    source_document = json.loads(original.read_text(encoding='utf-8')) if original.is_file() else document
+    names: dict[Path, str] = {}
+    prefix = validate_media_prefix(media_prefix(document))
+    for block in [*_walk(source_document.get('blocks', [])), *_walk(document.get('blocks', []))]:
+        if block.get('type') != 'image':
+            continue
+        source = _local_image_path(project_dir, str(block.get('src') or ''))
+        if source and source not in names:
+            names[source] = f'{prefix}image{len(names) + 1}{source.suffix.lower()}'
+    return names
+
+
+def _copy_media_asset(source: Path, destination_dir: Path, name: str) -> Path:
+    destination = destination_dir / name
+    shutil.copy2(source, destination)
     return destination
+
+
+def _visible_walk(blocks):
+    for block in blocks:
+        if is_excluded(block):
+            continue
+        yield block
+        yield from _visible_walk(block.get('children', []))
+
+
+def _html_with_local_assets(project_dir: Path, document: dict[str, Any], directory: Path, *, name_document=None) -> tuple[dict[str, Any], list[Path]]:
+    projected = copy.deepcopy(document)
+    names = _media_asset_names(project_dir, name_document or document)
+    copied: set[Path] = set()
+    for block in _visible_walk(projected.get('blocks', [])):
+        if block.get('type') != 'image':
+            continue
+        url, _ = _wordpress_media_values(block)
+        if url:
+            block['src'] = url
+            continue
+        source = _local_image_path(project_dir, str(block.get('src') or ''))
+        if source:
+            assets = directory / 'assets'
+            assets.mkdir(parents=True, exist_ok=True)
+            destination = assets / names[source]
+            if destination not in copied:
+                _copy_media_asset(source, assets, names[source])
+                copied.add(destination)
+            block['src'] = 'assets/' + names[source]
+    return projected, sorted(copied)
 
 
 def _write_media_manifest(project_dir: Path, document: dict[str, Any]) -> tuple[list[Path], dict[str, Any]]:
@@ -76,8 +130,9 @@ def _write_media_manifest(project_dir: Path, document: dict[str, Any]) -> tuple[
     outputs: list[Path] = []
     entries: list[dict[str, Any]] = []
     copied: dict[Path, Path] = {}
-    for block in _walk(document.get("blocks", [])):
-        if block.get("type") != "image" or block.get("review", {}).get("status") == "excluded" or block.get("excluded"):
+    names = _media_asset_names(project_dir, document)
+    for block in _visible_walk(document.get("blocks", [])):
+        if block.get("type") != "image":
             continue
         url, attachment_id = _wordpress_media_values(block)
         decorative = bool(block.get("decorative"))
@@ -88,7 +143,7 @@ def _write_media_manifest(project_dir: Path, document: dict[str, Any]) -> tuple[
         if local_source:
             exported_asset = copied.get(local_source)
             if exported_asset is None:
-                exported_asset = _copy_media_asset(local_source, assets_dir)
+                exported_asset = _copy_media_asset(local_source, assets_dir, names[local_source])
                 copied[local_source] = exported_asset
                 outputs.append(exported_asset)
         entries.append(
@@ -146,16 +201,15 @@ def _write_media_manifest(project_dir: Path, document: dict[str, Any]) -> tuple[
         {
             project_dir / str(item["asset_path"])
             for item in entries
-            if not item["decorative"] and item["asset_path"]
+            if item["asset_path"]
         },
         key=lambda path: path.name.lower(),
     )
-    if upload_assets:
-        zip_path = project_dir / "output" / "wordpress" / "media-upload.zip"
-        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-            for asset in upload_assets:
-                archive.write(asset, arcname=asset.name)
-        outputs.append(zip_path)
+    zip_path = project_dir / "output" / "wordpress" / "media-upload.zip"
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for asset in upload_assets:
+            archive.write(asset, arcname=asset.name)
+    outputs.append(zip_path)
     return outputs, manifest
 
 
@@ -200,6 +254,9 @@ def _write_manifest(
             }
         ],
     }
+    previous_manifest = report_dir / 'export-manifest.json'
+    if previous_manifest.is_file():
+        manifest['publication_artifacts'] = json.loads(previous_manifest.read_text()).get('publication_artifacts', {})
     (report_dir / "export-manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
@@ -217,15 +274,12 @@ def export_project(project_dir: Path, target: str, profile: str | None = None) -
     selected_profile = profile or config.get("wordpress_profile", "generic")
     if selected_profile not in {"generic", "wsuwp"}:
         raise PdfToWebError(f"Unsupported WordPress profile: {selected_profile}")
-    review_status = document.get("review", {}).get("status", "needs_review")
-    if review_status == "conversion_blocked" and target in {
-        "gutenberg",
-        "wordpress-xml",
-        "all",
-    }:
-        raise PdfToWebError(
-            "Conversion is blocked by extraction issues; Gutenberg and WXR export were not generated"
-        )
+    if target == 'accessibility':
+        return write_reports(project_dir, document)
+    if target not in {'html', 'markdown', 'gutenberg', 'wordpress-xml', 'all'}:
+        raise PdfToWebError('Unsupported export format')
+    from .publication import require_ready, register_artifacts
+    require_ready(document)
 
     gutenberg_content = gutenberg.render_document(document, selected_profile, config)
     item = _publication_item(document, gutenberg_content, config)
@@ -239,8 +293,14 @@ def export_project(project_dir: Path, target: str, profile: str | None = None) -
         outputs.append(path)
     if target in {"html", "all"}:
         path = project_dir / "output" / "html" / f"{output_slug}.html"
-        path.write_text(html.render_document(document), encoding="utf-8")
+        projected, assets = _html_with_local_assets(project_dir, document, path.parent)
+        path.write_text(html.render_document(projected), encoding="utf-8")
         outputs.append(path)
+        outputs.extend(assets)
+        if document.get('publication', {}).get('title_in_template'):
+            body_path = path.with_name(path.stem + '.body.html')
+            body_path.write_text(html.render_document(projected, body_only=True, template_title=True), encoding='utf-8')
+            outputs.append(body_path)
     if target in {"gutenberg", "all"}:
         path = project_dir / "output" / "wordpress" / "blocks" / f"{output_slug}.html"
         path.write_text(gutenberg_content, encoding="utf-8")
@@ -255,4 +315,5 @@ def export_project(project_dir: Path, target: str, profile: str | None = None) -
     if target in {"accessibility", "all"}:
         outputs.extend(write_reports(project_dir, document))
     _write_manifest(project_dir, item, selected_profile, output_slug)
+    register_artifacts(project_dir, document, project, outputs)
     return outputs

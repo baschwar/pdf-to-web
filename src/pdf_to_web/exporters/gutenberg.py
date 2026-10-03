@@ -6,7 +6,7 @@ import re
 from typing import Any
 from urllib.parse import urlparse
 
-from .common import blocks_with_image_descriptions, block_anchors, is_excluded, is_footnote_body, render_footnote_backlinks, render_inline, table_cell
+from .common import blocks_with_image_descriptions, block_anchors, is_excluded, is_footnote_body, render_footnote_backlinks, render_inline, table_cell, list_render_items
 
 
 def _attrs(values: dict[str, Any], escape_hyphens: bool = False) -> str:
@@ -34,7 +34,7 @@ def _list_markup(block: dict[str, Any]) -> str:
     type_attr = f' type="{style_types[block["marker_style"]]}"' if ordered and block.get("marker_style") in style_types else ""
     start_attr = f' start="{int(block["start"])}"' if ordered and int(block.get("start", 1)) != 1 else ""
     items: list[str] = []
-    for child in block.get("children", []):
+    for child in list_render_items(block):
         if is_excluded(child) or is_footnote_body(child):
             continue
         nested_parts: list[str] = []
@@ -224,16 +224,21 @@ def render_document(
     document: dict[str, Any], profile: str = "generic", config: dict[str, Any] | None = None
 ) -> str:
     config = config or {}
+    from .common import publication_document
+    template_title = bool(document.get('publication', {}).get('title_in_template'))
+    hero_title = profile == 'wsuwp' and (config.get('hero') or {}).get('enabled') and not template_title
+    document = publication_document(document, template_title=template_title or hero_title)
     blocks = blocks_with_image_descriptions(document)
     rendered: list[str] = []
     anchors = set(document.get("output_anchor_ids", []))
     def anchored(block):
         markup = block_anchors(block, anchors)
         anchor = _wrap("html", markup) if markup else ""
-        return anchor + render_block(block)
+        return anchor if block.get('publication_title_only') else anchor + render_block(block)
     if profile == "wsuwp":
-        if (config.get("hero") or {}).get("enabled"):
-            rendered.append(_wsu_hero(document, config))
+        if hero_title:
+            hero_config = {**config, 'hero': {**config.get('hero', {}), 'headingTag': 'h1'}}
+            rendered.append(_wsu_hero(document, hero_config))
             title = str(document.get("metadata", {}).get("title", ""))
             if blocks and blocks[0].get("type") == "heading" and blocks[0].get("content") == title:
                 title_anchor = block_anchors(blocks[0], anchors)

@@ -12,7 +12,7 @@ from typing import Any, Iterable
 from .errors import PdfToWebError
 from .export import export_project
 from .exporters import gutenberg, html, wxr
-from .exporters.common import is_excluded, is_footnote_body, table_cell
+from .exporters.common import is_excluded, is_footnote_body, table_cell, publication_document
 from .exporters.wxr import CONTENT_NS
 from .normalize import load_normalized
 from .project import load_project, slugify
@@ -30,7 +30,8 @@ def _walk(blocks: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
         yield from _walk(block.get("children", []))
 
 
-def model_semantics(document: dict[str, Any]) -> dict[str, Any]:
+def model_semantics(document: dict[str, Any], *, template_title=False) -> dict[str, Any]:
+    document = publication_document(document, template_title=template_title)
     headings: list[list[Any]] = []
     paragraphs: list[str] = []
     lists: list[list[str]] = []
@@ -38,7 +39,7 @@ def model_semantics(document: dict[str, Any]) -> dict[str, Any]:
     tables: list[list[str]] = []
     images: list[list[str]] = []
     def process(block: dict[str, Any]) -> None:
-        if is_excluded(block) or is_footnote_body(block) or block.get("export_as_part_of_image"):
+        if is_excluded(block) or is_footnote_body(block) or block.get("export_as_part_of_image") or block.get('publication_title_only'):
             return
         block_type = block.get("type")
         content = _text(block.get("content"))
@@ -150,16 +151,15 @@ def validate_project_exports(project_dir: Path) -> tuple[Path, Path]:
     review_status = str(document.get("review", {}).get("status", "needs_review"))
     report_dir = project_dir / "output" / "reports"; report_dir.mkdir(parents=True, exist_ok=True)
     report: dict[str, Any] = {"schema_version": "pdf-to-web-export-validation-v1", "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "project": str(project_dir), "review_status": review_status, "formats": {}, "warnings": [], "errors": []}
-    if review_status == "conversion_blocked":
-        html_path = export_project(project_dir, "html")[0]; markup = html_path.read_text(encoding="utf-8")
-        report["formats"]["semantic_html"] = validate_semantic_html(document, markup)
-        for target in ("gutenberg", "wordpress-xml"):
-            try:
-                export_project(project_dir, target); report["errors"].append(f"{target} unexpectedly exported conversion-blocked content")
-            except PdfToWebError:
-                report["formats"][target] = {"generated": False, "blocked_as_expected": True, "valid": True}
+    from .publication import findings
+    pending = findings(document)
+    if pending:
+        report['errors'].extend(pending)
+        for target in ('semantic_html', 'gutenberg', 'gutenberg_wsu', 'wxr'):
+            report['formats'][target] = {'generated': False, 'blocked_as_expected': True, 'valid': False}
     else:
         config = load_project(project_dir).get("export", {}); expected = model_semantics(document)
+        wordpress_expected = model_semantics(document, template_title=bool(document.get("publication", {}).get("title_in_template")))
         report["content_counts"] = {key: len(expected[key]) for key in ("headings", "paragraphs", "lists", "links", "tables", "footnotes", "images")}
         html_markup = html.render_document(document); generic_markup = gutenberg.render_document(document, "generic", config); wsu_markup = gutenberg.render_document(document, "wsuwp", config)
         report["artifacts"] = [str(path) for path in export_project(project_dir, "all", "generic")]
@@ -168,16 +168,16 @@ def validate_project_exports(project_dir: Path) -> tuple[Path, Path]:
             validation = validate_gutenberg(document, markup)
             if name == "gutenberg" and "wp:wsuwp/section" in markup: validation["serialization_errors"].append("WSU section wrapper present by default"); validation["valid"] = False
             if name == "gutenberg_wsu" and config.get("wrap_in_section") and "wp:wsuwp/section" not in markup: validation["serialization_errors"].append("Configured WSU section wrapper missing"); validation["valid"] = False
-            validation["equivalence"] = compare_semantics(expected, html_semantics(markup)); report["formats"][name] = validation
+            validation["equivalence"] = compare_semantics(wordpress_expected, html_semantics(markup)); report["formats"][name] = validation
         item = {"key": slugify(expected["title"]), "title": expected["title"], "slug": slugify(expected["title"]), "post_type": "page", "status": "draft", "content": generic_markup}
         wxr_markup = wxr.render_wxr([item]); wxr_validation = validate_wxr(wxr_markup, [document]); extracted = ET.fromstring(wxr_markup).findtext(f"./channel/item/{{{CONTENT_NS}}}encoded", "")
-        wxr_validation["equivalence"] = compare_semantics(expected, html_semantics(extracted)); wxr_validation["standalone_gutenberg_equivalent"] = compare_semantics(html_semantics(generic_markup), html_semantics(extracted)); report["formats"]["wxr"] = wxr_validation
+        wxr_validation["equivalence"] = compare_semantics(wordpress_expected, html_semantics(extracted)); wxr_validation["standalone_gutenberg_equivalent"] = compare_semantics(html_semantics(generic_markup), html_semantics(extracted)); report["formats"]["wxr"] = wxr_validation
         if preview_available():
             for name, markup in (("gutenberg_preview", generic_markup), ("gutenberg_wsu_preview", wsu_markup)):
-                preview = render_gutenberg_preview(markup); equivalence = compare_semantics(expected, html_semantics(preview.html))
+                preview = render_gutenberg_preview(markup); equivalence = compare_semantics(wordpress_expected, html_semantics(preview.html))
                 report["formats"][name] = {"generated": True, "valid": not preview.unsupported_blocks and equivalence["valid"], "block_types": list(preview.block_types), "unsupported_blocks": list(preview.unsupported_blocks), "equivalence": equivalence}
         else: report["warnings"].append("WordPress Preview dependencies unavailable; preview validation skipped")
-        if review_status == "needs_review": report["warnings"].append("Document is exportable but retains needs-review findings")
+
     for name, validation in report["formats"].items():
         if not validation.get("valid", False): report["errors"].append(f"{name} validation failed")
         equivalence = validation.get("equivalence")
