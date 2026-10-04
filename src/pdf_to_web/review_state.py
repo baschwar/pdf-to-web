@@ -193,7 +193,7 @@ def save_review_document(project_dir: Path, document: dict[str, Any], *, snapsho
 
 def _invalidate_changed_blocks(document, previous):
     """Share approval invalidation between authoring saves and load-time repair."""
-    from .publication import content_digest
+    from .publication import content_digest, approval_stamp_matches
     old_blocks = {str(b.get('id')): b for b in _walk(previous.get('blocks', []))}
     changed = False
     for block in _walk(document.get('blocks', [])):
@@ -202,7 +202,15 @@ def _invalidate_changed_blocks(document, previous):
         current = content_digest(block)
         stamp = review.get('content_sha256')
         material_edit = old and content_digest(old) != current
-        if review.get('status') == 'approved' and stamp != current and (stamp or material_edit):
+        if (old and not material_edit and review.get('status') == 'approved'
+                and old.get('review', {}).get('status') == 'approved'
+                and stamp == old.get('review', {}).get('content_sha256')
+                and stamp == content_digest(old, include_media_mapping=True)
+                and content_digest(old, include_media_mapping=True) != content_digest(block, include_media_mapping=True)):
+            # Preserve the same verified content decision when routing metadata
+            # changes. This is not a new approval and does not change its date.
+            review['content_sha256'] = current
+        if review.get('status') == 'approved' and not approval_stamp_matches(block) and (stamp or material_edit):
             _set_status(block, 'needs_review')
             changed = True
             review['reason'] = 'changed_after_approval'
@@ -212,11 +220,22 @@ def _invalidate_changed_blocks(document, previous):
     return changed
 
 
-def block_review_reason(block):
+def block_review_reason(block, document=None):
     from .publication import block_review_issue, list_structure_issue
     malformed = list_structure_issue(block)
     if malformed:
         return malformed['message']
+    if document is not None and block.get('type') == 'image':
+        from .image_review import association_issue
+        problem = association_issue(document, block)
+        if problem:
+            return problem
+        from .image_review import pending_descriptions_for
+        pending = pending_descriptions_for(document, block)
+        if pending:
+            changed = any(v.get('review_reason') == 'changed_after_approval' for v in pending)
+            cause = 'The image or its description changed after review.' if changed else ('The saved image approval does not include a current review of its associated description.' if block.get('review', {}).get('status') == 'approved' else 'The image and its associated description await review.')
+            return cause + ' Review alt, caption and the displayed descriptions together, then use Save and approve once.'
     review = block.get('review', {})
     issue = block_review_issue(block) if review.get('status') == 'approved' else None
     if issue and issue['code'] == 'legacy_approval_unverified':
@@ -356,6 +375,11 @@ def _set_status(block: dict[str, Any], status: str) -> None:
         raise ValueError(f"Unsupported review status: {status}")
     review = block.setdefault("review", {})
     review["status"] = status
+    if status == 'needs_review':
+        # Distinguish an explicit new decision even within the same second.
+        review['decision_id'] = uuid.uuid4().hex
+    else:
+        review.pop('decision_id', None)
     review.pop('approval_evidence', None)
     if status != 'needs_review':
         review.pop('reason', None)
@@ -488,7 +512,25 @@ def _approve_block(block: dict[str, Any]) -> None:
 
 def update_block(project_dir: Path, block_id: str, changes: dict[str, Any], *, approve_after_save: bool = False) -> dict[str, Any]:
     document = ensure_review_document(project_dir)
+    _edit_block(document, block_id, changes, approve_after_save=approve_after_save)
+    return save_review_document(project_dir, document)
+
+
+def _edit_block(document, block_id, changes, *, approve_after_save=False):
     _siblings, _index, block = _find_location(document.get("blocks", []), block_id)
+    if block.get('type') == 'image' and 'expected_review_token' in changes and not approve_after_save:
+        from .image_review import validate_token
+        validate_token(document, changes['expected_review_token'])
+    if (block.get('type') == 'image' or changes.get('type') == 'image') and approve_after_save:
+        from .image_review import validate_token, validate_associations
+        validate_token(document, changes.get('expected_review_token'))
+        original_description_ids = [str(v['id']) for v in validate_associations(document, block)]
+        submitted_ids = changes.get('displayed_description_ids')
+        if not isinstance(submitted_ids, list) or len(submitted_ids) != len(set(submitted_ids)) or set(submitted_ids) != set(original_description_ids):
+            raise ValueError('The displayed description selection does not match this image; reload before approval')
+        from .exporters.common import is_excluded
+        if is_excluded(block):
+            raise ValueError('Include the image before saving and approving it')
     from .publication import content_digest
     previous_content = content_digest(block)
     from .exporters.common import has_unstructured_list_text, retained_list_text
@@ -505,6 +547,7 @@ def update_block(project_dir: Path, block_id: str, changes: dict[str, Any], *, a
         block['content'] = retained_text
     previous_alt = block.get('alt') or ''
     previous_descriptions = copy.deepcopy(document.get('review', {}).get('complex_visuals', []))
+    description_dispositions = {}
     if "type" in changes:
         block_type = str(changes["type"])
         if block_type not in BLOCK_TYPES:
@@ -594,20 +637,58 @@ def update_block(project_dir: Path, block_id: str, changes: dict[str, Any], *, a
             block['content'] = ''.join(str(r.get('text', '')) for r in runs)
             _set_status(block, 'needs_review')
             _mark_content_parents(document, block)
-    if any(field in changes for field in ("alt", "caption", "decorative", "long_description")):
+    if any(field in changes for field in ("alt", "caption", "decorative", "long_description", "description_edits")):
         if block.get("type") != "image":
             raise ValueError("Image accessibility fields can only be set on an image block")
+        for field in ('alt', 'caption', 'long_description'):
+            if field in changes and not isinstance(changes[field], str):
+                raise ValueError(f'{field.replace("_", " ").title()} must be text')
         previous_visual = copy.deepcopy(image_description_visual(document, block))
         if previous_visual:
             previous_visual.setdefault('accessibility', {})['short_alt'] = previous_alt
         if "decorative" in changes:
             value = changes["decorative"]
-            block["decorative"] = value if isinstance(value, bool) else str(value).lower() in {"1", "true", "yes", "on"}
+            decorative = value if isinstance(value, bool) else str(value).lower() in {"1", "true", "yes", "on"}
+            if decorative != bool(block.get('decorative')):
+                block['decorative'] = decorative
         if "alt" in changes:
-            block["alt"] = str(changes["alt"]).strip()
+            value = str(changes['alt']).strip()
+            if value != (block.get('alt') or ''):
+                block['alt'] = value
         if "caption" in changes:
-            block["caption"] = str(changes["caption"]).strip()
-        if "long_description" in changes:
+            value = str(changes['caption']).strip()
+            if value != (block.get('caption') or ''):
+                block['caption'] = value
+        if 'description_edits' in changes:
+            from .image_review import validate_associations
+            records = {str(v['id']): v for v in validate_associations(document, block)}
+            edits = changes['description_edits']
+            if records and 'long_description' in changes:
+                raise ValueError('Conflicting description fields were submitted; use the displayed description record fields')
+            if not isinstance(edits, list) or len(edits) != len(records) or {str(e.get('id')) for e in edits} != set(records):
+                raise ValueError('Every associated description must be displayed; reload the image editor')
+            for edit in edits:
+                visual = records[str(edit['id'])]
+                old = copy.deepcopy(visual)
+                old.setdefault('accessibility', {})['short_alt'] = previous_alt
+                for field in ('long_description', 'adjacent_text'):
+                    if field not in edit or not isinstance(edit[field], str):
+                        raise ValueError('The displayed description text is incomplete')
+                    visual.setdefault('accessibility', {})[field] = edit[field].strip()
+                for field in ('type', 'recovered_text', 'review_note'):
+                    if field in edit:
+                        if not isinstance(edit[field], str) or field == 'type' and visual.get('type') and not edit[field].strip():
+                            raise ValueError(f'Description {field} must be valid text')
+                        value = edit[field].strip() if field != 'recovered_text' else edit[field]
+                        if value != visual.get(field, ''):
+                            visual[field] = value
+                if 'disposition' in edit:
+                    if edit['disposition'] not in {'include', 'not_applicable', 'excluded'}:
+                        raise ValueError('Unsupported description use')
+                    description_dispositions[str(visual['id'])] = edit['disposition']
+                visual['accessibility']['short_alt'] = block.get('alt') or ''
+                _mark_visual_changes(visual, old)
+        if "long_description" in changes and not changes.get('description_edits'):
             text = str(changes["long_description"]).strip()
             visual = image_description_visual(document, block, create=bool(text))
             if visual:
@@ -636,21 +717,37 @@ def update_block(project_dir: Path, block_id: str, changes: dict[str, Any], *, a
         malformed = list_structure_issue(block)
         if status == 'approved' and malformed:
             raise ValueError(malformed['message'])
-        if status == 'approved' and (content_digest(block) != previous_content or document.get('review', {}).get('complex_visuals', []) != previous_descriptions):
+        if status == 'approved' and (content_digest(block) != previous_content or _description_content(document.get('review', {}).get('complex_visuals', []), block.get('alt')) != _description_content(previous_descriptions, previous_alt)):
             status = 'needs_review'
         if status == 'approved':
             _approve_block(block)
         else:
             _set_status(block, status)
-    if content_digest(block) != previous_content or document.get('review', {}).get('complex_visuals', []) != previous_descriptions:
+    if block.get('type') == 'image' and content_digest(block) != previous_content:
+        from .image_review import invalidate_image_edit
+        invalidate_image_edit(document, block, previous_descriptions)
+    if content_digest(block) != previous_content or _description_content(document.get('review', {}).get('complex_visuals', []), block.get('alt')) != _description_content(previous_descriptions, previous_alt):
         if block.get('review', {}).get('status') != 'excluded':
             _set_status(block, 'needs_review')
         _mark_content_parents(document, block)
     if approve_after_save:
         # Explicit combined author action approves the final edited content,
         # after recovery and invalidation, within the same saved Undo snapshot.
+        if block.get('type') == 'image':
+            for visual in document.get('review', {}).get('complex_visuals', []):
+                disposition = description_dispositions.get(str(visual.get('id')))
+                if disposition:
+                    if disposition != 'include':
+                        visual['status'] = disposition
+                        visual['reviewed_at'] = utc_now()
+                        visual.pop('review_reason', None)
+                        visual.pop('review_change_fields', None)
+                    elif visual.get('status') in {'excluded', 'not_applicable'}:
+                        visual['status'] = 'reclassified'
+            from .image_review import approve_descriptions
+            approve_descriptions(document, block, original_description_ids or ([str(image_description_visual(document, block)['id'])] if image_description_visual(document, block) else []))
         _approve_block(block)
-    return save_review_document(project_dir, document)
+    return document
 
 
 def move_block(project_dir: Path, block_id: str, direction: str) -> dict[str, Any]:
@@ -789,15 +886,22 @@ def image_description_visual(document, block, *, create=False):
     return visual
 
 
+def _description_content(records, fallback_alt):
+    """Compare material fields, ignoring decision metadata and reviewer notes."""
+    return [(v.get('id'), v.get('type', ''), v.get('recovered_text', ''),
+             tuple(str(v.get('accessibility', {}).get(field, fallback_alt if field == 'short_alt' else '') or '').strip()
+                   for field in ('short_alt', 'long_description', 'adjacent_text')))
+            for v in records]
+
+
 def _mark_visual_changes(visual, previous):
     fields = [field for field in ('short_alt', 'long_description', 'adjacent_text')
               if str(previous.get('accessibility', {}).get(field) or '').strip() != str(visual.get('accessibility', {}).get(field) or '').strip()]
     fields += [field for field in ('type', 'recovered_text') if previous.get(field, '') != visual.get(field, '')]
-    if fields and (previous.get('status') == 'reviewed' or previous.get('review_reason') == 'changed_after_approval'):
+    if fields and (previous.get('status') in {'reviewed', 'not_applicable'} or previous.get('review_reason') == 'changed_after_approval'):
         visual['review_reason'] = 'changed_after_approval'
         visual['review_change_fields'] = sorted(set(previous.get('review_change_fields', [])) | set(fields))
-        if previous.get('status') == 'reviewed':
-            visual['status'] = 'reclassified'
+        visual['status'] = 'reclassified'
 
 
 def update_complex_visual(
@@ -808,6 +912,10 @@ def update_complex_visual(
     visual = next((item for item in visuals if str(item.get("id")) == visual_id), None)
     if visual is None:
         raise KeyError(f"Complex visual was not found: {visual_id}")
+    if 'expected_review_token' in changes:
+        from .image_review import validate_token
+        validate_token(document, changes['expected_review_token'])
+    previous_records = copy.deepcopy(visuals)
     previous_visual = copy.deepcopy(visual)
     if visual.get('source_block_id'):
         source = _find_location(document.get('blocks', []), str(visual['source_block_id']))[2]
@@ -841,6 +949,9 @@ def update_complex_visual(
             _set_status(block, "needs_review")
     if 'review_note' in changes:
         visual['review_note'] = str(changes['review_note']).strip()
+    if visual.get('source_block_id') and previous_text['short_alt'] != str(block.get('alt') or '').strip():
+        from .image_review import invalidate_image_edit
+        invalidate_image_edit(document, block, previous_records)
     _mark_visual_changes(visual, previous_visual)
     if visual.get('status') == 'reviewed':
         from .accessibility import visual_readiness
@@ -870,16 +981,23 @@ def review_progress(document: dict[str, Any]) -> dict[str, int]:
     counts = {state: 0 for state in BLOCK_REVIEW_STATES}
     blocks = list(document.get("blocks", []))
     for block in blocks:
-        status = effective_block_status(block)
+        status = effective_block_status(block, document)
         counts[status if status in counts else "unreviewed"] += 1
     reviewed = counts["approved"] + counts["needs_review"] + counts["excluded"]
     from .accessibility import visual_readiness
     visuals = document.get('review', {}).get('complex_visuals', [])
     pending_blocks = counts['unreviewed'] + counts['needs_review']
-    pending_descriptions = sum(not visual_readiness(document, visual)['complete'] for visual in visuals)
+    from .image_review import description_owner
+    pending_visuals = [v for v in visuals if not visual_readiness(document, v)['complete']]
+    pending_descriptions = len(pending_visuals)
+    linked_descriptions = sum(description_owner(document, v) is not None for v in pending_visuals)
+    standalone_descriptions = pending_descriptions - linked_descriptions
+    pending_images = sum(b.get('type') == 'image' and effective_block_status(b, document) in {'unreviewed', 'needs_review'} for b in blocks)
     return {"total": len(blocks), "reviewed": reviewed, **counts,
             'pending_blocks': pending_blocks, 'pending_descriptions': pending_descriptions,
-            'pending_tasks': pending_blocks + pending_descriptions, 'description_total': len(visuals)}
+            'pending_tasks': pending_blocks + standalone_descriptions, 'description_total': len(visuals),
+            'linked_pending_descriptions': linked_descriptions, 'standalone_pending_descriptions': standalone_descriptions,
+            'pending_images': pending_images}
 
 
 def archive_review_document(project_dir: Path, reason: str) -> Path | None:

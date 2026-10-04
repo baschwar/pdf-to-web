@@ -145,7 +145,7 @@ mapping. Direct upload is intentionally outside the current scope.
 
 On **Export**, first choose an **Image filename prefix** and select **Prepare
 images ZIP and mapping CSV**. The default uses the document title; for example,
-`citi-training-` produces `citi-training-image1.png`, `citi-training-image2.png`,
+`my-report-` produces `my-report-image1.png`, `my-report-image2.png`,
 etc. Original assets are unchanged. Names follow immutable extraction order and
 remain stable when content is reordered, excluded or arranged into output pages.
 The prefix persists with review state and supports **Undo last change**.
@@ -170,7 +170,25 @@ matched into `media-mapping.csv`; unmatched or duplicate filenames are left for
 manual review rather than guessed. XML matching preserves current reviewed alt
 text and captions, even if they changed after preparing the CSV.
 
-Mapping instructions appear as ordered steps. Matching scrolls to a result table
+Deleting and re-uploading unchanged WordPress images can assign new attachment
+IDs while keeping their filenames and URLs. Matching reports these as awaiting
+explicit refresh. Select **These are the same reviewed images; refresh existing
+attachment IDs**, then match the same XML again. Only a unique exact filename
+with the same saved URL can refresh; ambiguous, missing or different-URL matches
+keep the current mapping and show their reason. Repeating current matches reports
+them as already current without another saved revision. XML cannot establish that
+image bytes are unchanged. Changed source images require fresh alternatives and
+linked-description review; this mapping operation never approves pending content.
+Use manual CSV mapping to explicitly select different URLs.
+The result leads with **Mappings updated**, not filename matches. If confirmation
+was not selected, it explicitly says the attachment IDs were not refreshed and
+repeats that warning at the focused Export readiness section. Filename matches
+only establish names; Already current means no change was needed. Choose the XML
+first, then select refresh: a new file selection clears the checkbox and displays
+a notice when it clears an existing confirmation.
+
+Mapping instructions appear as ordered steps. Matching focuses Export readiness
+with a link to a result table
 with prominent totals and lists every unmatched or ambiguous image's filename,
 description, source page and link to its Structure block. Download the current
 CSV from that result to finish any remaining mappings manually.
@@ -181,11 +199,11 @@ values correlate attachments with source figures even when WordPress renames
 files. After mapping, **Export and copy content** generates the HTML, Gutenberg
 or WXR with mapped URLs. Unresolved meaningful images remain visible WordPress
 upload placeholders. Mapping changes clear stale copy/download results until
-export is regenerated. When a mapping changes an approved image, its source
-block needs a fresh manual approval. Counts, review links and the Export button
-update immediately after XML/CSV mapping and Undo; follow Export readiness links
-to review the changed blocks before exporting. Identical mappings preserve
-existing approvals, and a failed import leaves saved review state unchanged. Standalone semantic HTML copies unmapped local images to
+export is regenerated. Media routing changes preserve content approval; source, alt, caption and
+authored-description edits require fresh review. Counts, review links and the
+Export button update immediately after XML/CSV mapping and Undo. Earlier approvals
+lost to media-only changes can be restored explicitly from retained history as
+described below. A failed import leaves saved review state unchanged. Standalone semantic HTML copies unmapped local images to
 its `assets/` folder with the same meaningful names and uses mapped URLs when
 available. Changing the prefix after uploading requires manual filename matching
 or a new upload. This workflow needs no WordPress credentials in PDF to Web.
@@ -311,13 +329,51 @@ without alt text or a decorative decision prevents the operation and shows an
 inline explanation while retaining your entered fields. Ordinary Save still
 requires fresh review after content changes. Approve uses saved content; when
 there are unsaved fields it directs you to Save and approve. Save or undo edits
-in other editors first so approval cannot discard them. Separate visual-description
-decisions and affected output-page review remain required.
+in other editors first so approval cannot discard them. Image editors display alt,
+caption, every explicitly associated long/adjacent description and current review
+state together. Their **Save and approve** action approves exactly that image and
+its displayed descriptions in one Undo revision. Missing text, ambiguous/missing
+associations or a stale project snapshot reject the entire action. Existing pending
+descriptions are never bulk-approved merely by opening or saving a project.
+Ordinary image Save keeps edited content awaiting review; later material edits
+invalidate current approval. A long description is sufficient without adjacent
+text. Adjacent text is authored text, not a reference to an existing instruction
+block. Linked descriptions have one editor inside their Reading order image;
+there is no extra description approval stage. An image with a pending description
+appears in **Needing review**, even when an older image-only approval is saved.
+**Description use** allows an explicit **No separate description needed** or
+exclusion decision in the same Save and approve action. Optional classification,
+recovered source text and reviewer notes remain editable there. Standalone or
+ambiguous visual records retain their separate editor. Affected output-page review
+remains separate.
+
+On **Accessibility**, unresolved document findings appear first. **Bulk review**
+is optional and starts collapsed, showing **Pending only** records when opened.
+Use **Show records** to inspect **Completed** or **All records**; approved,
+excluded and not-applicable records remain available for explicit changes.
+Visible status pills use green for Approved/Reviewed, amber for pending states
+and gray for Excluded/Not applicable, with text identifying the actual state.
+The visible saved-record count can include both an image and its description;
+it is not added to the overall task count. Groups use classification. Use
+**Classification filter**, per-row checkboxes or **Select all visible records**,
+then **Review state options** and **Apply**. Inspect the displayed scope/count and
+confirm it explicitly. Changing classification or Show records clears selection
+and any unconfirmed batch. Select all includes only the current visible scope. Block approvals,
+description reviews and accessibility decisions have separate permitted states;
+mixed record types cannot be changed in one batch. Image-block approval also
+reviews its associated descriptions shown in that row. Server validation checks
+the selected IDs, visible scope, project snapshot, permissions and required text.
+Any invalid item rejects the entire batch with its exact reason; one Undo restores
+a successful batch. No actual user approvals are made automatically.
 
 Document shows review progress and **Review structure** at the top, with one set
 of counts. **Pending** counts remaining block and description review tasks, with
-each kind shown separately. For example, 54 reviewed blocks and five descriptions
-needing review show **Pending 5 review tasks** and **Total 54 blocks**. The same
+each kind shown separately. A pending linked description is included in its
+image's task, rather than counted again. For example, 54 blocks with five images
+awaiting description review show **49 blocks reviewed**, **5 image reviews** and
+**Pending 5 review tasks**, with the five included description reviews explained
+separately. Standalone descriptions add their own tasks. **Total 54 blocks** still
+counts document blocks. The same
 task summary appears in Structure, Accessibility, Arrange Pages, Preview and
 Export. Once block decisions and required descriptions are resolved, it offers
 the same green **Continue to Accessibility** handoff as Structure. Remaining
@@ -406,8 +462,19 @@ by review operations. See `docs/PHASE2_REVIEW_APP.md` for the architecture,
 security model, and current limits. The completion evidence and remaining
 external acceptance checks are recorded in `docs/PHASE2_CLOSEOUT.md`.
 
-Accessibility automatically runs bundled axe-core 4.13.0 against the current
-semantic HTML when the screen opens. WCAG 2.2 A/AA findings and uncertain checks
+Accessibility shows three separate scopes: block/image approvals, document
+accessibility findings, and automated HTML checks. Completed content approvals
+can coexist with unresolved human judgments such as visible URLs used as link
+labels. Fix a label in the linked Structure editor, or record a justified decision
+where allowed. Zero axe issues or incomplete checks do not resolve these findings.
+Reviewed document decisions and resolved extraction notes remain in collapsed
+history; neither is presented as pending work.
+
+Accessibility automatically runs bundled axe-core 4.13.0 against the saved
+semantic HTML snapshot when the screen opens. The iframe snapshot token must
+match the displayed document. A changed snapshot prevents scanning and asks you
+to reload; completion stays hidden. Successful results show the saved revision
+and scan time. Reload after edits to scan again. WCAG 2.2 A/AA findings and uncertain checks
 appear separately from document review, with links to affected Structure blocks
 where available. No generate button, account, API key, Node runtime or external
 request is needed for this browser scan. Reopening or refreshing Accessibility
@@ -491,7 +558,12 @@ generate through an existing local Ollama
 vision model or an explicitly authorized paid OpenAI request, or export a manual
 request ZIP for your chosen tool. **Export pending images ZIP** includes images
 needing drafts without individual selection; the toolbar shows selected and pending
-counts and brings the download link into view. Each request ZIP is saved in the
+counts and brings the download link into view. Beside the ZIP controls,
+**Copy instructions for Codex/ChatGPT**
+copies a ready-to-use prompt: attach the downloaded ZIP, paste the instructions,
+validate and import the returned `response-template.json`, then review each image.
+Copying preserves unsaved edits. If clipboard copying fails, selectable instructions
+appear for manual copying. The request ZIP is saved in the
 current project's `output/image-drafts/` folder, including explicitly chosen
 project roots. The saved full path appears beside its browser download link.
 Names contain the project title, `image-drafting-request`, UTC time and a unique
@@ -530,6 +602,46 @@ when either document or project persistence fails, allowing a retry.
 Import, Populate and Refresh draft actions ask you to save or undo unsaved
 Structure edits before replacing the screen. Completed media CSVs associate
 WordPress URLs and attachment IDs without replacing current alt text or captions.
+Routing-only media matching preserves existing content review decisions and dates;
+changing the source image, alt, caption or authored description still requires
+review. Mapping changes invalidate older generated publications, so export fresh
+content after matching. The saved document owns mapping state; Undo followed by
+the same Media XML can re-match filenames even if the generated CSV still contains
+older URLs. Existing document mappings take precedence over stale CSV reports.
+
+After matching media, Export always moves keyboard focus and scrolls to
+**Export readiness**, which stays visible when ready or blocked. The result
+links back to detailed matching feedback, including unmatched or ambiguous images.
+**Export reviewed document** and **Copy content** also bring readiness into view;
+its Continue link returns to the content controls. The export button keeps an
+adjacent explanation and a **View Export readiness** link.
+Export shows a busy state, prevents repeat requests and locks media mutations
+until it finishes. Failures remain visible and allow retry. Copy page title only
+changes the clipboard; it preserves readiness, errors and generated-file feedback.
+The complete local fixture journey tests images ZIP/CSV, Media XML matching,
+WXR/XML + WSUWP + Page, title copying, generated downloads and artifact contents.
+
+If an older media match cleared existing approvals, **Preview recorded approvals**
+appears at Export readiness when retained history proves a mapping-only change.
+It lists the exact eligible images and their original approval dates. **Confirm
+restore N recorded approvals** restores those recorded decisions in one saved
+change, keeping current media mappings and newer review decisions. Preview is
+read-only; reopening never silently approves pending content. A changed project,
+selection or history invalidates confirmation. Missing or nonconsecutive history,
+ambiguous identities, manual pending decisions and genuine edits (even if later
+reverted) remain for review. **Undo last change** restores the pending states;
+conservative history verification may then require manual review again. No image
+re-upload is needed. The confirmation explains this limit before restoring;
+its Confirm button also exposes the warning to screen readers. Historical source
+identities and recorded content are checked;
+history does not independently establish earlier image-file bytes.
+
+**Help** is available from every screen, including before project selection.
+Contextual links open the exact explanation in a separate tab so unsaved fields
+stay open. Background details about project files, review counts, image descriptions,
+bulk review, HTML checks, media, preview appearance, title exports and acceptance
+limits live there. Required errors, current states, exact review links and useful
+long-page actions remain on their workflow screens.
 New list items receive new identities; retained items keep their links, source
 provenance and list start after reordering. Editing a footnote source body updates
 its exported text while retaining note IDs, markers and backlinks. Ambiguous
@@ -538,7 +650,9 @@ choice remains available.
 
 Generated publication downloads and clipboard reads must match the current saved
 document and export settings. Pending, changed, unstamped or outdated publications
-are blocked; review and regenerate them. Existing files remain on disk. Internal
+are blocked; review and regenerate them. A rejected stale copy clears outdated
+results and readiness counts, brings **Reload Export** into view and keeps the
+clipboard unchanged. Reload checks current reviews before you generate fresh content. Existing files remain on disk. Internal
 previews, accessibility reports, and media/draft exchange preparation remain
 available during review. Validation reports fail without generating publication
 files when review is incomplete.
@@ -566,6 +680,13 @@ Run tests without third-party test tooling:
 
 ```sh
 python -m unittest discover -s tests -v
+```
+
+On macOS, path-sensitive fixture checks may distinguish `/var` from `/private/var`.
+Use the canonical temporary directory for those checks:
+
+```sh
+TMPDIR=/private/tmp python -m unittest discover -s tests -v
 ```
 
 Run the extraction spike corpus through both deterministic modes:

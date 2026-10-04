@@ -74,18 +74,22 @@ associated to a page until reviewed.
 
 ## Initial six-document corpus
 
+Source-document names and project/export identifiers are withheld from this public
+report; descriptive labels retain the recorded coverage and findings. Detailed
+evidence remains local and ignored.
+
 The first valid deterministic comparison used six user-supplied PDFs covering
 prose, tables, posters, an infographic, and screenshot-heavy instructions. All
 12 heuristic/structure-tree runs completed in the normal local environment.
 
 | PDF | Heuristic result | Structure-tree result | Local assets |
 | --- | --- | --- | ---: |
-| Vaccination admission policy | 97.5% text recovery | 98.9% text recovery | 1 |
-| QPR practicum poster | 100.3% recovery; review-ready baseline | Same output as heuristic | 0 |
-| CITI instructions | 96.4% text recovery | 97.9% text recovery | 21 |
-| Heart-failure infographic | 65.8% recovery; needs review | 17.1% recovery; conversion blocked | 19 |
-| Four-year sample program | 92.6% recovery; review-ready baseline | 93.4% recovery; review-ready baseline | 1 |
-| Bloodborne-pathogen guide | 96.4% text recovery | 97.9% text recovery | 0 |
+| Policy document | 97.5% text recovery | 98.9% text recovery | 1 |
+| Multi-column poster | 100.3% recovery; review-ready baseline | Same output as heuristic | 0 |
+| Screenshot-heavy instructions | 96.4% text recovery | 97.9% text recovery | 21 |
+| Designed infographic | 65.8% recovery; needs review | 17.1% recovery; conversion blocked | 19 |
+| Table-heavy program plan | 92.6% recovery; review-ready baseline | 93.4% recovery; review-ready baseline | 1 |
+| Training guide | 96.4% text recovery | 97.9% text recovery | 0 |
 
 The infographic remains the hardest case in both modes, and heuristic mode is
 substantially better there. Mode selection cannot be based on whether a PDF is

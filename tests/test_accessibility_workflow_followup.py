@@ -92,7 +92,8 @@ class AccessibilityWorkflowFollowupTests(unittest.TestCase):
     def test_export_hides_passing_checks_but_retains_actual_problems(self):
         self.ready()
         page = self.client.get('/export').text
-        self.assertNotIn('id="readiness-heading"', page)
+        self.assertEqual(page.count('id="readiness-heading"'), 1)
+        self.assertIn('Required content reviews are complete.', page)
         self.assertNotIn('0 unresolved diagnostic', page)
         self.assertNotIn('0 images still need', page)
         self.assertIn('id="copy-page-title-status" role="status"', page)
@@ -112,7 +113,8 @@ class AccessibilityWorkflowFollowupTests(unittest.TestCase):
         self.assertIn('#block-photo', missing)
         self.assertNotIn('#block-decoration', missing)
         self.assertNotIn('#block-ambiguous', missing)
-        self.assertIn('importing the content WXR is optional', page)
+        self.assertIn('href="/help#wordpress-media"', page)
+        self.assertIn('importing content WXR is optional', self.client.get('/help').text)
 
     def test_arranged_semantic_preview_uses_local_assets_even_when_wordpress_mapped(self):
         document = self.ready()

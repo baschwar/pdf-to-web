@@ -106,7 +106,7 @@ def _attachment_filename(item: ET.Element, url: str) -> str:
     return Path(unquote(urlparse(url).path)).name
 
 
-def apply_wordpress_media_export(project_dir: Path, xml_text: str) -> dict[str, Any]:
+def apply_wordpress_media_export(project_dir: Path, xml_text: str, *, refresh_existing: bool = False) -> dict[str, Any]:
     if "<!DOCTYPE" in xml_text.upper() or "<!ENTITY" in xml_text.upper():
         raise ValueError("WordPress media XML cannot contain document type or entity declarations")
     try:
@@ -126,7 +126,7 @@ def apply_wordpress_media_export(project_dir: Path, xml_text: str) -> dict[str, 
             attachment_id = int(post_id)
         except ValueError:
             continue
-        if attachment_id < 1 or not filename or urlparse(url).scheme not in {"http", "https"}:
+        if attachment_id < 1 or not filename or urlparse(url).scheme not in {"http", "https"} or not urlparse(url).netloc:
             continue
         attachment_count += 1
         attachments.setdefault(filename.casefold(), []).append((attachment_id, url))
@@ -143,36 +143,63 @@ def apply_wordpress_media_export(project_dir: Path, xml_text: str) -> dict[str, 
     matched = 0
     unmatched = 0
     ambiguous = 0
+    unchanged = 0
+    existing_kept = 0
+    refresh_required = 0
     used: set[tuple[int, str]] = set()
     current_images = {str(b.get('id')): b for b in _walk(ensure_review_document(project_dir).get('blocks', []))
                       if b.get('type') == 'image' and not b.get('decorative')}
     matched_rows = []
-    unmatched_images, ambiguous_images = [], []
+    unmatched_images, ambiguous_images, retained_images, refreshable_images = [], [], [], []
     positions = {str(b.get('id')): i for i, b in enumerate(ensure_review_document(project_dir).get('blocks', []), 1)}
     def describe(row, reason):
         block = current_images[row['block_id']]
         return {'block_id': row['block_id'], 'position': positions.get(row['block_id']),
                 'asset_filename': row.get('asset_filename'), 'alt_text': block.get('alt', ''),
                 'source_page': block.get('provenance', {}).get('source_page'), 'reason': reason}
+    from .export import _wordpress_media_values
     for row in rows:
         if row.get('block_id') not in current_images:
             continue
-        if str(row.get("wordpress_url") or "").strip():
-            continue
+        url, attachment_id = _wordpress_media_values(current_images[row['block_id']])
+        if url:
+            row['wordpress_url'] = url
+            row['wordpress_attachment_id'] = str(attachment_id or '')
+        else:
+            # This report can retain values removed by Undo. The saved document
+            # owns mapping state, including the absence of a saved mapping.
+            row['wordpress_url'], row['wordpress_attachment_id'] = '', ''
         candidates = attachments.get(str(row.get("asset_filename") or "").casefold(), [])
         if not candidates:
             unmatched += 1
-            unmatched_images.append(describe(row, 'No exact filename match in the selected WordPress Media XML.'))
+            existing_kept += bool(url)
+            unmatched_images.append(describe(row, 'No exact filename match in the selected WordPress Media XML.' + (' Existing mapping was kept.' if url else '')))
             continue
         if len(candidates) > 1:
             ambiguous += 1
-            ambiguous_images.append(describe(row, 'Multiple WordPress attachments have this filename. Choose the intended URL in the CSV.'))
+            existing_kept += bool(url)
+            ambiguous_images.append(describe(row, 'Multiple WordPress attachments have this filename. Choose the intended URL in the CSV.' + (' Existing mapping was kept.' if url else '')))
             continue
-        attachment_id, url = candidates[0]
-        row["wordpress_attachment_id"] = str(attachment_id)
-        row["wordpress_url"] = url
+        new_attachment_id, new_url = candidates[0]
+        if url and url != new_url:
+            existing_kept += 1
+            retained_images.append(describe(row, 'The exact filename has a different WordPress URL. Existing mapping was kept to avoid replacing the wrong image; use the CSV to choose the intended URL.'))
+            continue
         used.add(candidates[0])
         matched += 1
+        if url and attachment_id == new_attachment_id:
+            unchanged += 1
+            continue
+        if url and not refresh_existing:
+            refresh_required += 1
+            existing_kept += 1
+            refreshable_images.append(describe(row, f'The filename and URL match, but the attachment ID changed from {attachment_id or "none"} to {new_attachment_id}. Confirm that these are the same reviewed images using the refresh option, then match again. Changed images require fresh alt and description review.'))
+            continue
+        # Deleting/re-uploading media can keep the exact filename and URL but
+        # replace the attachment ID. Refresh only that verified identity; another
+        # URL or ambiguous filename never overrides an existing mapping.
+        row["wordpress_attachment_id"] = str(new_attachment_id)
+        row["wordpress_url"] = new_url
         matched_rows.append(row)
 
     # XML matching changes media identity only. A CSV prepared earlier must not
@@ -196,8 +223,13 @@ def apply_wordpress_media_export(project_dir: Path, xml_text: str) -> dict[str, 
         "matched": matched,
         "unmatched": unmatched,
         "ambiguous": ambiguous,
+        "unchanged": unchanged,
+        "existing_kept": existing_kept,
+        "refresh_required": refresh_required,
         "attachments_found": attachment_count,
         "unused_attachments": attachment_count - len(used),
         'unmatched_images': unmatched_images,
         'ambiguous_images': ambiguous_images,
+        'retained_images': retained_images,
+        'refreshable_images': refreshable_images,
     }

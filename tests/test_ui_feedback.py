@@ -149,7 +149,8 @@ class FeedbackWorkflowTests(unittest.TestCase):
             self.assertEqual(page.status_code, 200, route)
             self.assertIn('Working on: <strong>CITI &amp; Training.pdf', page.text, route)
             self.assertRegex(page.text, r'<title>[^<]*CITI &amp; Training.pdf[^<]*</title>')
-            self.assertEqual(page.text.count('do not certify WCAG'), 1)
+            self.assertEqual(page.text.count('href="/help#acceptance"'), 1)
+        self.assertIn('do not certify WCAG', self.client.get('/help').text)
 
     def test_semantic_and_axe_previews_load_same_local_images(self):
         before = ensure_review_document(self.root)

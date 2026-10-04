@@ -1,6 +1,91 @@
 const authoringForms = [...document.querySelectorAll('.block-form, .complex-visual-form')];
-const authoringValue = form => JSON.stringify([...form.querySelectorAll('input, textarea, select')].map(field => [field.name, field.type === 'checkbox' ? field.checked : field.value]));
+const authoringValue = form => JSON.stringify([...form.querySelectorAll('input:not([name="expected_review_token"]), textarea, select')].map(field => [field.name, field.type === 'checkbox' ? field.checked : field.value]));
 const authoringBaselines = new WeakMap(authoringForms.map(form => [form, authoringValue(form)]));
+
+const bulkReview = document.querySelector('#bulk-review[data-review-token]');
+if (bulkReview) {
+  const filter = document.getElementById('bulk-review-filter');
+  const visibility = document.getElementById('bulk-review-visibility');
+  const reviewScope = () => visibility?.value || 'all';
+  const viewLabel = () => visibility ? visibility.options[visibility.selectedIndex].text : 'All records';
+  const all = document.getElementById('bulk-review-select-all');
+  const state = document.getElementById('bulk-review-state');
+  const apply = document.getElementById('bulk-review-apply');
+  const confirm = document.getElementById('bulk-review-confirm');
+  const confirmation = document.getElementById('bulk-review-confirmation');
+  const message = document.getElementById('bulk-review-message');
+  const selectors = [...bulkReview.querySelectorAll('.bulk-review-select')];
+  const visible = () => selectors.filter(box => !box.closest('.bulk-review-row').hidden && !box.closest('.bulk-review-group').hidden);
+  const selected = () => visible().filter(box => box.checked);
+  let pendingBatch = null;
+  const labels = {approved: 'Approved — block or accessibility decision', needs_review: 'Needs review — blocks', excluded: 'Excluded', reviewed: 'Reviewed — descriptions', reclassified: 'Awaiting review — descriptions', not_applicable: 'Not applicable', unresolved: 'Unresolved — accessibility decisions'};
+  function selectionChanged() {
+    pendingBatch = null; confirm.hidden = true; confirmation.hidden = true;
+    const choices = selected();
+    const kinds = new Set(choices.map(box => box.dataset.kind));
+    const prior = state.value;
+    state.replaceChildren();
+    if (choices.length && kinds.size === 1) {
+      for (const value of JSON.parse(choices[0].dataset.states)) {
+        const option = document.createElement('option'); option.value = value; option.textContent = labels[value]; state.append(option);
+      }
+      if ([...state.options].some(option => option.value === prior)) state.value = prior;
+    } else {
+      const option = document.createElement('option'); option.value = ''; option.textContent = choices.length ? 'Select one record type' : 'Select records first'; state.append(option);
+    }
+    state.disabled = !choices.length || kinds.size !== 1;
+    apply.disabled = state.disabled;
+    const descriptions = choices.reduce((count, box) => count + Number(box.dataset.descriptionCount || 0), 0);
+    document.getElementById('bulk-review-selection').textContent = `${choices.length} selected${descriptions ? `; image approval also reviews ${descriptions} associated descriptions shown below` : ''}${kinds.size > 1 ? '. Select one record type to choose a review state.' : ''}`;
+    all.checked = visible().length > 0 && choices.length === visible().length;
+    all.indeterminate = choices.length > 0 && choices.length < visible().length;
+  }
+  selectors.forEach(box => box.addEventListener('change', selectionChanged));
+  all.addEventListener('change', () => { for (const box of visible()) box.checked = all.checked; selectionChanged(); });
+  function filterRecords(changed = false) {
+    for (const box of selectors) box.checked = false;
+    for (const row of bulkReview.querySelectorAll('.bulk-review-row')) {
+      row.hidden = Boolean(filter.value && row.dataset.classification !== filter.value)
+        || reviewScope() !== 'all' && (row.dataset.pending === 'true') !== (reviewScope() === 'pending');
+    }
+    for (const group of bulkReview.querySelectorAll('.bulk-review-group')) group.hidden = !group.querySelector('.bulk-review-row:not([hidden])');
+    const count = document.getElementById('bulk-review-visible-count');
+    if (count) count.textContent = `${visible().length} of ${selectors.length} saved records shown · ${viewLabel()}${filter.value ? ` · ${filter.value}` : ''}`;
+    const empty = document.getElementById('bulk-review-empty');
+    if (empty) {
+      empty.hidden = visible().length !== 0;
+      empty.textContent = reviewScope() === 'pending'
+        ? 'No pending saved records in this view. Completed records remain available in Show records.' : 'No saved records match this view.';
+    }
+    if (changed) message.textContent = 'Review view changed. Selection cleared.';
+    selectionChanged();
+  }
+  filter.addEventListener('change', () => filterRecords(true));
+  visibility?.addEventListener('change', () => filterRecords(true));
+  filterRecords();
+  state.addEventListener('change', () => { pendingBatch = null; confirm.hidden = true; confirmation.hidden = true; });
+  apply.addEventListener('click', () => {
+    const choices = selected();
+    if (!choices.length || state.disabled) return;
+    pendingBatch = {project_id: bulkReview.dataset.projectId, expected_review_token: bulkReview.dataset.reviewToken, classification: filter.value, review_scope: reviewScope(), visible_ids: visible().map(box => box.value), selected_ids: choices.map(box => box.value), status: state.value};
+    confirmation.textContent = `Apply ${labels[state.value]} to ${choices.length} selected ${choices[0].dataset.kind} records in ${viewLabel()} · ${filter.value || 'All classifications'}? ${document.getElementById('bulk-review-selection').textContent}. The entire batch must pass validation before saving.`;
+    confirmation.hidden = false; confirm.hidden = false; confirm.focus();
+  });
+  confirm.addEventListener('click', async () => {
+    if (!pendingBatch) return;
+    confirm.disabled = true; apply.disabled = true;
+    try {
+      const result = await api('/api/accessibility/bulk-review', {method: 'POST', headers: csrfHeaders(), body: JSON.stringify(pendingBatch)});
+      announce(`${result.applied} selected review records saved. One Undo restores this batch.`);
+      location.hash = 'bulk-review-heading'; window.location.reload();
+    } catch (error) { message.textContent = error.message; announce(error.message); }
+    finally { confirm.disabled = false; apply.disabled = state.disabled; }
+  });
+  document.getElementById('bulk-review-undo').addEventListener('click', async () => {
+    try { await api('/api/review/undo', {method: 'POST', headers: csrfHeaders(), body: '{}'}); location.hash = 'bulk-review-heading'; window.location.reload(); }
+    catch (error) { message.textContent = error.message; announce(error.message); }
+  });
+}
 function requireSavedAuthoring() {
   const dirty = authoringForms.find(form => authoringBaselines.get(form) !== authoringValue(form));
   if (dirty) throw new Error('Save or undo unsaved authoring edits before importing, populating, or refreshing drafts.');
@@ -460,7 +545,19 @@ if (document.getElementById('source-image')) showSourcePage(1, null);
 
 document.querySelectorAll('.block-card').forEach((card) => {
   card.addEventListener('click', () => selectSourceBlock(card));
-  card.addEventListener('focusin', () => selectSourceBlock(card));
+  card.addEventListener('focusin', event => {
+    selectSourceBlock(card);
+    if (event.target.matches('.image-block-form :is(input, textarea, select, button)')) {
+      // Browser focus scrolling does not account for the sticky review controls.
+      requestAnimationFrame(() => {
+        if (document.activeElement !== event.target) return;
+        updateStickyHeaderOffset();
+        const offset = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--structure-scroll-offset'));
+        const rect = event.target.getBoundingClientRect();
+        if (rect.top < offset || rect.top >= innerHeight) event.target.scrollIntoView({block: 'start'});
+      });
+    }
+  });
 });
 
 function selectDescription(card) {
@@ -476,6 +573,16 @@ document.querySelectorAll('.complex-visual').forEach(card => {
   card.addEventListener('click', () => selectDescription(card));
 });
 function focusLinkedBlock() {
+  if (location.hash === '#bulk-review-heading') {
+    const tools = document.getElementById('bulk-review-tools');
+    const heading = document.getElementById('bulk-review-heading');
+    if (tools && heading) {
+      tools.open = true;
+      heading.focus({preventScroll: true});
+      heading.scrollIntoView({block: 'start'});
+    }
+    return;
+  }
   if (location.hash === '#image-description-tools') {
     const tools = document.getElementById('image-description-tools');
     const heading = document.getElementById('image-draft-heading');
@@ -494,6 +601,16 @@ function focusLinkedBlock() {
     if (card.hidden && !blockCards().length && (pendingBlockId || performance.getEntriesByType('navigation')[0]?.type === 'reload')) return;
     selectDescription(null);
     focusBlock(card);
+  }
+  else if (card?.classList.contains('image-description-record')) {
+    const owner = card.closest('.block-card');
+    if (owner) {
+      if (owner.hidden) { selectedBlockFilter = 'all'; applyBlockFilter(); }
+      selectSourceBlock(owner);
+      selectDescription(null);
+      card.focus({preventScroll: true});
+      card.scrollIntoView({block: 'start'});
+    }
   }
   else if (card?.classList.contains('complex-visual')) {
     for (let parent = card.parentElement; parent; parent = parent.parentElement) {
@@ -572,6 +689,11 @@ document.querySelectorAll('.block-form').forEach((form) => form.addEventListener
   event.preventDefault();
   if (form.dataset.saving === 'true') return;
   const values = Object.fromEntries(new FormData(form));
+  if (form.classList.contains('image-block-form')) {
+    values.description_edits = [...form.querySelectorAll('.image-description-record')].map(record => ({id: record.dataset.visualId, ...Object.fromEntries([...record.querySelectorAll('[data-description-field]')].map(field => [field.dataset.descriptionField, field.value]))}));
+    values.displayed_description_ids = values.description_edits.map(record => record.id);
+    for (const key of Object.keys(values)) if (/^description_\d+_/.test(key)) delete values[key];
+  }
   const decorative = form.querySelector('input[name="decorative"]');
   if (decorative) values.decorative = decorative.checked;
   ['table_header_row', 'table_header_column', 'table_reviewed'].forEach((name) => {
@@ -630,6 +752,7 @@ document.querySelectorAll('.complex-visual-form').forEach((form) => form.addEven
   try {
     const values = Object.fromEntries(new FormData(form));
     const data = await api(`/api/complex-visuals/${encodeURIComponent(form.dataset.visualId)}`, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(values) });
+    if (data.reload_required) { location.hash = 'visual-' + encodeURIComponent(form.dataset.visualId); window.location.reload(); return; }
     message.textContent = `Saved.${data.block_status === 'needs_review' ? ' The linked image block needs approval.' : ''}`;
     const card = form.closest('.complex-visual');
     if (returnToAccessibility(card)) return;
@@ -648,6 +771,7 @@ document.querySelectorAll('.complex-visual-form').forEach((form) => form.addEven
     announce('Complex visual review saved.');
     for (const field of form.querySelectorAll('input, textarea')) field.defaultValue = values[field.name];
     form.elements.namedItem('status').value = data.visual.status;
+    form.elements.namedItem('expected_review_token').value = data.review_token;
     authoringBaselines.set(form, authoringValue(form));
     const state = form.closest('.complex-visual').querySelector('.visual-state');
     state.textContent = data.visual.label;
@@ -666,6 +790,13 @@ document.querySelectorAll('.complex-visual-form').forEach((form) => form.addEven
         const field = imageForm.elements.namedItem(key);
         if (field && field.value === field.defaultValue) { field.value = value; field.defaultValue = value; }
       }
+      const record = [...imageForm.querySelectorAll('.image-description-record')].find(record => record.dataset.visualId === form.dataset.visualId);
+      if (record && wasClean) {
+        for (const field of record.querySelectorAll('[data-description-field]')) { field.value = values[field.dataset.descriptionField]; field.defaultValue = field.value; }
+        record.querySelector('.image-description-state').textContent = data.visual.label;
+        record.querySelector('.image-description-reason').textContent = data.visual.reason;
+        record.querySelector('.image-description-decision').textContent = data.visual.status;
+      }
       const review = imageForm.elements.namedItem('review_status');
       review.value = data.block_status;
       if (wasClean) authoringBaselines.set(imageForm, authoringValue(imageForm));
@@ -681,6 +812,10 @@ document.querySelectorAll('.complex-visual-form').forEach((form) => form.addEven
       const approve = blockCard.querySelector('[data-action="approve"]');
       if (approve) approve.disabled = data.block_status === 'approved';
       applyBlockFilter();
+    }
+    for (const editor of authoringForms) if (authoringBaselines.get(editor) === authoringValue(editor)) {
+      const token = editor.elements.namedItem('expected_review_token');
+      if (token) token.value = data.review_token;
     }
   } catch (error) { message.textContent = error.message; announce(error.message); }
   finally {
@@ -780,7 +915,7 @@ function selectPreviewMode(mode) {
     : '/api/preview/html';
   const description = document.getElementById('preview-description');
   if (description) description.textContent = wordpress
-    ? 'WordPress Preview renders the actual Gutenberg export through the local block converter.'
+    ? 'Approximate content and structure preview using local minimal CSS. Production WSU theme and plugins determine the final design.'
     : 'Semantic Preview shows the reviewed document independently of WordPress.';
   announce(`${wordpress ? 'WordPress' : 'Semantic HTML'} preview selected.`);
 }
@@ -789,49 +924,189 @@ previewProfile?.addEventListener('change', () => selectPreviewMode('wordpress'))
 
 const exportForm = document.getElementById('export-form');
 let exportMutationPending = false;
+let contentExportPending = false;
 function updateExportAvailability() {
   if (!exportForm) return;
-  exportForm.querySelector('button[type="submit"]').disabled = exportMutationPending || exportForm.dataset.publicationReady !== 'true';
+  const prefix = document.querySelector('#media-export-form [name="image_prefix"]');
+  const prefixChanged = prefix && prefix.value !== prefix.defaultValue;
+  const stale = exportForm.dataset.reviewStale === 'true';
+  const reviewRequired = exportForm.dataset.publicationReady !== 'true';
+  exportForm.querySelector('button[type="submit"]').disabled = exportMutationPending || contentExportPending || reviewRequired || prefixChanged;
+  const message = document.getElementById('export-availability-message');
+  if (message) message.textContent = contentExportPending ? 'Exporting the reviewed document…'
+    : exportMutationPending ? 'Finishing the media change before export…'
+    : stale ? 'Reload Export to check the current reviews and generate fresh content.'
+    : reviewRequired ? 'Export is unavailable until the required content reviews are resolved.'
+    : prefixChanged ? 'Prepare the images ZIP and mapping CSV to save the new image prefix before exporting.' : 'Ready to export.';
+  const link = document.getElementById('export-readiness-link');
+  if (link) link.hidden = false;
+  for (const button of document.querySelectorAll('#media-wxr-form button, #media-mapping-form button, #media-export-form button, #media-review-recovery-preview, #media-review-recovery-selection button')) {
+    button.disabled = exportMutationPending || contentExportPending || exportForm.dataset.conversionBlocked === 'true';
+  }
+  if (prefix) prefix.disabled = exportMutationPending || contentExportPending;
 }
 exportForm?.querySelector('[name="target"]')?.addEventListener('change', updateExportAvailability);
 updateExportAvailability();
 
 function setExportMutationPending(pending) {
   exportMutationPending = pending;
-  for (const button of document.querySelectorAll('#media-wxr-form button, #media-mapping-form button, #media-export-undo')) {
-    button.disabled = pending || (button.id === 'media-export-undo' && exportForm.dataset.conversionBlocked === 'true');
-  }
   updateExportAvailability();
 }
 function applyExportReviewState(state) {
   document.getElementById('export-review-state').innerHTML = state.html;
   document.getElementById('unmapped-media').innerHTML = state.unmapped_html;
   exportForm.dataset.publicationReady = String(state.publication_ready);
+  exportForm.dataset.reviewStale = 'false';
   updateExportAvailability();
 }
+
+function focusExportReadiness() {
+  const target = document.getElementById('readiness-heading');
+  if (target) {
+    target.tabIndex = -1;
+    target.focus({preventScroll: true});
+    target.scrollIntoView({block: 'start'});
+  }
+}
+function focusExportAfterMapping(data = {}) {
+  const feedback = document.getElementById('readiness-mapping-feedback');
+  if (feedback) {
+    feedback.hidden = document.getElementById('media-mapping-result').hidden;
+    feedback.replaceChildren();
+    if (data.refresh_required) {
+      feedback.className = 'media-mapping-feedback has-unmatched';
+      feedback.append(document.createTextNode(`${data.refresh_required} existing attachment IDs were not refreshed. Choose the XML first, then confirm unchanged images in step 2 and match again before generating fresh content. `));
+    } else {
+      feedback.className = '';
+      feedback.append(document.createTextNode(`${data.mapped || 0} mappings updated${data.unchanged ? `; ${data.unchanged} already current` : ''}. `));
+    }
+    const link = document.createElement('a'); link.href = '#media-mapping-result';
+    link.textContent = 'View media matching results'; feedback.append(link);
+  }
+  focusExportReadiness();
+}
+document.getElementById('export-readiness-link')?.addEventListener('click', event => {
+  event.preventDefault();
+  focusExportReadiness();
+});
+
+let recordedApprovalPlan = null;
+document.getElementById('export-review-state')?.addEventListener('click', async event => {
+  const button = event.target.closest('button');
+  if (!button || !['media-review-recovery-preview', 'media-review-recovery-confirm', 'media-review-recovery-cancel'].includes(button.id)) return;
+  if (contentExportPending || exportMutationPending) return;
+  const selection = document.getElementById('media-review-recovery-selection');
+  const message = document.getElementById('media-review-recovery-result');
+  if (button.id === 'media-review-recovery-cancel') {
+    selection.hidden = true; selection.replaceChildren(); recordedApprovalPlan = null;
+    document.getElementById('media-review-recovery-preview')?.focus();
+    return;
+  }
+  setExportMutationPending(true);
+  try {
+    if (button.id === 'media-review-recovery-confirm') {
+      if (!recordedApprovalPlan) throw new Error('Preview recorded approvals again.');
+      const data = await api('/api/media-review-recovery', {method: 'POST', headers: csrfHeaders(), body: JSON.stringify({
+        token: recordedApprovalPlan.token, project_id: recordedApprovalPlan.project_id,
+        block_ids: recordedApprovalPlan.rows.map(row => row.block_id)
+      })});
+      recordedApprovalPlan = null;
+      applyExportReviewState(data.export_state);
+      invalidateContentExport();
+      document.getElementById('media-review-recovery-result').textContent = `${data.restored} recorded image approvals restored with their original dates. Current media mappings and newer decisions were kept. Undo last change restores the pending states.`;
+      focusExportReadiness();
+      announce(`${data.restored} recorded approvals restored. ${data.export_state.announcement}`);
+    } else {
+      recordedApprovalPlan = null;
+      selection.replaceChildren(); selection.hidden = true;
+      const plan = await api('/api/media-review-recovery');
+      message.textContent = plan.notice;
+      if (!plan.rows.length) return;
+      recordedApprovalPlan = plan;
+      const heading = document.createElement('h3');
+      heading.textContent = `${plan.rows.length} recorded image approvals`; heading.tabIndex = -1;
+      const list = document.createElement('ul');
+      for (const row of plan.rows) {
+        const item = document.createElement('li');
+        item.textContent = `Source page ${row.source_page || 'unknown'} · ${row.block_id}: ${row.alt || row.caption || 'Decorative image'} · Originally approved ${row.approved_at}`;
+        list.append(item);
+      }
+      const actions = document.createElement('div'); actions.className = 'button-row';
+      const undoNotice = document.createElement('p'); undoNotice.id = 'media-review-recovery-undo-notice';
+      undoNotice.textContent = 'Undo returns these images to pending review and removes a saved history snapshot. Restoring them again may be unavailable, requiring manual review before export.';
+      const confirm = document.createElement('button'); confirm.type = 'button'; confirm.id = 'media-review-recovery-confirm';
+      confirm.className = 'review-approve'; confirm.textContent = `Confirm restore ${plan.rows.length} recorded approvals`;
+      confirm.setAttribute('aria-describedby', undoNotice.id);
+      const cancel = document.createElement('button'); cancel.type = 'button'; cancel.id = 'media-review-recovery-cancel';
+      cancel.className = 'neutral-action'; cancel.textContent = 'Cancel';
+      actions.append(confirm, cancel); selection.append(heading, list, undoNotice, actions); selection.hidden = false;
+      heading.focus({preventScroll: true}); heading.scrollIntoView({block: 'start'});
+    }
+  } catch (error) {
+    recordedApprovalPlan = null; selection.hidden = true; selection.replaceChildren();
+    const currentMessage = document.getElementById('media-review-recovery-result');
+    currentMessage.textContent = error.message; announce(error.message); focusExportReadiness();
+  } finally { setExportMutationPending(false); }
+});
 
 async function copyText(content) {
   try {
     await navigator.clipboard.writeText(content);
   } catch (error) {
+    const focused = document.activeElement;
     const field = document.createElement('textarea');
     field.value = content;
     field.className = 'visually-hidden';
     field.setAttribute('readonly', '');
     document.body.append(field);
-    field.select();
-    const copied = document.execCommand('copy');
-    field.remove();
-    if (!copied) throw error;
+    try {
+      field.select();
+      if (!document.execCommand('copy')) throw error;
+    } finally {
+      field.remove();
+      if (focused?.isConnected) focused.focus({preventScroll: true});
+    }
   }
 }
+document.getElementById('draft-copy-instructions')?.addEventListener('click', async event => {
+  const button = event.currentTarget;
+  const text = document.getElementById('draft-copy-instructions-text');
+  const message = document.getElementById('draft-copy-instructions-status');
+  button.disabled = true; text.hidden = true; message.textContent = '';
+  try {
+    await copyText(text.value);
+    message.textContent = 'Instructions copied. Attach the exported ZIP, then paste them in Codex or ChatGPT.';
+  } catch {
+    message.textContent = 'Copy failed. Select the instructions below and copy them manually.';
+    text.hidden = false; text.focus({preventScroll: true}); text.select();
+    text.scrollIntoView({block: 'center'});
+  } finally {
+    button.disabled = false;
+    if (text.hidden) button.focus({preventScroll: true});
+  }
+});
 async function copyExportHtml(file) {
+  focusExportReadiness();
+  if (exportForm?.dataset.publicationReady !== 'true') throw new Error('Resolve the required content reviews before copying.');
   const response = await fetch(file.url, {cache: 'no-store'});
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
+    if (response.status === 409) markExportReviewStale();
     throw new Error(error.detail || 'Could not read the exported HTML file.');
   }
   await copyText(await response.text());
+}
+function markExportReviewStale() {
+  const region = document.getElementById('export-review-state');
+  const heading = document.createElement('h2'); heading.id = 'readiness-heading'; heading.tabIndex = -1;
+  heading.textContent = 'Export readiness';
+  const notice = document.createElement('p'); notice.setAttribute('role', 'status');
+  notice.textContent = 'This page is out of date. Reload Export to check current reviews and generate fresh content before copying.';
+  const reload = document.createElement('a'); reload.href = '/export'; reload.textContent = 'Reload Export';
+  region.replaceChildren(heading, notice, reload);
+  exportForm.dataset.publicationReady = 'false'; exportForm.dataset.reviewStale = 'true';
+  recordedApprovalPlan = null;
+  invalidateContentExport(); updateExportAvailability(); focusExportReadiness();
 }
 document.getElementById('copy-page-title')?.addEventListener('click', async () => {
   const message = document.getElementById('copy-page-title-status');
@@ -839,16 +1114,28 @@ document.getElementById('copy-page-title')?.addEventListener('click', async () =
   try { await copyText(document.getElementById('export-page-title').value); message.textContent = 'Copied'; announce('Page title copied.'); }
   catch (error) { message.textContent = 'Copy failed'; announce(error.message); }
 });
-exportForm?.querySelectorAll('[name="title_in_template"], [name="heading_style"]').forEach(field => field.addEventListener('change', invalidateContentExport));
+exportForm?.querySelectorAll('[name="title_in_template"], [name="heading_style"], [name="target"], [name="profile"], [name="post_type"], [name="wrap_in_section"]').forEach(field => field.addEventListener('change', invalidateContentExport));
 
 exportForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (contentExportPending || exportMutationPending) return;
+  focusExportReadiness();
+  if (exportForm.dataset.publicationReady !== 'true') {
+    announce('Resolve the required content reviews before exporting.');
+    return;
+  }
   const output = document.getElementById('export-result');
+  contentExportPending = true;
+  updateExportAvailability();
+  const controls = [...exportForm.querySelectorAll('select, input[type="checkbox"]')];
   try {
     const prefixField = document.querySelector('#media-export-form [name="image_prefix"]');
     if (prefixField && prefixField.value !== prefixField.defaultValue) throw new Error('Prepare the images ZIP and mapping CSV to save the new image prefix before exporting content.');
     const values = Object.fromEntries(new FormData(event.currentTarget));
     values.title_in_template = event.currentTarget.elements.title_in_template.checked;
+    controls.forEach(control => { control.disabled = true; });
+    output.textContent = 'Exporting the reviewed document…';
+    output.setAttribute('aria-busy', 'true');
     const data = await api('/api/export', { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(values) });
     const heading = document.createElement('p');
     const strong = document.createElement('strong');
@@ -902,7 +1189,13 @@ exportForm?.addEventListener('submit', async (event) => {
     });
     output.replaceChildren(heading, location, ...(data.media ? [media] : []), files);
     announce('Export complete.');
-  } catch (error) { output.textContent = error.message; announce(error.message); }
+  } catch (error) { output.textContent = `Export failed: ${error.message} Correct the issue and try again.`; announce(error.message); }
+  finally {
+    controls.forEach(control => { control.disabled = false; });
+    output.setAttribute('aria-busy', 'false');
+    contentExportPending = false;
+    updateExportAvailability();
+  }
 });
 
 function invalidateContentExport() {
@@ -916,10 +1209,10 @@ function showMappingStatus(remaining) {
     : 'All included images that need WordPress URLs are mapped.';
   invalidateContentExport();
 }
-function showMappingFeedback(message, data = {}) {
+function showMappingFeedback(message, data = {}, focus = true) {
   const output = document.getElementById('media-mapping-result');
   output.hidden = false;
-  const missing = [...(data.unmatched_images || []), ...(data.ambiguous_images || [])];
+  const missing = [...(data.unmatched_images || []), ...(data.ambiguous_images || []), ...(data.retained_images || []), ...(data.refreshable_images || [])];
   output.className = `media-mapping-feedback${missing.length ? ' has-unmatched' : ''}`;
   document.getElementById('media-mapping-announcement').textContent = message;
   const detail = document.getElementById('media-mapping-details');
@@ -929,7 +1222,8 @@ function showMappingFeedback(message, data = {}) {
     const table = document.createElement('table'); table.className = 'result-table';
     add(table, 'caption', 'Media matching summary');
     const body = document.createElement('tbody');
-    for (const [key, label] of [['matched', 'Matched'], ['unmatched', 'Unmatched'], ['ambiguous', 'Ambiguous']]) {
+    for (const [key, label] of [['mapped', 'Mappings updated'], ['refresh_required', 'IDs not refreshed — confirmation required'], ['unchanged', 'Already current — no change needed'], ['matched', 'Filename matches'], ['unmatched', 'Unmatched filenames'], ['ambiguous', 'Ambiguous filenames'], ['existing_kept', 'Existing mappings kept']]) {
+      if (data[key] === undefined) continue;
       const row = document.createElement('tr'); add(row, 'th', label).scope = 'row';
       add(row, 'td', String(data[key])).className = 'result-count'; body.append(row);
     }
@@ -938,7 +1232,7 @@ function showMappingFeedback(message, data = {}) {
   if (missing.length) {
     const wrap = document.createElement('div'); wrap.className = 'result-table-wrap';
     const table = document.createElement('table');
-    add(table, 'caption', 'Images needing manual mapping');
+    add(table, 'caption', 'Mappings needing attention');
     const head = document.createElement('thead'), headers = document.createElement('tr');
     for (const label of ['Filename and description', 'Source', 'Reason']) add(headers, 'th', label).scope = 'col';
     head.append(headers); table.append(head);
@@ -952,25 +1246,31 @@ function showMappingFeedback(message, data = {}) {
       add(row, 'td', image.reason); body.append(row);
     }
     table.append(body); wrap.append(table); detail.append(wrap);
-    add(detail, 'p', 'Enter the correct WordPress URLs for these images in the mapping CSV, then import it under “Map images manually with a CSV”.');
+    if (data.refresh_required) add(detail, 'p', 'For IDs awaiting refresh: choose the XML first, confirm that the uploads are the same reviewed images using the checkbox in step 2, then match again. Filename matches alone do not update saved IDs.');
+    if ((data.unmatched_images || []).length || (data.ambiguous_images || []).length || (data.retained_images || []).length) add(detail, 'p', 'Enter the correct WordPress URLs for these images in the mapping CSV, then import it under “Map images manually with a CSV”.');
     const csv = add(detail, 'a', 'Download current mapping CSV');
     csv.href = '/download/output/wordpress/reports/media-mapping.csv'; csv.download = '';
   }
-  output.focus({preventScroll: true}); output.scrollIntoView({block: 'start'}); announce(message);
+  if (focus) { output.focus({preventScroll: true}); output.scrollIntoView({block: 'start'}); }
+  announce(message);
 }
 const mediaExportForm = document.getElementById('media-export-form');
 mediaExportForm?.querySelector('[name="image_prefix"]').addEventListener('input', () => {
   document.getElementById('media-export-result').replaceChildren();
   invalidateContentExport();
+  updateExportAvailability();
 });
 mediaExportForm?.addEventListener('submit', async event => {
   event.preventDefault();
+  if (contentExportPending || exportMutationPending) return;
   const form = event.currentTarget;
   const output = document.getElementById('media-export-result');
   const button = form.querySelector('button[type="submit"]');
+  const values = Object.fromEntries(new FormData(form));
   button.disabled = true;
+  setExportMutationPending(true);
   try {
-    const data = await api('/api/media-export', {method: 'POST', headers: csrfHeaders(), body: JSON.stringify(Object.fromEntries(new FormData(form)))});
+    const data = await api('/api/media-export', {method: 'POST', headers: csrfHeaders(), body: JSON.stringify(values)});
     const field = form.querySelector('[name="image_prefix"]');
     field.value = field.defaultValue = data.image_prefix;
     output.replaceChildren(document.createTextNode(`${data.media.copied_assets} images packaged. Unzip and upload them to WordPress, then map their URLs in step 2. `));
@@ -983,9 +1283,10 @@ mediaExportForm?.addEventListener('submit', async event => {
     showMappingStatus(data.media.unresolved);
     announce('Images ZIP and mapping CSV are ready.');
   } catch (error) { output.textContent = error.message; announce(error.message); }
-  finally { button.disabled = false; }
+  finally { setExportMutationPending(false); }
 });
 document.getElementById('media-export-undo')?.addEventListener('click', async () => {
+  if (contentExportPending || exportMutationPending) return;
   setExportMutationPending(true);
   try {
     const data = await api('/api/media-export/undo', {method: 'POST', headers: csrfHeaders(), body: '{}'});
@@ -1006,6 +1307,7 @@ document.getElementById('media-export-undo')?.addEventListener('click', async ()
 
 document.getElementById('media-mapping-form')?.addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (contentExportPending || exportMutationPending) return;
   const output = document.getElementById('media-mapping-result');
   const file = new FormData(event.currentTarget).get('mapping');
   setExportMutationPending(true);
@@ -1015,25 +1317,48 @@ document.getElementById('media-mapping-form')?.addEventListener('submit', async 
       method: 'POST', headers: csrfHeaders(), body: JSON.stringify({ csv: await file.text() })
     });
     applyExportReviewState(data.export_state);
-    showMappingFeedback(`${data.mapped} image mapping${data.mapped === 1 ? '' : 's'} imported; ${data.remaining} images still need URLs. ${data.export_state.announcement}`, data);
+    showMappingFeedback(`${data.mapped} image mapping${data.mapped === 1 ? '' : 's'} imported; ${data.remaining} images still need URLs. ${data.export_state.announcement}`, data, false);
     showMappingStatus(data.remaining);
+    focusExportAfterMapping(data);
   } catch (error) { showMappingFeedback(error.message); }
   finally { setExportMutationPending(false); }
 });
 
+document.querySelector('#media-wxr-form [name="media_wxr"]')?.addEventListener('change', () => {
+  const refresh = document.getElementById('refresh-existing-media');
+  const notice = document.getElementById('media-refresh-selection-notice');
+  const cleared = !!refresh?.checked;
+  if (refresh) refresh.checked = false;
+  if (notice) {
+    notice.hidden = !cleared;
+    notice.textContent = cleared ? 'Refresh confirmation cleared because the XML selection changed. Check it again after choosing the file if these are the same reviewed images.' : '';
+  }
+  if (cleared) announce('Refresh confirmation cleared because the XML selection changed. Check it again if these are the same reviewed images.');
+});
+document.getElementById('refresh-existing-media')?.addEventListener('change', () => {
+  const notice = document.getElementById('media-refresh-selection-notice');
+  if (notice) { notice.hidden = true; notice.textContent = ''; }
+});
 document.getElementById('media-wxr-form')?.addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (contentExportPending || exportMutationPending) return;
   const output = document.getElementById('media-mapping-result');
-  const file = new FormData(event.currentTarget).get('media_wxr');
+  const formData = new FormData(event.currentTarget);
+  const file = formData.get('media_wxr');
+  const refreshExisting = formData.has('refresh_existing');
   setExportMutationPending(true);
   try {
     if (!(file instanceof File)) throw new Error('Choose a WordPress media XML file.');
     const data = await api('/api/media-mapping-wxr', {
-      method: 'POST', headers: csrfHeaders(), body: JSON.stringify({ xml: await file.text() })
+      method: 'POST', headers: csrfHeaders(), body: JSON.stringify({ xml: await file.text(), refresh_existing: refreshExisting })
     });
     applyExportReviewState(data.export_state);
-    showMappingFeedback(`${data.matched} image mapping${data.matched === 1 ? '' : 's'} matched; ${data.unmatched} unmatched and ${data.ambiguous} ambiguous. ${data.export_state.announcement}`, data);
+    const outcome = data.refresh_required
+      ? `${data.refresh_required} existing attachment IDs were not refreshed because confirmation was not selected. ${data.mapped} mappings updated; ${data.unchanged} already current. Choose the XML first, then confirm unchanged images in step 2 and match again before generating fresh content.`
+      : `${data.mapped} mappings updated; ${data.unchanged || 0} already current (no change needed).`;
+    showMappingFeedback(`${outcome} ${data.matched} filename matches in ${data.attachments_found} media attachments; ${data.unmatched} unmatched and ${data.ambiguous} ambiguous. ${data.existing_kept || 0} existing mappings kept.`, data, false);
     showMappingStatus(data.remaining);
+    focusExportAfterMapping(data);
   } catch (error) { showMappingFeedback(error.message); }
   finally { setExportMutationPending(false); }
 });

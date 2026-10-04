@@ -14,7 +14,7 @@ Stop and relaunch after setup, then reopen the same project. Do not regenerate
 extraction or move project data to solve a missing renderer.
 
 Existing page PNGs in `review/source-pages/` can work without an installed
-renderer; uncached pages require Poppler. The 21 extracted CITI image assets
+renderer; uncached pages require Poppler. Extracted image assets
 are not source-page renders. Missing Pillow during supplemental asset extraction
 is a separate issue and does not explain missing `pdftoppm`. Structure keeps
 the original PDF link and a Retry action when rendering fails.
@@ -71,11 +71,11 @@ to be exposed on a LAN or public interface.
 ## Real corpus findings
 
 - The policy document was a useful straightforward text and list case.
-- The QPR research poster made reading order and full-page source context
+- The multi-column poster made reading order and full-page source context
   especially important.
 - The four-year sample program contained multiple real tables; compact table
   inspection is useful, while editing them as ordinary text would be unsafe.
-- The heart-failure infographic demonstrated both `needs_review` and
+- The designed infographic demonstrated both `needs_review` and
   `conversion_blocked` outcomes across extraction modes. Low recovered-text
   percentages must stay prominent, and WordPress export must remain blocked.
 - Some image blocks intentionally have no publishable media URL. The review

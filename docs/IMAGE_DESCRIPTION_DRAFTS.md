@@ -76,9 +76,17 @@ and cannot be applied. Request a replacement after inspecting the changed contex
 
 ## Manual exchange
 
+Beside the ZIP controls, **Copy instructions for Codex/ChatGPT** copies the
+package handoff prompt. Attach the downloaded ZIP in your chosen tool, paste the
+instructions and run the request. Return its completed `response-template.json`
+for validation, import and human review. The button preserves unsaved editor fields
+and selections. Copy success is announced; if both clipboard methods fail, a
+read-only, selected prompt appears for manual copying. More guidance is in
+**Help → Image descriptions**, which opens separately from unsaved authoring.
+
 No API key, model, network access or automatic external transmission is required.
 The request ZIP contains selected image files, `review-sheet.csv`, `request.json`,
-drafting instructions and `response-template.json`. The CSV identifies each exported
+`INSTRUCTIONS.txt` and `response-template.json`. The CSV identifies each exported
 image alongside its original filename, block/page, accepted text, context and empty
 draft alt/caption/long-description fields. Open it in a spreadsheet for manual
 writing or send it with the image assets to ChatGPT, Codex or another tool. CSV

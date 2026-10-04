@@ -3,6 +3,7 @@ from copy import deepcopy
 import test_image_draft_routes as routes
 from pdf_to_web.exporters.html import render_document
 from pdf_to_web.review_state import ensure_review_document, save_review_document
+from pdf_to_web.image_review import review_token
 
 
 class AxeIntegrationTests(unittest.TestCase):
@@ -11,7 +12,7 @@ class AxeIntegrationTests(unittest.TestCase):
     def test_accessibility_loads_local_scan_automatically(self):
         page = self.client.get('/accessibility').text
         self.assertIn('/static/accessibility-scan.js', page)
-        self.assertIn('src="/api/accessibility/preview"', page)
+        self.assertIn('src="/api/accessibility/preview?expected_review_token=', page)
         self.assertIn('Checking rendered HTML', page)
         self.assertNotIn('Generate accessibility report', page)
         self.assertNotIn('/static/accessibility-scan.js', self.client.get('/structure').text)
@@ -44,3 +45,29 @@ class AxeIntegrationTests(unittest.TestCase):
         self.assertNotIn('Secret', annotated)
         self.assertNotIn('data-pdf-block-id', render_document(document))
         self.assertEqual(document, original)
+
+    def test_scan_snapshot_matches_displayed_saved_document_without_writes(self):
+        document = ensure_review_document(self.root)
+        token = review_token(document)
+        before = (self.root / 'review/current.json').read_bytes()
+        response = self.client.get('/api/accessibility/preview', params={'expected_review_token': token})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(f'<meta name="pdf-to-web-review-token" content="{token}">', response.text)
+        page = self.client.get('/accessibility').text
+        self.assertIn(f'data-review-token="{token}"', page)
+        self.assertIn(f'expected_review_token={token}', page)
+        self.assertEqual((self.root / 'review/current.json').read_bytes(), before)
+
+    def test_changed_scan_snapshot_reports_recovery_instead_of_scanning_new_content(self):
+        document = ensure_review_document(self.root)
+        token = review_token(document)
+        document['blocks'][0]['content'] = 'A concurrent author edit'
+        save_review_document(self.root, document)
+        before = (self.root / 'review/current.json').read_bytes()
+        response = self.client.get('/api/accessibility/preview', params={'expected_review_token': token})
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.headers['cache-control'], 'no-store')
+        self.assertIn('pdf-to-web-scan-error', response.text)
+        self.assertIn('Reload Accessibility', response.text)
+        self.assertNotIn('/static/axe.min.js', response.text)
+        self.assertEqual((self.root / 'review/current.json').read_bytes(), before)

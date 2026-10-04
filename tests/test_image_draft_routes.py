@@ -1,4 +1,6 @@
 import json
+import io
+import zipfile
 import threading
 import time
 import unittest
@@ -8,6 +10,7 @@ from fastapi.testclient import TestClient
 from pdf_to_web.web import WebAppConfig, create_app
 from pdf_to_web import image_drafts as d
 from pdf_to_web.review_state import ensure_review_document
+from pdf_to_web.image_draft_ui import MANUAL_EXCHANGE_PROMPT
 
 
 class ImageDraftRouteTests(unittest.TestCase):
@@ -56,6 +59,59 @@ class ImageDraftRouteTests(unittest.TestCase):
         self.assertEqual(result.status_code, 200, result.text)
         self.assertEqual(d.image(ensure_review_document(self.root), 'photo')['alt'], 'DRAFT ALT')
         self.assertIn('Draft alt text', self.client.get('/structure').text)
+
+    def test_copy_instructions_agree_with_actual_zip_and_identity_schema(self):
+        response = self.post('export', {'block_ids': ['photo']})
+        self.assertEqual(response.status_code, 200, response.text)
+        downloaded = self.client.get(response.json()['url'])
+        with zipfile.ZipFile(io.BytesIO(downloaded.content)) as archive:
+            for filename in ('INSTRUCTIONS.txt', 'request.json', 'response-template.json', 'review-sheet.csv'):
+                self.assertIn(filename, archive.namelist())
+                self.assertIn(filename, MANUAL_EXCHANGE_PROMPT)
+            request = json.loads(archive.read('request.json'))
+            template = json.loads(archive.read('response-template.json'))
+            self.assertEqual(template['schema_version'], d.EXCHANGE)
+            self.assertIn(d.EXCHANGE, MANUAL_EXCHANGE_PROMPT)
+            self.assertEqual(len(request['requests']), len(template['responses']))
+            for source, reply in zip(request['requests'], template['responses']):
+                self.assertIn(source['image_file'], archive.namelist())
+                for key in d.IDENTITY:
+                    self.assertIn(key, MANUAL_EXCHANGE_PROMPT)
+                    self.assertEqual(reply[key], source[key])
+                self.assertIsNone(reply['caption'])
+                self.assertIsNone(reply['long_description'])
+        self.assertIn('captions only when warranted (otherwise null)', MANUAL_EXCHANGE_PROMPT)
+        self.assertIn('nothing is automatically approved', MANUAL_EXCHANGE_PROMPT)
+
+    def test_copy_instructions_controls_render_read_only_without_changing_saved_state(self):
+        from html.parser import HTMLParser
+        class Controls(HTMLParser):
+            def __init__(self):
+                super().__init__(); self.fields = {}; self.text = ''; self.in_prompt = False
+            def handle_starttag(self, tag, attrs):
+                values = dict(attrs)
+                if values.get('id'): self.fields[values['id']] = (tag, values)
+                if values.get('id') == 'draft-copy-instructions-text': self.in_prompt = True
+            def handle_data(self, text):
+                if self.in_prompt: self.text += text
+            def handle_endtag(self, tag):
+                if tag == 'textarea': self.in_prompt = False
+        ensure_review_document(self.root)
+        paths = [self.root / 'review/current.json', self.root / 'project.json',
+                 *sorted((self.root / 'review/revisions').glob('*.json'))]
+        saved = {p: p.read_bytes() for p in paths}
+        page = self.client.get('/structure')
+        self.assertEqual(page.status_code, 200, page.text)
+        parsed = Controls(); parsed.feed(page.text)
+        self.assertEqual(parsed.text, MANUAL_EXCHANGE_PROMPT)
+        _, button = parsed.fields['draft-copy-instructions']
+        self.assertEqual(button['type'], 'button')
+        self.assertEqual(button['aria-describedby'], 'draft-manual-flow')
+        _, text = parsed.fields['draft-copy-instructions-text']
+        self.assertIn('readonly', text); self.assertIn('hidden', text)
+        _, status = parsed.fields['draft-copy-instructions-status']
+        self.assertEqual(status['role'], 'status')
+        self.assertEqual({p: p.read_bytes() for p in paths}, saved)
 
     def test_mock_generation_failure_then_retry_and_success_cache(self):
         options = {'block_ids': ['photo'], 'provider': 'ollama-local', 'model': 'mock'}

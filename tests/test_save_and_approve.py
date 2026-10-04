@@ -15,6 +15,11 @@ class SaveAndApproveTests(unittest.TestCase):
     malformed = recovery.ListContentRecoveryTests.malformed
 
     def post(self, identity, changes):
+        from pdf_to_web.image_review import review_token, descriptions_for
+        document = ensure_review_document(self.root)
+        block = next((b for b in document['blocks'] if str(b['id']) == identity), {})
+        if block.get('type') == 'image':
+            changes = {'expected_review_token': review_token(document), 'displayed_description_ids': [str(v['id']) for v in descriptions_for(document, block)], **changes}
         return self.client.post(f'/api/blocks/{identity}/save-and-approve', headers=self.headers, json=changes)
 
     def test_recovery_and_approval_are_one_revision_with_rich_exports_and_undo(self):
@@ -114,7 +119,7 @@ class SaveAndApproveTests(unittest.TestCase):
         undo_last(self.root)
         self.assertEqual(ensure_review_document(self.root)['output_pages'], before['output_pages'])
 
-    def test_image_approval_does_not_approve_its_separate_description_decision(self):
+    def test_image_approval_also_approves_the_explicitly_displayed_description(self):
         from pdf_to_web.review_state import save_review_document
         self.document({'id': 'photo', 'type': 'image', 'alt': 'Before', 'complex_visual_id': 'visual'})
         document = ensure_review_document(self.root)
@@ -125,7 +130,7 @@ class SaveAndApproveTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         after = ensure_review_document(self.root)
         self.assertEqual(effective_block_status(after['blocks'][0]), 'approved')
-        self.assertEqual(after['review']['complex_visuals'][0]['status'], 'reclassified')
+        self.assertEqual(after['review']['complex_visuals'][0]['status'], 'reviewed')
 
     def test_combined_action_preserves_authentication_and_conversion_block(self):
         before = (self.root / 'review/current.json').read_bytes()

@@ -13,16 +13,20 @@ It calls the production exporters and does not reimplement serialization.
 3. `WORDPRESS_ACCEPTANCE_0.5.1.md` records the small set of tests that require a
    real WordPress editor or WSUWP installation. Pending tests remain pending.
 
+Source-document names and project/export identifiers are withheld from this public
+report; descriptive labels retain the recorded coverage and findings. Detailed
+evidence remains local and ignored.
+
 ## Corpus Feature Matrix
 
 | Document | Text | Lists | Tables | Links | Footnotes | Images | Furniture | Title | Columns | Complex visual |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Vaccination Admission Policy | Yes | Yes | No | Yes | Yes | Logo | Yes | Yes | No | No |
-| NURS 495 QPR practicum project | Yes | Yes | No | Yes | No | Yes | Yes | Yes | Yes | Yes |
-| CITI Training Instructions | Yes | Yes | No | Yes | No | Yes | Yes | Yes | No | No |
-| NURS 495 heart-failure practicum project | Yes | Yes | No | Yes | No | Yes | Yes | Yes | Yes | Yes |
-| Baccalaureate to PhD sample program | Yes | No | Yes | No | No | No | Yes | Yes | No | No |
-| Bloodborne Pathogen Training | Yes | Yes | No | Yes | No | Yes | Yes | Yes | No | No |
+| Policy document | Yes | Yes | No | Yes | Yes | Logo | Yes | Yes | No | No |
+| Multi-column poster | Yes | Yes | No | Yes | No | Yes | Yes | Yes | Yes | Yes |
+| Screenshot-heavy instructions | Yes | Yes | No | Yes | No | Yes | Yes | Yes | No | No |
+| Designed infographic | Yes | Yes | No | Yes | No | Yes | Yes | Yes | Yes | Yes |
+| Table-heavy program plan | Yes | No | Yes | No | No | No | Yes | Yes | No | No |
+| Training guide | Yes | Yes | No | Yes | No | Yes | Yes | Yes | No | No |
 
 The machine-generated reports are authoritative for individual run results.
 This matrix documents why the corpus is representative and should only change

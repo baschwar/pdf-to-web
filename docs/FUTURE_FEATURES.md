@@ -5,6 +5,43 @@ observed issues; they are not implemented unless explicitly marked complete.
 Implementation requires a scoped directive and verification. Keep private
 project snapshots, screenshots and assessment output untracked under `build/`.
 
+## Discoverable manual WordPress media mapping
+
+Recorded 2026-10-04 at the user's request. **Deferred until after this QA round;
+not implemented.** The manual CSV mapper is currently inside a non-obvious
+accordion. When XML matching fails or leaves unmatched/ambiguous items, provide
+a prominent, concise, labeled entry point to manual mapping. Keep optional detailed
+instructions in Help. Preserve exact block/asset identities, authored review
+decisions and strict safeguards against mapping the wrong image. This backlog
+item does not expand the current XML attachment-ID refresh fix.
+
+## Quit PDF to Web from the app
+
+Recorded 2026-10-04 at the user's request. **Next sprint; not implemented.** Provide
+an explicit Quit/Exit action so the user does not have to close the launcher
+Terminal manually. Confirm before losing unsaved edits; gracefully shut down only
+this app's server/process and close its dedicated launcher session where supported.
+Never kill unrelated Terminal windows, sessions or processes. Define behavior for
+browser-launched, macOS launcher and Windows launcher sessions, including cases
+where closing the host session is unsupported. Show clear completion/failure
+feedback and test unsaved-work protection, process ownership, successful/failed
+shutdown and platform-specific launcher behavior. No current app was quit or
+restarted for this backlog entry.
+
+## Dedicated multi-page export round-trip acceptance
+
+Recorded 2026-10-04 at the user's request. **Future acceptance; not executed this
+round.** Test representative multi-page publications from arrangement through
+package download and actual WordPress import, editing, save and reopen. Cover
+splits, page order, navigation/internal links, page-local footnotes/backlinks,
+image mapping, heading structure and template/content titles on every page.
+Compare complete source/reviewed content against every package output and imported
+page to detect loss, duplication, missing assignments and broken references.
+Record the actual WordPress/theme/plugin versions and human observations.
+Existing synthetic arranged-package artifact and browser checks establish local
+implementation evidence; they do not fulfill this dedicated human or
+production-authoritative multi-page round-trip acceptance.
+
 ## Review and Source-Recovery Edge Cases
 
 Recorded 2026-10-02. Read-only assessment evidence:
@@ -42,7 +79,7 @@ Unchanged-text conversion now creates one item, preserving rich text, links,
 footnotes and source provenance. Previously malformed lists display retained
 text, reject blank saves and block approval/publication. Explicitly saving that
 text recovers one item with Undo and fresh review; no automatic migration occurs.
-An isolated step 11 reconstruction demonstrates a/b/i nesting while retaining
+An isolated nested-list reconstruction demonstrates a/b/i nesting while retaining
 the original IDs, substantive text and output-page assignment; the actual project
 remains for the author to review and apply. Evidence and review copy:
 `build/list-repair-20261002/`. Joining mixed blocks generally additionally needs an

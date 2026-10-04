@@ -13,8 +13,16 @@ label :is(input, select, textarea, small) { font-weight: 400; }
 .back-to-top[hidden] { display: none; }
 .app-header:focus-visible { outline: 3px solid #1c6ea4; outline-offset: -3px; }
 .current-document { padding: .7rem 1rem; border-left: .3rem solid var(--app-teal); background: #f4f7f7; overflow-wrap: anywhere; }
+.current-document { margin-bottom: .4rem; }
+.current-document + .project-location { font-size: .85rem; margin-bottom: 1rem; }
 .button-row { display: flex; flex-wrap: wrap; gap: .65rem; align-items: center; margin-bottom: 1rem; }
 #project-message { overflow-wrap: anywhere; scroll-margin-top: calc(var(--app-header-height) + 1rem); }
+#readiness-heading, #content-export-heading { scroll-margin-top: calc(var(--app-header-height) + 1rem); }
+#media-review-recovery-selection h3, main section[id] { scroll-margin-top: calc(var(--app-header-height) + 1rem); }
+.help-topics, .help-topics ul { display: block; }
+.help-topics ul { margin: 0 0 1rem; padding-left: 1.5rem; }
+.help-topics li { display: list-item; padding: .25rem 0; }
+.help-topics a { display: inline; margin: 0; padding: 0; }
 .button-row > :is(button, [role="button"]) { width: auto; margin: 0; }
 .workflow-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 2rem; margin-bottom: 1rem; }
 .workflow-actions > .button-row { margin-bottom: 0; }
@@ -117,13 +125,15 @@ button:disabled { opacity: 1; color: #4b5563; background: #e5e7eb; border-color:
 .block-card > header h3 { margin: 0; font-size: 1rem; }
 .block-meta { display: inline-flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
 .block-status { display: inline-flex; align-items: center; min-height: 1.6rem; border: 1px solid currentcolor; border-radius: 999px; padding: .15rem .55rem; font-size: .75rem; font-weight: 700; line-height: 1; }
-.block-status.status-approved { color: #166534; background: #dcfce7; }
-.block-status.status-needs_review, .block-status.status-unreviewed { color: #713f12; background: #fef3c7; }
-.block-status.status-excluded, .block-status.status-conversion_blocked { color: #991b1b; background: #fee2e2; }
+.block-status.status-approved, .block-status.status-reviewed { color: #166534; background: #dcfce7; }
+.block-status.status-needs_review, .block-status.status-unreviewed, .block-status.status-unresolved, .block-status.status-reclassified, .block-status.status-needs_text_equivalent { color: #713f12; background: #fef3c7; }
+.block-status.status-excluded, .block-status.status-not_applicable, .block-status.status-resolved { color: #374151; background: #f3f4f6; }
+.block-status.status-conversion_blocked { color: #991b1b; background: #fee2e2; }
 .block-card > footer { border-top: 1px solid var(--app-border); padding-top: .5rem; gap: .4rem; justify-content: flex-start; }
 .block-card textarea { resize: vertical; }
 .image-block-preview { display: block; width: auto; max-width: min(100%, 28rem); max-height: 18rem; margin-bottom: .75rem; border: 1px solid var(--app-border); object-fit: contain; }
 .image-block-form small { display: block; color: var(--app-muted); }
+.image-description-record, .image-block-form :is(input, textarea, select, button) { scroll-margin-top: var(--structure-scroll-offset); }
 .image-decorative { display: inline-flex; align-items: center; gap: .5rem; margin-bottom: .25rem; }
 .image-decorative input { margin: 0; }
 .list-structure-preview { padding: .75rem 1rem; border: 1px solid var(--app-border); background: #f8fafc; }
@@ -218,3 +228,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .project-location, .project-list code { overflow-wrap: anywhere; }
 .project-location code, .project-list code { white-space: normal; }
 #new-project-form fieldset button { width: auto; }
+
+.bulk-review-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; }
+.bulk-review-toolbar label { flex: 1 1 12rem; margin: 0; }
+.bulk-review-toolbar label:first-child { align-self: center; }
+.bulk-review-row { border: 1px solid var(--pico-muted-border-color); padding: 1rem; margin-block: 1rem; }
+.bulk-review-row p, .image-description-record p { overflow-wrap: anywhere; }
+.review-text { white-space: pre-wrap; }
+.bulk-row-select { font-weight: 600; }
+.bulk-description { border-left: 3px solid #98b4c6; padding-left: 1rem; }
+#bulk-review-confirmation { padding: 1rem; border: 2px solid #17466a; }

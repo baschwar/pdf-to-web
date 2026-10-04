@@ -69,6 +69,7 @@ class StructureCompletionTests(unittest.TestCase):
         page = self.client.get('/accessibility').text
         self.assertNotIn('Generate accessibility report', page)
         self.assertNotIn('accessibility-export-result', page)
-        self.assertIn('Results below reflect the current reviewed document.', page)
+        self.assertIn('href="/help#review-counts"', page)
+        self.assertIn('Required corrections cannot be waived.', page)
         self.assertIn('href="/structure?return_to=accessibility&amp;finding=diagnostic%3Ablock_review_required%3Adocument#block-photo"', page)
         self.assertIn('Recorded during extraction. Current block statuses:', page)

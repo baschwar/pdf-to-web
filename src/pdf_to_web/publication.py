@@ -15,16 +15,25 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
 
 
-def content_digest(block):
+def content_digest(block, *, include_media_mapping=False):
     value = copy.deepcopy(block)
     value.pop('review', None)
     def clean(nodes):
         for node in nodes:
+            if node.get('type') == 'image' and not include_media_mapping:
+                for field in ('wordpress_url', 'wordpress_attachment_id', 'wordpress_media'):
+                    node.pop(field, None)
             if 'review' in node:
                 node['review'] = {'status': node['review'].get('status')}
             clean(node.get('children', []))
-    clean(value.get('children', []))
+    clean([value])
     return digest(value)
+
+
+def approval_stamp_matches(block):
+    stamp = block.get('review', {}).get('content_sha256')
+    # Existing stamps that include unchanged routing metadata remain valid.
+    return stamp in {content_digest(block), content_digest(block, include_media_mapping=True)}
 
 
 def pending_descendants(block):
@@ -40,7 +49,7 @@ def block_review_issue(block):
     identity = str(block.get('id'))
     if review.get('status') != 'approved':
         return {'code': 'block_review_pending', 'message': f'Block {identity} needs review'}
-    if review.get('content_sha256') and review['content_sha256'] != content_digest(block):
+    if review.get('content_sha256') and not approval_stamp_matches(block):
         return {'code': 'block_approval_changed', 'message': f'Block {identity} changed since approval'}
     if not review.get('content_sha256') and pending_descendants(block):
         return {'code': 'legacy_approval_unverified', 'message': f'Block {identity}: earlier approval cannot be verified for pending nested items'}
@@ -55,10 +64,14 @@ def list_structure_issue(block):
     return next((issue for child in block.get('children', []) if (issue := list_structure_issue(child))), None)
 
 
-def effective_block_status(block):
+def effective_block_status(block, document=None):
     if is_excluded(block):
         return 'excluded'
     status = block.get('review', {}).get('status', 'unreviewed')
+    if document is not None and block.get('type') == 'image' and status == 'approved':
+        from .image_review import association_issue, pending_descriptions_for
+        if association_issue(document, block) or pending_descriptions_for(document, block):
+            return 'needs_review'
     return 'needs_review' if status == 'approved' and block_review_issue(block) else status
 
 
@@ -96,6 +109,11 @@ def readiness_findings(document, selected_pages=None):
     if not owners:
         add('no_content', 'There is no included content to publish')
     for identity, block in nodes.items():
+        if block.get('type') == 'image':
+            from .image_review import association_issue
+            problem = association_issue(document, block)
+            if problem:
+                add('image_description_association_invalid', problem, owners[identity])
         if block.get('type') == 'image' and not block.get('decorative') and not str(block.get('alt') or '').strip():
             add('image_alternative_pending', f'Image {identity} needs alt text or a decorative decision', owners[identity])
     from .accessibility import visual_readiness
@@ -104,6 +122,9 @@ def readiness_findings(document, selected_pages=None):
             continue
         source = str(visual.get('source_block_id') or '')
         if source and source not in nodes:
+            from .accessibility import _walk_visibility
+            if not any(str(b.get('id')) == source for b, _ in _walk_visibility(document.get('blocks', []))):
+                add('description_source_missing', f'Description {visual.get("id")} references missing image {source}; restore or correct its association before publication', visual=visual)
             continue
         if source and nodes[source].get('decorative'):
             continue

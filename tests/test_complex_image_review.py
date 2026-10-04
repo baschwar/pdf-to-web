@@ -26,12 +26,12 @@ class ComplexImageReviewTests(unittest.TestCase):
         visual['accessibility'].pop('short_alt')
         save_review_document(self.root, doc)
         page = self.client.get('/structure').text
-        card = page.split('id="visual-' + visual['id'] + '"')[1].split('</article>')[0]
-        self.assertIn('name="short_alt" rows="3">Accepted ALT</textarea>', card)
+        card = page.split('id="block-photo"')[1].split('</article>')[0]
+        self.assertIn('name="alt" rows="3">Accepted ALT</textarea>', card)
         url = re.search(r'<img[^>]+src="([^"]+)"', card).group(1)
         self.assertEqual(self.client.get(url).content, b'fixture image bytes')
-        self.assertIn('>Image description</h3>', card)
-        self.assertEqual(card.count('Text complete; manual review pending'), 1)
+        self.assertIn('id="visual-' + visual['id'] + '"', card)
+        self.assertEqual(card.count('Text provided; awaiting manual review'), 1)
 
     def test_exact_asset_paths_are_supported_without_basename_guessing(self):
         doc = ensure_review_document(self.root)
@@ -75,7 +75,8 @@ class ComplexImageReviewTests(unittest.TestCase):
         card = page.split('id="block-photo"')[1].split('</article>')[0]
         actions = card.split('class="block-review-actions"')[1].split('</div>')[0]
         self.assertLess(actions.index('Needs review'), actions.index('>Exclude<'))
-        self.assertLess(actions.index('>Exclude<'), actions.index('>Approve<'))
+        self.assertNotIn('>Approve<', actions)
+        self.assertEqual(card.count('data-save-and-approve'), 1)
         self.assertLess(card.index('block-review-actions'), card.index('<header>'))
         self.assertLess(card.index('block-review-actions'), card.index('source-provenance'))
         footer = card.split('<footer')[1]

@@ -14,6 +14,14 @@ DECISIONS = {"unresolved", "approved", "not_applicable"}
 
 def visual_readiness(document: dict[str, Any], visual: dict[str, Any]) -> dict[str, Any]:
     block, source_excluded = next(((b, excluded) for b, excluded in _walk_visibility(document.get('blocks', [])) if str(b.get('id')) == str(visual.get('source_block_id'))), (None, False))
+    if not block and not visual.get('source_block_id'):
+        matches = [(b, excluded) for b, excluded in _walk_visibility(document.get('blocks', [])) if str(b.get('complex_visual_id') or '') == str(visual.get('id'))]
+        if len(matches) == 1:
+            block, source_excluded = matches[0]
+    from .image_review import association_issue
+    problem = association_issue(document, block) if block else 'The source image is missing. Verify the description association.' if visual.get('source_block_id') else ''
+    if problem and not source_excluded and visual.get('status') != 'excluded':
+        return {'complete': False, 'text_complete': False, 'review_complete': False, 'label': 'Image association needs review', 'block_id': visual.get('source_block_id'), 'reason_code': 'association_conflict', 'reason': problem, 'action': 'Open the image editor and verify the exact description association before approval.'}
     status = visual.get('status')
     if status in {'excluded', 'not_applicable'} or source_excluded:
         return {'complete': True, 'text_complete': True, 'review_complete': True, 'label': 'Not applicable' if status == 'not_applicable' else 'Excluded', 'block_id': visual.get('source_block_id'), 'reason': '', 'action': '', 'reason_code': ''}
@@ -21,14 +29,14 @@ def visual_readiness(document: dict[str, Any], visual: dict[str, Any]) -> dict[s
         return {'complete': True, 'text_complete': True, 'review_complete': True, 'label': 'Decorative image', 'block_id': block['id'], 'reason': '', 'action': '', 'reason_code': ''}
     a = visual.get('accessibility', {})
     short = block.get('alt', '') if block else a.get('short_alt', '')
-    text_complete = bool(str(short).strip() and (str(a.get('long_description') or '').strip() or str(a.get('adjacent_text') or '').strip()))
+    text_complete = bool(str(short or '').strip() and (str(a.get('long_description') or '').strip() or str(a.get('adjacent_text') or '').strip()))
     reviewed = status == 'reviewed'
     complete = text_complete and reviewed
-    label = 'Reviewed' if complete else 'Text complete; manual review pending' if text_complete else 'Text equivalent needed'
+    label = 'Reviewed' if complete else 'Text provided; awaiting manual review' if text_complete else 'Text equivalent needed'
     reason_code = '' if complete else 'changed_after_approval' if visual.get('review_reason') == 'changed_after_approval' else 'text_equivalent_incomplete' if not text_complete else 'reclassified_pending' if status == 'reclassified' else 'manual_review_pending'
     reason = ''
     if reason_code == 'changed_after_approval':
-        labels = {'short_alt': 'short alt text', 'long_description': 'long description', 'adjacent_text': 'adjacent text equivalent', 'type': 'classification', 'recovered_text': 'recovered source text'}
+        labels = {'short_alt': 'short alt text', 'long_description': 'long description', 'adjacent_text': 'adjacent text equivalent', 'type': 'classification', 'recovered_text': 'recovered source text', 'image': 'image content'}
         fields = [labels[field] for field in visual.get('review_change_fields', []) if field in labels]
         reason = 'Changed since Reviewed: ' + ', '.join(fields) + '.' if fields else 'This description changed after it was marked Reviewed.'
     elif reason_code == 'reclassified_pending':
@@ -36,8 +44,11 @@ def visual_readiness(document: dict[str, Any], visual: dict[str, Any]) -> dict[s
     elif reason_code == 'text_equivalent_incomplete':
         reason = 'The required text equivalent is incomplete.'
     elif reason_code:
-        reason = 'No current Reviewed decision is recorded for this description.'
-    action = '' if complete else ('Review the saved text' if text_complete else 'Add short alt text and either a long description or adjacent text equivalent') + ', then choose Reviewed and save. Choose Not applicable if short alt text is sufficient.'
+        reason = 'Text is provided, but no current Reviewed decision is recorded.'
+    if block and block.get('type') == 'image':
+        action = '' if complete else 'Review alt, caption and the displayed descriptions together in Reading order, then use Save and approve once. Choose No separate description needed if short alt is sufficient.'
+        return {'complete': complete, 'text_complete': text_complete, 'review_complete': reviewed, 'label': label, 'block_id': block['id'], 'reason_code': reason_code, 'reason': reason, 'action': action}
+    action = '' if complete else ('Review the displayed image and description, then use Save and approve in its image editor, or review the saved text' if text_complete and block else 'Review the saved text' if text_complete else 'Add short alt text and either a long description or adjacent text equivalent') + ', then choose Reviewed and save. Choose Not applicable if short alt text is sufficient.'
     return {'complete': complete, 'text_complete': text_complete, 'review_complete': reviewed, 'label': label, 'block_id': visual.get('source_block_id'), 'reason_code': reason_code, 'reason': reason, 'action': action}
 
 
@@ -120,15 +131,18 @@ def assess_document(document: dict[str, Any]) -> dict[str, Any]:
             continue
         block_id = str(block.get("id") or "unknown")
         block_type = block.get("type")
-        review_status = effective_block_status(block)
-        if review_status in {"unreviewed", "needs_review"}:
+        review_status = effective_block_status(block, document)
+        from .publication import block_review_issue
+        from .image_review import association_issue
+        only_linked_description = block_type == 'image' and block_review_issue(block) is None and not association_issue(document, block)
+        if review_status in {"unreviewed", "needs_review"} and not only_linked_description:
             from .review_state import block_review_reason
             items.append(
                 _item(
                     f"structure:{block_id}",
                     "structure",
                     "Structural review incomplete",
-                    block_review_reason(block) or f"This {block_type or 'unknown'} block is {str(review_status).replace('_', ' ')}.",
+                    block_review_reason(block, document) or f"This {block_type or 'unknown'} block is {str(review_status).replace('_', ' ')}.",
                     block=block,
                 )
             )

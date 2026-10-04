@@ -4,6 +4,79 @@
 
 ### Stabilization
 
+- Sanitize public acceptance and corpus reports: withhold source-document names,
+  project identities and attachment metadata while retaining verified behavior,
+  coverage and pending acceptance. Detailed source evidence stays local and ignored.
+- Add **Copy instructions for Codex/ChatGPT** beside image-drafting ZIP controls,
+  with a short attach/paste/import/review flow and detailed Help. The prompt names
+  the actual exchange files and preserves all request identities. Copying leaves
+  unsaved edits intact, reports success and offers selectable text on failure;
+  imported descriptions still require human review.
+- Refresh WordPress attachment IDs after deleting and re-uploading media when
+  XML has a unique exact filename and the same saved URL, after explicit confirmation
+  that uploads are the same reviewed images. XML cannot verify replacement image
+  contents; changed images need alt and description review. Preserve content
+  approvals, descriptions and one-step Undo. Confirm unchanged matches without
+  another save; keep existing mappings for missing, ambiguous or different-URL
+  entries and explain them. Report attachments, updated and already-current counts.
+  Lead with actual updates; explicitly warn when IDs were not refreshed, including
+  at the focused readiness section. Disclose when a new XML clears confirmation.
+- Keep Export readiness visible for ready and blocked documents. Matching media
+  always scrolls and focuses it; export and content-copy actions also bring it
+  into view. Detailed matching feedback and return-to-content links remain.
+  A rejected stale copy clears obsolete readiness/counts/results and provides
+  focused Reload Export guidance while preserving the clipboard.
+- Add explicit preview/confirmation to restore recorded image approvals lost to
+  earlier media-only changes. Retained history, current project and exact scope
+  must agree; preserve original approval dates, current mappings and newer reviews.
+  Genuine edits and uncertain history remain pending. One Undo restores the change.
+  Explain before confirmation that Undo can prevent another restoration and require
+  manual review before export; associate this notice with the Confirm button.
+- Move repeated workflow explanations into a dedicated Help page with exact
+  topic links. Contextual Help opens separately to preserve unsaved fields. Keep
+  essential errors, required reviews, distinct counts and long-page actions visible;
+  shorten per-image, bulk-review, scan, media and title explanations.
+
+- Preserve content approval when WordPress media matching only adds routing URLs
+  and attachment IDs; keep generated publications sensitive to mapping changes.
+  Respect current saved mappings when CSV reports are stale, including matching
+  the same XML after Undo. Existing pending decisions are not automatically
+  approved. Show export readiness beside its button, focus readiness or content
+  after matching, and provide busy, repeated-click prevention and retry feedback.
+  Full media-to-WSUWP draft Page journeys now verify downloaded PNGs and WXR.
+
+- Clarify Accessibility counts: content approvals, document findings and automated
+  HTML checks have different scopes. Keep unresolved findings first and earlier
+  decisions in editable history. Optional Bulk review defaults to Pending only;
+  Completed/All records, visible counts and typed status pills make past decisions
+  explicit. Classification or visibility changes clear selections; the server
+  validates the exact visible scope. Bind HTML scans to the displayed saved
+  snapshot, show revision/time, and offer reload recovery for stale scans.
+
+- Keep images with unreviewed linked descriptions in Needing review and count
+  each image once. Linked descriptions now have one editable review form inside
+  their Reading order image; Save and approve covers alt, caption and all shown
+  descriptions. Existing description links reveal and focus that form. Explicit
+  No separate description needed/exclusion choices remain available, and
+  standalone visuals retain their own editor. Unchanged saves and reviewer notes
+  preserve approval; material edits require fresh review. Keyboard focus stays
+  visible below sticky review controls on narrow screens.
+
+- Review image alt text, caption and every associated description together.
+  Explicit Save and approve validates and atomically approves the displayed
+  image/description scope; incomplete text, conflicting associations and stale
+  snapshots reject the action. Ordinary saves and later material edits still
+  require review. Existing pending descriptions are not automatically approved.
+- Add grouped Accessibility bulk review with visible-scope Select all, row
+  selection, record-specific review states and explicit scope confirmation.
+  Server validation rejects an invalid or stale batch without partial writes;
+  successful batches support one-step Undo and save/reopen.
+- Distinguish provided description text awaiting manual review from missing text.
+  Long descriptions do not require adjacent text; current counts, exact findings
+  and publication gates share the same review state.
+- Label WSUWP previews approximate: they show content/structure using local
+  minimal CSS, while production theme/plugins determine the final design.
+
 - Include recorded nested paragraph/text regions in list source outlines,
   deduplicate boxes and explain partial coverage when regions are unavailable.
   Unoutlined text is not treated as missing content.
@@ -12,7 +85,7 @@
   until their structure is recovered. Unchanged-text conversion or explicit
   recovery preserves the text as one item with links, formatting, footnotes,
   source provenance, fresh review and Undo; no existing project is auto-repaired.
-- Prepare an isolated, reviewable CITI step 11 nesting reconstruction. Preserve
+- Prepare an isolated, reviewable nested-list reconstruction. Preserve
   original IDs and text, output-page assignment and Undo; leave actual project
   changes and approval to the author. General mixed-type list conversion,
   insertion, source-region drawing and OCR remain separate proposed work.
@@ -34,7 +107,7 @@
   Undo. Identify missing source copies or targets without broken recovery links.
 - Document Poppler as a separate system dependency, with Homebrew setup,
   verification and restart/PATH troubleshooting. Include standard Homebrew
-  executable paths in the macOS launcher. Verified fresh CITI source-page
+  executable paths in the macOS launcher. Verified fresh source-page
   rendering with Homebrew Poppler 26.08.0 on an isolated PDF copy; Pillow remains
   a separate supplemental-extraction dependency.
 

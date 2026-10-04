@@ -4,26 +4,30 @@ Date: 2026-09-16
 Version: 0.5.0  
 Corpus run: `sample_runs/20260917T042813Z` (local ignored evidence)
 
+Source-document names and project/export identifiers are withheld from this public
+report; descriptive labels retain the recorded coverage and findings. Detailed
+evidence remains local and ignored.
+
 ## Coverage
 
 Six real university PDFs were exercised in heuristic and structure-tree modes.
 
 | Document | Categories covered |
 | --- | --- |
-| All-Policy-Vaccination-Admission-Policy.pdf | policy, title in header, nested lists, footnotes, repeated furniture, table, links |
-| anonymized-qpr-practicum-project.pdf | multi-column designed publication, numbered references, lists |
-| Instructions for CITI Training_20230608.pdf | image-heavy instructions, nested/numbered lists, links, page numbers |
-| anonymized-heart-failure-practicum-project.pdf | designed publication, complex visual, images, links |
-| bacc-to-phd-4-year-sample-program.pdf | table-heavy program plan, multi-line title |
-| bloodborne-pathogen-training.pdf | policy/training document, tables, captions, links, repeated furniture |
+| Policy document | policy, title in header, nested lists, footnotes, repeated furniture, table, links |
+| Multi-column poster | multi-column designed publication, numbered references, lists |
+| Screenshot-heavy instructions | image-heavy instructions, nested/numbered lists, links, page numbers |
+| Designed infographic | designed publication, complex visual, images, links |
+| Table-heavy program plan | table-heavy program plan, multi-line title |
+| Training guide | policy/training document, tables, captions, links, repeated furniture |
 
 All ten requested categories are represented without adding duplicate source documents.
 
 ## Results
 
 - Semantic HTML, Gutenberg, and WXR validation passed for every completed normalization.
-- Titles were correctly recovered for the policy, CITI instructions, Heart Failure guide,
-  program plan, and Bloodborne document. The poster title remains truncated at the source
+- Titles were correctly recovered for the policy, screenshot-heavy instructions, designed infographic,
+  program plan, and training guide. The poster title remains truncated at the source
   extraction boundary in metadata, while its longer existing H1 is retained.
 - Completed heuristic documents contain exactly one H1. Additional H1s are demoted and
   upward level jumps are clamped with review diagnostics.
@@ -38,8 +42,8 @@ All ten requested categories are represented without adding duplicate source doc
   section, and generated unique forward and return anchors. The structure-tree mode did not
   identify those footnotes.
 - PDF link annotations are now retained even when an inline label cannot be reconstructed.
-  CITI preserved seven of eight annotations as four unique inline links, while the heart-failure heuristic run
-  preserved six of six, and Bloodborne preserved three of three in both modes.
+  The instruction source preserved seven of eight annotations as four unique inline links, while the infographic heuristic run
+  preserved six of six, and the training guide preserved three of three in both modes.
 
 ## Issues And Classification
 
@@ -52,11 +56,11 @@ All ten requested categories are represented without adding duplicate source doc
 4. **Normalization issue:** unrelated source H1s could prevent insertion of the actual title,
    while additional H1s and H1-to-H3 jumps remained. Title matching and hierarchy correction
    now produce one H1 without skipped levels.
-5. **Extraction issue:** the heart-failure structure-tree mode recovers too little text and no reference
+5. **Extraction issue:** the infographic structure-tree mode recovers too little text and no reference
    geometry, leaving six link annotations unmatched. Heuristic mode preserves all six.
 6. **Extraction issue:** the policy's two links use prose labels rather than visible target URLs;
-   annotations are retained but no label is guessed. One CITI annotation is similarly unmatched.
-7. **Unsupported source complexity:** the Heart Failure visual is preserved with 19 images and
+   annotations are retained but no label is guessed. One instruction-source annotation is similarly unmatched.
+7. **Unsupported source complexity:** the infographic visual is preserved with 19 images and
    a complex-visual warning. The surrounding document still exports.
 8. **Extraction issue:** the program plan reports incomplete text recovery and remains reviewable.
 

@@ -24,7 +24,7 @@ class DocumentStructureLayoutTests(unittest.TestCase):
         form = re.search(r'<form id="export-form"[^>]*>.*?</form>', page, re.S).group()
         row = form[form.index('<div class="button-row workflow-next">'):]
         self.assertIn('type="button" id="copy-page-title"', row)
-        self.assertIn('type="submit" class="review-approve">Export reviewed document', row)
+        self.assertIn('type="submit" class="review-approve" aria-describedby="export-availability"', row)
         self.assertIn('id="copy-page-title-status" role="status" aria-live="polite"', row)
         self.assertEqual(page.count('id="copy-page-title"'), 1)
         media = re.search(r'<form id="media-export-form"[^>]*>.*?</form>', page, re.S).group()
@@ -32,19 +32,19 @@ class DocumentStructureLayoutTests(unittest.TestCase):
         self.assertIn('Prepare images ZIP and mapping CSV', actions)
         self.assertIn('type="button" class="neutral-action" id="media-export-undo"', actions)
 
-    def test_mapping_response_refreshes_pending_owners_and_undo_restores_ready_state(self):
+    def test_mapping_preserves_content_review_and_undo_restores_unmapped_state(self):
         approve_publication_fixture(self.root)
         before = copy.deepcopy(ensure_review_document(self.root))
         response = self.client.post('/api/media-mapping', headers=self.headers, json={
             'csv': 'block_id,wordpress_url,wordpress_attachment_id,alt_text,caption\nphoto,https://example.test/photo.png,42,stale alt,stale caption\n'})
         self.assertEqual(response.status_code, 200, response.text)
         state = response.json()['export_state']
-        self.assertFalse(state['publication_ready'])
-        self.assertIn('Blocks reviewed 4', state['html'])
-        self.assertIn('Pending 1 review task', state['html'])
-        self.assertIn('href="/structure#block-photo"', state['html'])
-        self.assertIn('changed after approval', state['html'])
-        self.assertIn('Review is required', state['announcement'])
+        self.assertTrue(state['publication_ready'])
+        self.assertIn('Blocks reviewed 5', state['html'])
+        self.assertIn('Pending 0 review tasks', state['html'])
+        self.assertNotIn('href="/structure#block-photo"', state['html'])
+        self.assertNotIn('changed after approval', state['html'])
+        self.assertIn('Ready to export', state['announcement'])
         current = ensure_review_document(self.root)
         photo = next(b for b in current['blocks'] if b['id'] == 'photo')
         old = next(b for b in before['blocks'] if b['id'] == 'photo')
@@ -52,8 +52,7 @@ class DocumentStructureLayoutTests(unittest.TestCase):
         self.assertEqual(photo['caption'], old['caption'])
         self.assertEqual(current['review']['complex_visuals'], before['review']['complex_visuals'])
         rejected = self.client.post('/api/export', headers=self.headers, json={'target': 'html'})
-        self.assertEqual(rejected.status_code, 400)
-        self.assertIn('needs review', rejected.text)
+        self.assertEqual(rejected.status_code, 200)
         undone = self.client.post('/api/media-export/undo', headers=self.headers, json={})
         self.assertEqual(undone.status_code, 200, undone.text)
         state = undone.json()['export_state']
@@ -101,11 +100,11 @@ class DocumentStructureLayoutTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()['matched'], 1)
         state = response.json()['export_state']
-        self.assertFalse(state['publication_ready'])
-        self.assertIn('Pending 1 review task', state['html'])
+        self.assertTrue(state['publication_ready'])
+        self.assertIn('Pending 0 review tasks', state['html'])
         page = self.client.get('/export').text
         self.assertIn('<div id="export-review-state">' + state['html'] + '</div>', page)
-        self.assertIn('data-publication-ready="false"', page)
+        self.assertIn('data-publication-ready="true"', page)
 
     def test_filter_recovery_is_in_sticky_navigation_without_global_completion_claim(self):
         page = self.client.get('/structure').text
@@ -250,16 +249,18 @@ class DocumentStructureLayoutTests(unittest.TestCase):
         update_block(self.root, 'photo', {'review_status': 'needs_review'})
         page = self.client.get('/structure').text
         self.assertRegex(page, r'aria-label="Approve block 1" disabled>Approve')
-        self.assertRegex(page, r'aria-label="Approve block 3">Approve')
-        for tool in ('image-description-tools', 'visual-description-tools'):
+        self.assertNotIn('aria-label="Approve block 3"', page)
+        self.assertIn('aria-label="Save and approve block 3"', page)
+        for tool in ('image-description-tools',):
             tag = re.search(r'<details id="' + tool + r'"[^>]*>', page).group()
             self.assertNotIn(' open', tag)
         self.assertIn('id="visual-chart"', page)
-        self.assertIn('0 to review · 1 complete or not applicable', page)
-        self.assertIn('Longer image descriptions', page)
+        self.assertIn('id="visual-description-tools"', page)
+        self.assertIn('Standalone visual descriptions', page)
         self.assertIn('Choose Not applicable if short alt text is sufficient.', page)
-        self.assertIn('<details><summary>Why these images appear here</summary>', page)
-        self.assertIn('at least five retained images or assets', page)
+        self.assertIn('href="/help#image-descriptions"', page)
+        self.assertNotIn('Why these images appear here', page)
+        self.assertEqual(page.count('id="visual-chart"'), 1)
         self.assertEqual(ensure_review_document(self.root)['review']['complex_visuals'], document['review']['complex_visuals'])
 
     def test_manual_import_has_ordered_steps(self):

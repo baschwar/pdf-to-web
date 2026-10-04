@@ -39,7 +39,7 @@ formatting, participate in Undo, and require review after label edits.
 Open block is a compact button carrying an explicit return to Accessibility.
 Saving edits or review actions on that block returns to the finding list and
 reruns the local HTML scan. Direct Structure edits keep their normal navigation.
-If a corrected finding disappears, focus returns to the Document review heading.
+If a corrected finding disappears, focus returns to the Document accessibility findings heading.
 Resolved/approved extraction diagnostics are history with explicit no-action
 guidance; their original notes and decisions remain recoverable.
 
@@ -84,7 +84,10 @@ Violations and incomplete checks appear in separate groups with impact, rule,
 help link, affected element count, HTML and top-level Structure block links.
 Document-level findings remain explicit when no block can be identified. A failed
 scan reports unavailability and never claims success. Results reflect the document
-when the screen opened; refresh or return after edits to rerun. CLI reports do not
+when the screen opened, bound by the displayed document's review token. The
+preview rejects a changed token with a 409 recovery response; scanning remains
+unavailable and completion stays hidden. Successful status shows the saved
+revision and scan time. Refresh or return after edits to rerun. CLI reports do not
 include these transient browser results. Separate page projections, WordPress
 preview/theme output, other widths and published-site checks remain future work.
 
@@ -146,3 +149,64 @@ published page has been certified against WCAG.
   technology.
 - OCR remediation remains Phase 3C. Output-page/article building is implemented
   in Phase 3B; see `PHASE3B_OUTPUT_PAGES.md` for inherited and page-specific review.
+
+## Image approval and grouped bulk review
+
+Image editors show the current image, alt text, caption and all explicitly
+associated description records together. Text provided is distinguished from
+text still missing. A sufficient long description does not require Adjacent text;
+Adjacent is authored equivalent text, not a link to an instruction block.
+Linked descriptions are edited in their Reading order image form; no duplicate
+linked-description queue is shown. Image status, All/Approved/Needing review
+filters and progress use the same current image-and-description readiness.
+Pending descriptions are included in one image task; standalone visuals remain
+separate. Existing description links reveal the owner and focus the exact record.
+The optional description-use choice can be confirmed in the same action.
+Unchanged form saves and reviewer notes preserve existing approval.
+Explicit Save and approve reviews only the displayed image/description scope,
+validates current text and associations, and saves one existing Undo revision.
+Ordinary saves and material edits retain/invalidate pending review appropriately.
+Stale snapshots, missing references and conflicting associations cannot silently
+approve content. Existing pending descriptions receive no automatic approval.
+
+Accessibility presents unresolved document findings before optional Bulk review
+and automated HTML results. Content approvals and document findings have explicit
+scope labels; axe incomplete results mean automated checks needing human review,
+not all remaining human judgments. Zero axe results do not resolve manual link
+purpose findings. Reviewed judgments and resolved diagnostics remain collapsed,
+editable history. None of these counts is added together.
+
+Bulk review starts collapsed and defaults to Pending only, with Completed/All
+records available explicitly. Scope changes and classification changes clear all
+selection/confirmation. The server checks the exact intersection of visibility
+and classification. Visible-record counts can overlap image tasks. Typed status
+pills use existing green/amber styles and neutral gray exclusions, always with
+text; image rows use effective readiness rather than raw saved approval.
+Bulk review groups saved records by classification with per-row
+checkboxes, visible-scope Select all, typed Review state options, selected counts
+and explicit Apply confirmation. Filter changes clear selection. Block approvals,
+description Reviewed decisions and accessibility decisions remain separate; mixed
+record types are rejected. Image-block approval also reviews the associated
+saved descriptions displayed in its row. A successful batch is one save/Undo
+revision. Any invalid, incomplete, conflicting, hidden, duplicate or stale item
+rejects the whole batch before writing, with an exact target/recovery reason.
+Saving, reopening, Document/Structure/Accessibility/Export counts and publication
+gates use current review state. Human VoiceOver and production WordPress checks
+remain separate acceptance work.
+
+
+## Recorded media approval recovery and workflow help
+
+WordPress routing-only edits preserve content approval. Earlier approvals cleared
+by that regression require an explicit Preview recorded approvals / Confirm restore
+action on Export. Proof binds the current document, project identity and retained
+snapshot hashes, checks every intervening revision and preserves original dates.
+It excludes new approvals, manual pending decisions, incomplete descriptions,
+association conflicts, missing or gapped history and genuine edits, including edits
+later reverted. GET preview is read-only; restoration uses existing persistence
+and one Undo. Source identity is recorded evidence, not a historical file-byte audit.
+
+The in-app Help page explains count scopes and HTML rule counts, image descriptions,
+review decisions and acceptance limits. Exact contextual links open separately;
+blockers, current states and necessary field guidance remain on the working screen.
+Human VoiceOver is a separate person-led acceptance step.

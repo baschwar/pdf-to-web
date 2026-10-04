@@ -1,6 +1,7 @@
 # WordPress Document Export Findings
 
-Source reviewed: `sample_files/collegeofnursing.WordPress.2026-09-16.xml`
+Source reviewed: a local WordPress document-library XML export. Its filename and
+site-specific identifiers are withheld; detailed input remains local and ignored.
 
 ## Export shape
 

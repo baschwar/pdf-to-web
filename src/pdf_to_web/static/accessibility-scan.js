@@ -13,6 +13,11 @@
         });
       }
       const preview = frame.contentDocument;
+      const snapshotError = preview?.querySelector('meta[name="pdf-to-web-scan-error"]')?.content;
+      if (snapshotError) throw new Error(snapshotError);
+      if (frame.dataset.reviewToken !== preview?.querySelector('meta[name="pdf-to-web-review-token"]')?.content) {
+        throw new Error('The scan snapshot does not match this page. Reload Accessibility to check the current saved content.');
+      }
       if (!preview?.querySelector('main')) throw new Error('The HTML preview is unavailable.');
       const engine = frame.contentWindow.axe;
       if (!engine) throw new Error('The local axe-core engine is unavailable.');
@@ -26,7 +31,7 @@
         parent.append(element);
         return element;
       };
-      const resultGroups = [['violations', 'Detected issues'], ['incomplete', 'Needs human review'], ['passes', 'Passed'], ['inapplicable', 'Not applicable']];
+      const resultGroups = [['violations', 'Detected issues'], ['incomplete', 'Automated checks needing human review'], ['passes', 'Passed'], ['inapplicable', 'Not applicable']];
       output.replaceChildren();
       const summary = document.createElement('table');
       summary.className = 'result-table';
@@ -57,8 +62,9 @@
       close.addEventListener('click', () => dialog.close());
       article.append(header);
       const content = document.createElement('div'); content.className = 'axe-rules-content';
-      add(content, 'p', `axe-core ${results.testEngine.version} · WCAG 2.0, 2.1 and 2.2 A/AA rules selected for this scan. Results reflect the document when this screen opened.`);
-      add(content, 'p', 'Passed counts rules with passing elements, not WCAG success criteria. Not applicable means no matching content was found. A rule can have different results for different elements. Automated checks do not replace human accessibility review.');
+      add(content, 'p', `axe-core ${results.testEngine.version} · Saved snapshot shown above.`);
+      const ruleHelp = add(content, 'a', 'Understanding rule counts (opens Help)');
+      ruleHelp.href = '/help#html-checks'; ruleHelp.target = '_blank'; ruleHelp.rel = 'noopener';
       const label = add(content, 'label', 'Show results'); label.htmlFor = 'axe-rules-filter';
       const filter = document.createElement('select'); filter.id = 'axe-rules-filter';
       add(filter, 'option', 'All results').value = 'all';
@@ -135,12 +141,20 @@
         }
         table.append(findingsBody); tableWrap.append(table); section.append(tableWrap); output.append(section);
       }
-      status.textContent = `Check complete · axe-core ${results.testEngine.version}. Results apply to this document when the screen opened.`;
+      status.textContent = frame.dataset.reviewToken
+        ? `Check complete · axe-core ${results.testEngine.version} · saved revision ${frame.dataset.reviewRevision} · scanned ${new Date().toLocaleTimeString()}. Results apply to this page's saved snapshot. Reload after edits to scan again.`
+        : `Check complete · axe-core ${results.testEngine.version}. This app session does not record the scan snapshot. Save work and relaunch the updated app to verify freshness.`;
       const completion = document.getElementById('accessibility-complete');
       if (completion) completion.hidden = !(completion.dataset.documentReady === 'true' && results.violations.length === 0 && results.incomplete.length === 0);
 
     } catch (error) {
-      status.textContent = `Automated check unavailable: ${error.message} Document review remains available below.`;
+      const completion = document.getElementById('accessibility-complete');
+      if (completion) completion.hidden = true;
+      status.textContent = `Automated check unavailable: ${error.message} Document findings remain available above.`;
+      const refresh = document.createElement('button');
+      refresh.type = 'button'; refresh.textContent = 'Reload Accessibility';
+      refresh.addEventListener('click', () => location.reload());
+      output.replaceChildren(refresh);
     }
   };
   if (document.readyState === 'complete') start();

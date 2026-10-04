@@ -187,9 +187,9 @@ class ReadinessSurfaceTests(unittest.TestCase):
         for route in ('/structure', '/document'):
             self.assertNotIn('id="structure-review-complete"', self.client.get(route).text)
         structure = self.client.get('/structure').text
-        self.assertIn('1 to review · 0 complete or not applicable', structure)
-        self.assertIn('Text complete; manual review pending', structure)
-        self.assertIn('visual-pending', structure)
+        self.assertIn('1 image review', structure)
+        self.assertIn('Text provided; awaiting manual review', structure)
+        self.assertIn('data-review-status="needs_review"', structure)
         accessibility = self.client.get('/accessibility').text
         self.assertIn('Description needs manual review', accessibility)
         self.assertIn('#visual-chart', accessibility)

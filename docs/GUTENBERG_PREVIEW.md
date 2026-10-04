@@ -46,7 +46,11 @@ markup. WordPress remains authoritative for final compatibility.
 
 Preview-specific styling lives in `static/wordpress-preview.css`. It is local,
 minimal, and independent of conversion logic. No WSU production stylesheet is
-downloaded.
+downloaded. The WSUWP selector is labeled **WSUWP (approximate preview)**.
+A single explanation beside the preview states that it shows content and
+structure with local minimal CSS. It does not reproduce the production WSU
+WordPress theme, plugin output or final visual design; validate those on the
+production-authoritative versions.
 
 ## Security
 

@@ -41,8 +41,8 @@ class DescriptionTaskTests(unittest.TestCase):
     def test_54_blocks_and_five_description_tasks_on_every_document_page(self):
         document = self.task_document()
         progress = review_progress(document)
-        self.assertEqual((progress['approved'], progress['total']), (54, 54))
-        self.assertEqual((progress['pending_blocks'], progress['pending_descriptions'], progress['pending_tasks']), (0, 5, 5))
+        self.assertEqual((progress['approved'], progress['total']), (49, 54))
+        self.assertEqual((progress['pending_blocks'], progress['pending_descriptions'], progress['pending_tasks']), (5, 5, 5))
         self.assertEqual(progress['description_total'], 5)
         self.assertEqual(len(readiness_findings(document)), 5)
         for route in ('/document', '/structure', '/accessibility', '/output-pages', '/preview', '/export'):
@@ -50,8 +50,8 @@ class DescriptionTaskTests(unittest.TestCase):
                 page = self.client.get(route).text
                 self.assertEqual(page.count('id="review-summary"'), 1)
                 self.assertEqual(page.count('Pending 5 review tasks'), 1)
-                self.assertIn('Blocks reviewed 54 · Excluded 0 · Total 54 blocks', page)
-                self.assertIn('0 block reviews · 5 description reviews', page)
+                self.assertIn('Blocks reviewed 49 · Excluded 0 · Total 54 blocks', page)
+                self.assertIn('5 image reviews · 0 other block reviews · 5 description reviews included in the image reviews; 0 standalone description reviews', page)
                 self.assertNotIn('Pending 0', page)
                 self.assertNotIn('Total 59', page)
                 self.assertNotIn('id="structure-review-complete"', page)
@@ -77,23 +77,23 @@ class DescriptionTaskTests(unittest.TestCase):
         readiness = visual_readiness(document, visual)
         self.assertEqual(readiness['reason_code'], 'reclassified_pending')
         self.assertNotIn('Changed', readiness['reason'])
-        self.assertIn('choose Reviewed and save', readiness['action'])
-        self.assertIn('Not applicable', readiness['action'])
+        self.assertIn('Save and approve once', readiness['action'])
+        self.assertIn('No separate description needed', readiness['action'])
 
     def test_exact_card_has_context_and_one_status_with_accessible_reason(self):
         self.task_document()
         page = self.client.get('/structure').text
         card = page.split('id="visual-description-0"')[1].split('</article>')[0]
-        self.assertEqual(card.count('Text complete; manual review pending'), 1)
+        self.assertEqual(card.count('Text provided; awaiting manual review'), 1)
         self.assertIn('aria-labelledby="visual-description-0-heading"', card)
         self.assertIn('visual-description-0-reason visual-description-0-action', card)
-        self.assertIn('Image purpose 0', card)
-        self.assertIn('Selected description for review', page)
+        self.assertIn('Image purpose 0', page.split('id="block-image-0"')[1].split('</article>')[0])
+        self.assertEqual(page.count('id="visual-description-0"'), 1)
         self.assertNotIn('Text recovery Unknown', card)
         document_page = self.client.get('/document').text
         links = re.findall(r'<a href="/structure#visual-description-\d">([^<]+)</a>', document_page)
-        self.assertEqual(len(links), 5)
-        self.assertEqual(len(set(links)), 5)  # Two images on the same page are still distinguishable.
+        self.assertEqual(len(links), 0)  # Linked records belong to their image review.
+        self.assertNotIn('>Review descriptions</a>', document_page)
 
     def test_manual_decision_updates_api_counts_and_undo_restores(self):
         before = self.task_document()
@@ -163,11 +163,11 @@ class DescriptionTaskTests(unittest.TestCase):
         for index in range(5):
             self.assertEqual(readiness.count(f'href="/structure#visual-description-{index}"'), 1)
         self.assertIn('Add alt text or mark this image decorative.', page)
-        self.assertIn('choose Reviewed and save', page)
+        self.assertIn('Save and approve once', page)
         self.assertNotIn('Blocks needing review</h3>', page)
         self.assertNotIn('Descriptions needing attention</h3>', page)
-        self.assertIn('How the title is exported', page)
-        self.assertIn('standalone HTML file retains one H1', page)
+        self.assertIn('href="/help#title-export"', page)
+        self.assertIn('standalone file retains one H1', self.client.get('/help').text)
 
     def test_complete_and_blocked_states_show_status_once(self):
         self.task_document()

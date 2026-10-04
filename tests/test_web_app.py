@@ -212,7 +212,7 @@ class WebAppTests(unittest.TestCase):
         self.bootstrap()
         page = self.client.get("/accessibility")
         self.assertIn("Image needs an accessibility decision", page.text)
-        self.assertIn("required corrections, which cannot be waived", page.text)
+        self.assertIn("Required corrections cannot be waived", page.text)
         saved = self.client.post("/api/accessibility/diagnostic:manual_check:1", headers=self.headers(), json={"status": "approved", "note": "Reviewed with content owner."})
         self.assertEqual(saved.status_code, 200, saved.text)
         reopened = self.client.get("/api/document").json()["document"]
@@ -273,7 +273,7 @@ class WebAppTests(unittest.TestCase):
         self.assertIn(".source-pane { position: sticky; top: calc(var(--app-header-height) + 1rem);", app_styles.text)
         self.assertIn(".blocks-pane button { width: auto;", app_styles.text)
         self.assertIn("button:disabled { opacity: 1; color: #4b5563; background: #e5e7eb; border-color: #6b7280; }", app_styles.text)
-        self.assertIn(".block-status.status-approved { color: #166534; background: #dcfce7; }", app_styles.text)
+        self.assertIn(".block-status.status-approved, .block-status.status-reviewed { color: #166534; background: #dcfce7; }", app_styles.text)
         app_script = self.client.get("/static/app.js")
         self.assertIn("function navigateSourcePage(page)", app_script.text)
         self.assertIn("regions.forEach((bbox) =>", app_script.text)

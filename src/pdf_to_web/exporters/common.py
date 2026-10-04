@@ -205,8 +205,8 @@ def block_anchors(block, anchors):
 
 
 def blocks_with_image_descriptions(document):
-    """Render explicitly associated equivalents beside their images."""
-    visuals = {str(v['id']): v for v in document.get('review', {}).get('complex_visuals', [])}
+    """Render every explicit image equivalent beside its image, preserving IDs."""
+    from ..image_review import descriptions_for
     def expand(blocks):
         result = []
         for original in blocks:
@@ -214,12 +214,15 @@ def blocks_with_image_descriptions(document):
             if 'children' in block:
                 block['children'] = expand(block['children'])
             result.append(block)
-            visual = visuals.get(str(block.get('complex_visual_id')))
-            if block.get('type') != 'image' or is_excluded(block) or block.get('decorative') or not visual or visual.get('status') == 'excluded':
+            if block.get('type') != 'image' or is_excluded(block) or block.get('decorative'):
                 continue
-            accessibility = visual.get('accessibility', {})
-            text = accessibility.get('long_description') or accessibility.get('adjacent_text')
-            if text:
-                result.append({'id': str(block['id']) + '-description', 'type': 'paragraph', 'content': text})
+            for index, visual in enumerate(descriptions_for(document, block)):
+                if visual.get('status') == 'excluded':
+                    continue
+                accessibility = visual.get('accessibility', {})
+                text = accessibility.get('long_description') or accessibility.get('adjacent_text')
+                if text:
+                    identity = str(block['id']) + '-description' + (f'-{index + 1}' if index else '')
+                    result.append({'id': identity, 'type': 'paragraph', 'content': text})
         return result
     return expand(document.get('blocks', []))

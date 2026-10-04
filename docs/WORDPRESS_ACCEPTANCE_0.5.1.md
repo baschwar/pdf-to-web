@@ -20,13 +20,17 @@ mark a row passed without performing it in the named WordPress environment.
 
 Do not record credentials, private URLs, or secrets in this document.
 
+Source-document names and project/export identifiers are withheld from this public
+report; descriptive labels retain the recorded coverage and findings. Detailed
+evidence remains local and ignored.
+
 ## Gutenberg Paste and Reopen
 
 | Case | Source project / fixture | Export filename | Recognition and structure | Save/reopen | Frontend | Result / notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| Text, nested lists, links | `instructions-for-citi-training-20230608--heuristic` | `gutenberg/01-generic-text-nested-list-links-citi.html` | Initial FAIL: semantic and literal ordered-list markers were both displayed. Regenerated in v0.5.2 with decimal, lower-alpha, and lower-Roman semantic nesting and no literal prefixes. Retest NOT TESTED. | NOT TESTED | NOT TESTED | FAIL (initial); RETEST NOT TESTED |
-| Table and nested content | `bacc-to-phd-4-year-sample-program--heuristic` | `gutenberg/02-generic-table-nested-content-program-plan.html` | NOT TESTED: recognized table, all rows/cells, nested table content, no duplication, no invalid blocks | NOT TESTED | NOT TESTED | NOT TESTED |
-| Footnotes and anchors | `all-policy-vaccination-admission-policy--heuristic` | `gutenberg/03-generic-footnotes-vaccination-policy.html` | NOT TESTED: Custom HTML valid, reference links, backlinks, IDs, no duplicate IDs, footnotes at end | NOT TESTED | NOT TESTED | NOT TESTED |
+| Text, nested lists, links | Local instruction fixture (name withheld) | Local instruction export (filename withheld) | Initial FAIL: semantic and literal ordered-list markers were both displayed. Regenerated in v0.5.2 with decimal, lower-alpha, and lower-Roman semantic nesting and no literal prefixes. Retest NOT TESTED. | NOT TESTED | NOT TESTED | FAIL (initial); RETEST NOT TESTED |
+| Table and nested content | Local program-plan fixture (name withheld) | Local table export (filename withheld) | NOT TESTED: recognized table, all rows/cells, nested table content, no duplication, no invalid blocks | NOT TESTED | NOT TESTED | NOT TESTED |
+| Footnotes and anchors | Local policy fixture (name withheld) | Local footnote export (filename withheld) | NOT TESTED: Custom HTML valid, reference links, backlinks, IDs, no duplicate IDs, footnotes at end | NOT TESTED | NOT TESTED | NOT TESTED |
 | WSUWP profile | `wsu-block-contract` fixture | `gutenberg/04-wsuwp-hero-section-core-blocks.html` | NOT TESTED: `wsuwp/hero`, `wsuwp/section`, nested core blocks, no invalid blocks | NOT TESTED | NOT TESTED | NOT TESTED |
 
 ## WXR Import and Reopen
@@ -60,18 +64,18 @@ for the required direct Gutenberg paste test.
 
 ## v0.5.2 Retest Notes
 
-- The CITI acceptance bundle now includes 21 extracted files under
-  `media/citi-assets/` and corresponding JSON/Markdown manifests under
-  `media/citi-reports/`.
+- The instruction acceptance bundle now includes 21 extracted files under
+  a local media folder (name withheld) and corresponding JSON/Markdown manifests under
+  a local report folder (name withheld).
 - Images without configured WordPress URLs appear as deliberate replacement
   placeholders. They are not treated as successfully published images.
-- Retest list nesting and marker rendering using the regenerated CITI HTML.
+- Retest list nesting and marker rendering using the regenerated instruction HTML.
   Upload/media mapping itself remains a later workflow and is not required to
   judge the ordered-list regression.
 
 ## v0.5.3 Reading-Order Retest Notes
 
-- Regenerated `02-generic-table-nested-content-program-plan.html` after shared
+- Regenerated the local table export (filename withheld) after shared
   normalization restored the visual sequence `YEAR 1` through `YEAR 4`, with
   each heading immediately followed by its associated table.
 - The project export-validation gate passes Semantic HTML, generic Gutenberg,
@@ -80,14 +84,14 @@ for the required direct Gutenberg paste test.
 
 ## v0.5.4 List-Block Retest Notes
 
-- Regenerated `01-generic-text-nested-list-links-citi.html` with WordPress list
+- Regenerated the local instruction export (filename withheld) with WordPress list
   attributes that exactly match the serialized `<ol>` marker type.
 - Empty source paragraphs are no longer exported as blank editor insertion
   points. Retest the regenerated file for invalid-list warnings in WordPress.
 
 ## v0.5.5 Header and Footer Retest Notes
 
-- Regenerated `02-generic-table-nested-content-program-plan.html` with the
+- Regenerated the local table export (filename withheld) with the
   source title as H1 and its smaller multi-line subtitle as H2.
 - Recovered the italic sample-plan note and `Revised 09/25` once at the end of
   the document. The complete project export-validation gate passes.
