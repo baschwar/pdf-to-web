@@ -244,16 +244,17 @@ class DocumentStructureLayoutTests(unittest.TestCase):
         save_review_document(self.root, document)
         self.assertNotIn('id="reading-order-undo"', self.client.get('/structure').text)
 
-    def test_approved_button_disabled_and_review_tools_collapsed_without_deleting_cards(self):
+    def test_approved_button_disabled_and_useful_drafting_tools_open_without_deleting_cards(self):
         document = self.resolved_document()
         update_block(self.root, 'photo', {'review_status': 'needs_review'})
         page = self.client.get('/structure').text
         self.assertRegex(page, r'aria-label="Approve block 1" disabled>Approve')
         self.assertNotIn('aria-label="Approve block 3"', page)
         self.assertIn('aria-label="Save and approve block 3"', page)
-        for tool in ('image-description-tools',):
-            tag = re.search(r'<details id="' + tool + r'"[^>]*>', page).group()
-            self.assertNotIn(' open', tag)
+        tag = re.search(r'<details id="image-description-tools"[^>]*>', page).group()
+        self.assertIn(' open', tag)  # The image above was explicitly returned to Needs review.
+        standalone = re.search(r'<details id="visual-description-tools"[^>]*>', page).group()
+        self.assertNotIn(' open', standalone)
         self.assertIn('id="visual-chart"', page)
         self.assertIn('id="visual-description-tools"', page)
         self.assertIn('Standalone visual descriptions', page)
@@ -266,5 +267,5 @@ class DocumentStructureLayoutTests(unittest.TestCase):
     def test_manual_import_has_ordered_steps(self):
         page = self.client.get('/structure').text
         instructions = re.search(r'id="draft-manual-import".*?<ol>(.*?)</ol>', page, re.S).group(1)
-        self.assertEqual(instructions.count('<li>'), 4)
+        self.assertEqual(instructions.count('<li>'), 2)
         self.assertLess(instructions.index('Validate responses'), instructions.index('Import drafts into image fields'))

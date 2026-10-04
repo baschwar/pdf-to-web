@@ -20,7 +20,8 @@ if [[ ! -x ".venv/bin/pdf-to-web" ]]; then
 fi
 
 echo "Starting PDF to Web..."
-echo "Leave this window open while using the application."
+echo "Leave this window open while using the application. Use Quit PDF to Web in the app to end this launcher process."
+echo "Terminal's profile settings determine whether its completed window closes."
 echo
 
 exec .venv/bin/pdf-to-web serve

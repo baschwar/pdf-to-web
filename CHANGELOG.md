@@ -4,6 +4,44 @@
 
 ### Stabilization
 
+- Make saved project outputs the primary export result, with exact paths and
+  authenticated Open output folder. Browser copies are optional and collapsed;
+  app exports preserve previous reusable files in unique output/history snapshots.
+  Preserve source files and existing downloads. No-image documents skip drafting
+  and media mapping and proceed directly through text review and content export.
+- Add Save and approve to link-label editors: save nested link text, then stamp
+  the displayed containing block's final content in one revision with Undo.
+  Reject stale, blank and foreign-target edits without partial writes; retain
+  other unresolved link findings and ordinary Save's need for fresh review.
+- Resettle the focused next block after source-page rendering changes narrow
+  layouts, only while that card still owns focus; preserve newer editor focus.
+- Advance successful image Save and approve using solo Approve's review navigation,
+  preserving the active filter and reading order. Clear the stale approved-card
+  hash that revealed All; keep empty-filter recovery and valid selection/controls.
+  Validation/save/stale failures retain the current image and entered fields.
+- Replace successful Quit confirmation with a focused, announced stopped state:
+  “PDF to Web has stopped. It’s safe to close this browser tab or window.” Remove
+  confirmation controls after accepted Quit and repeated unavailable health checks;
+  preserve cancellation, busy guards and uncertain/error retry feedback.
+- Show the selected image-drafting method's workflow. Manual exchange has one ZIP
+  export with counted Pending/Selected scope, a green project-folder action beside export, then
+  instructions and completed-JSON validation/import. Hide direct-provider controls
+  in manual mode; replace Ollama help immediately, preserve switching state and
+  review safeguards. Manual export/import and saving an empty model work even
+  while Ollama is the saved provider, with no Ollama initialization. Explain blank
+  templates in package/prompt/help and group repeated import findings without
+  relaxing required usable alt text or identity validation.
+- Make manual CSV mapping prominent beside WordPress XML matching and reveal it
+  after unmatched/ambiguous results or XML errors, with direct recovery links.
+  Keep exact mapping validation, authored decisions, Undo and readiness focus.
+- Open optional image-description preparation tools when useful before Reading
+  order; remember each project's explicit open/closed browser preference. Direct
+  links reveal tools without overwriting that preference or changing authored state.
+- Add Quit PDF to Web on every screen, with unsaved-field confirmation and an
+  all-tabs warning. Refuse while requests/downloads or queued/running generation
+  remain active; gracefully stop only the app-owned server and its launcher process.
+  Externally managed servers refuse Quit. Report request/termination/failure distinctly;
+  host-window closing depends on platform settings, with Windows acceptance pending.
 - Sanitize public acceptance and corpus reports: withhold source-document names,
   project identities and attachment metadata while retaining verified behavior,
   coverage and pending acceptance. Detailed source evidence stays local and ignored.
@@ -22,8 +60,9 @@
   Lead with actual updates; explicitly warn when IDs were not refreshed, including
   at the focused readiness section. Disclose when a new XML clears confirmation.
 - Keep Export readiness visible for ready and blocked documents. Matching media
-  always scrolls and focuses it; export and content-copy actions also bring it
-  into view. Detailed matching feedback and return-to-content links remain.
+  scrolls and focuses it. Ready exports focus their saved-output result;
+  successful content copying stays at the controls. Blocked/stale actions focus
+  readiness, and Continue to Export and copy content focuses the controls. Detailed matching feedback and return-to-content links remain.
   A rejected stale copy clears obsolete readiness/counts/results and provides
   focused Reload Export guidance while preserving the clipboard.
 - Add explicit preview/confirmation to restore recorded image approvals lost to

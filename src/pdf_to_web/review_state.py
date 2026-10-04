@@ -512,7 +512,24 @@ def _approve_block(block: dict[str, Any]) -> None:
 
 def update_block(project_dir: Path, block_id: str, changes: dict[str, Any], *, approve_after_save: bool = False) -> dict[str, Any]:
     document = ensure_review_document(project_dir)
-    _edit_block(document, block_id, changes, approve_after_save=approve_after_save)
+    if 'link_block_id' in changes:
+        # Link labels can belong to a nested item, while the displayed top-level
+        # block owns its content review. Save both in one existing Undo snapshot.
+        from .image_review import validate_token
+        validate_token(document, changes.get('expected_review_token'))
+        owner = _find_location(document.get('blocks', []), block_id)[2]
+        target = changes.get('link_block_id')
+        if not isinstance(target, str) or not any(str(node.get('id')) == target for node in _walk([owner])):
+            raise ValueError('The displayed link does not belong to this block. Reload before saving.')
+        allowed = {'link_block_id', 'link_index', 'link_text', 'expected_review_token'}
+        if set(changes) - allowed:
+            raise ValueError('Save other block fields separately from the link label.')
+        edits = {key: changes[key] for key in ('link_index', 'link_text') if key in changes}
+        _edit_block(document, target, edits, approve_after_save=approve_after_save and target == block_id)
+        if approve_after_save and target != block_id:
+            _edit_block(document, block_id, {}, approve_after_save=True)
+    else:
+        _edit_block(document, block_id, changes, approve_after_save=approve_after_save)
     return save_review_document(project_dir, document)
 
 

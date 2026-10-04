@@ -8,6 +8,139 @@ private project identities, attachment IDs, revision histories or input hashes.
 Detailed earlier reports are retained only in ignored local evidence. Sanitizing
 this checkout does not remove material from previously published Git history.
 
+## Latest authorized UI continuation — 2026-10-04
+
+This continuation builds on `70d0a72` and retains the earlier edits. The user
+requested a scoped branch push after final checks. No main merge, tag, release,
+deployment, real-project migration or real app restart is included.
+
+- Quit reaches an announced terminal stopped state after accepted shutdown and
+  two unavailable local health probes. Confirmation controls disappear; offline,
+  HTTP-error and timeout cases retain uncertainty and retry feedback.
+- Drafting method controls show the selected manual/provider workflow. One manual
+  ZIP export offers counted pending/selected scope before completed-response import.
+  Blank templates receive an actionable summary; strict alt and identity checks
+  remain. Imported drafts remain suggestions requiring human review.
+- Successful image Save and approve follows solo Approve's visible reading order,
+  preserves the exact filter and handles empty filters, final completion and Undo.
+  A narrow-layout source-render race now resettles the focused next card only while
+  it still owns focus; newer editor focus and typing are preserved.
+- Link Save and approve atomically corrects the displayed nested link and approves
+  its containing block's final content fingerprint in one revision. Ordinary Save
+  still marks changed content pending. Other link findings remain unresolved;
+  blank, stale and foreign-target attempts cannot partially save or approve.
+- App exports stay in the chosen project's output subfolders. Exact paths and
+  authenticated Open output folder replace prominent browser downloads; optional
+  browser copies are collapsed and explicitly follow browser settings. Unique
+  history snapshots preserve reusable previous outputs before replacement. Original
+  source files and existing Downloads files are preserved. No-image documents skip
+  image drafting and WordPress media mapping.
+- Export readiness remains visible and receives focus/scroll after media matching,
+  for blocked or stale export/copy actions. Ready exports focus completion and
+  saved files; successful copying stays at its control. Continue to Export and
+  copy content focuses that section. The earlier always-readiness behavior is
+  superseded by this result-specific navigation.
+
+Final runtime/test/tool/launcher candidate:
+`07bc2930903225181e8fb0c5b82df08e2031444a1423e9b40b405aa1493afac6`
+(139 files; documentation excluded). **477 tests passed in 30.910 seconds**.
+The focused link-workflow suite passed **18 tests in 1.504 seconds**; output routes
+also verify report, media, HTML, Gutenberg, WXR and arranged-package persistence,
+prior-output recovery, authorization, confinement and no-image text review gates.
+Earlier failed runs are retained locally, including outdated no-image layout
+expectations corrected without weakening export review checks.
+
+Read-only response inspection distinguished an unchanged blank template from a
+completed valid response. Historical task snapshots demonstrate that importing
+image suggestions did not invalidate existing approvals or create extra image
+review tasks; linked descriptions are included in their image-owned tasks.
+Historical counts are not treated as current while the user actively reviews.
+The user confirmed successful image-containing and no-image document results; this does not establish
+production WordPress, human VoiceOver or actual Windows acceptance.
+
+Independent navigation verification passed 17 review-navigation groups and three
+no-image export groups on the preceding candidate. A final five-group check on
+this candidate reconfirmed narrow-card geometry, exact filter retention, no-image
+export-result focus, valid generated HTML, no automatic download, exact optional
+copy bytes and graceful owned-server exits. All 139 hashes matched before/after;
+zero browser JavaScript errors were recorded. Native folder opening was mocked.
+These browser groups overlap the full suite and are not added to its test count.
+
+Independent output verification passed 15 desktop/narrow groups plus five
+nested-link groups on the preceding runtime-identical candidate. Four final
+manual-exchange groups verified empty-model save, immediate method visibility,
+saved reload, keyboard ZIP export, actual copied instructions, read-only JSON
+validation and explicit import. The request trace contained settings/export/import
+and Quit only, with no provider/preflight calls. Final 139-file hashes matched
+before/after, zero JavaScript errors were recorded and owned servers exited 0.
+Native folder opening was mocked; native select keystrokes and arranged-package
+browser coverage were not established in this check. Full package functional
+coverage remains in the suite. An added no-Ollama regression passed within the
+focused 15-route suite (1.449 seconds) and final 477-test suite. Detailed
+private evidence stays ignored under `build/quit-stopped-feedback-20261004/`,
+`build/image-navigation-independent-20261004/` and
+`build/structure-zip-independent-20261004/`. External acceptance remains pending.
+
+## Earlier local continuation — 2026-10-04
+
+The published checkout at `70d0a72` remains the baseline. This continuation keeps
+all existing edits. At this earlier checkpoint its changes were uncommitted;
+no push, merge, tag, release, deployment or real-project processing occurred.
+
+- Manual CSV mapping has a visible entry beside XML matching. Unmatched or
+  ambiguous results and XML failures reveal the existing tools and recovery links.
+  Existing identity validation, review decisions and Undo remain in use.
+- Optional image-description tools precede Reading order and open when pending
+  image review or draft requests/results make them useful. An explicit browser
+  choice persists per project; direct links reveal tools for a visit without
+  replacing that choice. Opening tools does not save or approve content.
+- Quit is available throughout the app, confirms unsaved current-tab fields and
+  warns about all tabs. It refuses during requests, streamed downloads and queued
+  or running generation. It stops only the owned server; external servers refuse.
+  Cancel/Escape preserve edits, callback failure supports retry, and another tab
+  reports an already requested shutdown. An exact copied macOS launcher ended
+  normally; actual Terminal window closing and Windows hardware remain unverified.
+
+Earlier runtime/test/tool/launcher candidate:
+`6697bf09f11b29adc5a76ab9538e11c2a80487253ae3a9114c58dddd7fdc4558`
+(137 files; documentation excluded). **463 tests passed in 27.924 seconds**;
+the focused lifecycle/discovery/layout checks passed **32 tests in 2.804 seconds**.
+The first full run's two obsolete always-collapsed expectations were updated to
+the useful-default behavior while retaining the other layout assertions. Both
+failure and final passing logs are retained locally.
+
+Independent checks include six functional Quit tests, earlier 16 discovery/media
+and seven Quit browser groups, and separate final five- and four-group smoke
+checks on matching runtime hashes. They verify CSV import/Undo, preferences,
+keyboard and 390px layouts, unsaved Cancel, busy refusal, shutdown races,
+failure/retry and actual owned-process exit. Final smoke reports record zero
+JavaScript errors, unchanged saved fixture bytes and stopped owned servers.
+These groups overlap the full suite and are not added to its test total.
+
+A further independent check of the user's readiness-navigation request verified
+successful XML matching, CSV import, Export and actual Copy HTML at both 1440px
+and 390px. All eight actions focus the readiness heading below the sticky header;
+clipboard contents exactly match generated HTML. Zero browser errors, unchanged
+137-file candidate and normal owned-server exit are recorded in
+`build/discoverability-quit-independent-20261004/readiness-actions/report.json`.
+This behavior was already implemented; no duplicate runtime change was needed.
+
+Installed Homebrew Poppler 26.08.0 was reverified without another installation.
+The launcher paths resolve both rendering commands even with a minimal initial
+PATH. Fresh uncached rendering of two pages from an approved real-PDF disposable
+copy produced 1020 × 1320 PNGs; source bytes remained unchanged. Prior caches
+support earlier successful rendering, but the later PATH failure's cause is
+unknown. Existing diagnostic coverage passes in the full suite; its historical
+54-task warning was one included block review, and the inspected current review
+now records that diagnostic as resolved. Pillow was not installed. The live
+app and actual project state were not changed or restarted.
+
+Evidence: `build/held-items-sprint-20261004/`,
+`build/discoverability-quit-independent-20261004/`, and
+`build/safe-quit-independent-20261004/`. Earlier rendering and diagnostic evidence
+is retained in `build/poppler-diagnostic-20261002/`. External acceptance below
+remains pending.
+
 ## Current implementation and local verification
 
 The Phase 3B page/article builder is implemented. Existing single-document
@@ -64,7 +197,7 @@ The accumulated stabilization work covers:
   block incomplete publication and support explicit recovery with Undo. Mixed-block
   list conversion and real-project reconstruction remain separate author actions.
 
-Latest runtime/test/tool candidate:
+Earlier published runtime/test/tool candidate:
 `09f0816c993f51990609721e87d7798c6570e946aa0bde1b1b3538feaa3fb892`
 (134 files; documentation excluded). At this candidate, **452 tests passed in
 26.708 seconds**; focused image-draft checks passed **36 tests in 1.744 seconds**.

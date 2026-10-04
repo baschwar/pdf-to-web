@@ -7,26 +7,33 @@ project snapshots, screenshots and assessment output untracked under `build/`.
 
 ## Discoverable manual WordPress media mapping
 
-Recorded 2026-10-04 at the user's request. **Deferred until after this QA round;
-not implemented.** The manual CSV mapper is currently inside a non-obvious
-accordion. When XML matching fails or leaves unmatched/ambiguous items, provide
-a prominent, concise, labeled entry point to manual mapping. Keep optional detailed
-instructions in Help. Preserve exact block/asset identities, authored review
-decisions and strict safeguards against mapping the wrong image. This backlog
-item does not expand the current XML attachment-ID refresh fix.
+Recorded 2026-10-04 at the user's request. **Locally implemented; verification
+recorded in PHASE3B_ACCEPTANCE.md.** A visible entry point beside XML matching
+opens the existing CSV tools. XML errors and unmatched/ambiguous results reveal
+them and provide recovery links. Detailed instructions remain in Help. Exact
+block/asset identities, authored decisions, validation and Undo are preserved.
+This changes discovery, not the attachment-ID refresh policy.
 
 ## Quit PDF to Web from the app
 
-Recorded 2026-10-04 at the user's request. **Next sprint; not implemented.** Provide
-an explicit Quit/Exit action so the user does not have to close the launcher
-Terminal manually. Confirm before losing unsaved edits; gracefully shut down only
-this app's server/process and close its dedicated launcher session where supported.
-Never kill unrelated Terminal windows, sessions or processes. Define behavior for
-browser-launched, macOS launcher and Windows launcher sessions, including cases
-where closing the host session is unsupported. Show clear completion/failure
-feedback and test unsaved-work protection, process ownership, successful/failed
-shutdown and platform-specific launcher behavior. No current app was quit or
-restarted for this backlog entry.
+Recorded 2026-10-04 at the user's request. **Locally implemented; actual Windows
+and Terminal-window closing remain external checks.** Quit confirms current-tab
+unsaved fields and warns about all tabs. It refuses during admitted requests,
+downloads and queued/running generation, then gracefully stops only the owned
+server. Dedicated launcher processes end normally; shared prompts and Terminal
+windows may remain according to profile settings. Externally managed servers
+refuse this action. No process lookup, PID killing or Terminal automation occurs.
+Disposable checks cover Cancel/Escape, failure/retry, admission races, full streamed
+responses and actual owned-process exit. The live app is not quit or restarted.
+
+## Image description preparation discovery
+
+**Locally implemented.** Structure's optional drafting tools precede Reading order
+and open initially when image reviews or draft requests/results make them useful.
+The user's summary action remembers open/closed per project in browser storage.
+Direct links reveal tools for the visit without replacing that preference. No
+mandatory page, provider transmission, review approval or automatic editor collapse
+is introduced. Storage denial falls back to the useful default.
 
 ## Dedicated multi-page export round-trip acceptance
 

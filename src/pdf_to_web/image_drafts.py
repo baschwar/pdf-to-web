@@ -298,7 +298,7 @@ def exchange_package(root, entries):
             archive.writestr('review-sheet.csv', '\ufeff' + sheet.getvalue())
             archive.writestr('request.json', json.dumps(manifest, indent=2, ensure_ascii=False))
             archive.writestr('response-template.json', json.dumps(template, indent=2))
-            archive.writestr('INSTRUCTIONS.txt', INSTRUCTIONS + '\nManually attach the images and request.json to your chosen tool. Opening its website does not attach or send files. Use review-sheet.csv to organize manual writing or AI batch review. Copy final drafts into response-template.json with its identities unchanged; CSV is a companion, not an import format. Return response-template.json with completed fields. Import and review drafts locally; nothing is approved automatically.\n')
+            archive.writestr('INSTRUCTIONS.txt', INSTRUCTIONS + '\nManually attach the images and request.json to your chosen tool. Opening its website does not attach or send files. Use review-sheet.csv to organize manual writing or AI batch review. Copy final drafts into response-template.json with its identities unchanged; CSV is a companion, not an import format. The included response-template.json is blank and cannot be imported as completed drafts. Write usable alt text for every response and return the completed JSON, not the unchanged template. Import and review drafts locally; nothing is approved automatically.\n')
         # Publish a complete archive atomically without replacing any prior ZIP.
         os.link(temporary, package)
     except OSError as exc:

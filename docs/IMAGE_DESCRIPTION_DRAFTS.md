@@ -6,6 +6,13 @@ Accepted fields continue to drive HTML, Gutenberg, WXR and Output Pages.
 
 ## Review workflow
 
+The preparation tools appear before Reading order and open initially when image
+reviews or existing drafts make them useful. Use the summary to keep them open or
+closed; that choice persists for this project in this browser. A direct drafting
+link reveals them for the visit without replacing the preference. Defaults do not
+move keyboard focus, generate drafts or approve content. Storage denial retains
+the useful default.
+
 1. Open Structure and the distinct **Image description drafts** section, then
    expand **Open drafting tools (optional)**. **Draft image descriptions** beside
    an image's alternatives or Accessibility finding opens and focuses it directly.
@@ -18,18 +25,24 @@ Accepted fields continue to drive HTML, Gutenberg, WXR and Output Pages.
    visual explicitly when one exists; page coincidence does not establish that
    relationship. A supplied long description without an association creates an
    image-specific record tied to its stable block ID.
-3. Expand the bold **Provider setup** accordion, choose Local Ollama, OpenAI API
-   or ChatGPT / other tool (manual exchange), and **Save provider settings**.
+3. In **Drafting method**, choose Local Ollama, OpenAI API
+   or ChatGPT / other tool (manual exchange), and **Save drafting method**.
    Settings persist per project; saving keeps your position and focus. The Ollama
    model field appears only for Local Ollama; help text describes only the selected
-   provider. ChatGPT manual exchange exports a
-   request instead of calling an API. Choose **Generate drafts** or
-   **Export drafting request**. Batch controls use
-   the selected images. The toolbar shows selected and pending counts.
-   **Export pending images ZIP** uses images needing descriptions that have no
+   provider. Manual exchange shows the ZIP handoff and hides direct-provider
+   generation controls. Choose **All pending images** or **Selected images** in
+   the single export area, then **Export image-draft ZIP**. Selected uses exactly
+   your checkboxes; an empty scope cannot export. Counts are shown for both choices.
+   All pending uses saved image-review needs that have no
    ready or rejected draft and are not currently generating, regardless of the
    checkboxes. Export saves the ZIP in this project's `output/image-drafts/`,
-   displays its full saved path and focuses a browser download link for a copy.
+   displays its saved path and focuses the green **Open output folder**
+   action beneath export, before import. Copy instructions and send the ZIP to
+   your chosen tool. Upload the completed response JSON, validate without saving,
+   then explicitly import drafts and review before approval. The ZIP's original
+   response-template.json is blank; unchanged templates receive one actionable
+   summary and import nothing. Local Ollama/OpenAI instead show their own generation
+   route. Switching methods preserves fields, selection and scope without requests.
    Repeated exports use descriptive unique filenames and preserve earlier ZIPs.
    Cancel controls appear only for selected awaiting-response or generating requests.
    Local or cloud generation is optional.
@@ -48,6 +61,10 @@ Accepted fields continue to drive HTML, Gutenberg, WXR and Output Pages.
    while preserving subsequent author edits. Population never approves a block;
    use the existing review controls to approve. Decorative suggestions require
    the existing decorative control, which retains a legitimate caption.
+   Successful image Save and approve advances to the next pending block within
+   the exact current filter, like solo Approve. Empty filters remain selected with
+   Show all recovery; failures keep the current image and unsaved fields. Earlier
+   decisions remain intact and do not need repeated approval for this UI change.
 6. Continue Structure/Accessibility and Output Pages review, then preview and
    export accepted content. Undo includes draft edits, imports, associations and
    field application. Save/reopen retains both drafts and accepted content.
@@ -66,7 +83,7 @@ publishes a complete file without overwriting an earlier package. A failed write
 cleans up the incomplete temporary file and reports folder/space guidance. Output
 paths that resolve outside the project are rejected. Older `request-<uuid>.zip`
 packages remain usable. This is an AI drafting handoff, separate from publication
-and WordPress media-upload packages; the browser download matches the saved file.
+and WordPress media-upload packages; an optional browser copy matches the saved file but follows browser download settings.
 
 **Regenerate / retry** explicitly requests a replacement through the selected
 provider. **New manual request** explicitly creates a replacement exchange request.
@@ -77,7 +94,7 @@ and cannot be applied. Request a replacement after inspecting the changed contex
 ## Manual exchange
 
 Beside the ZIP controls, **Copy instructions for Codex/ChatGPT** copies the
-package handoff prompt. Attach the downloaded ZIP in your chosen tool, paste the
+package handoff prompt. Attach the saved project ZIP in your chosen tool, paste the
 instructions and run the request. Return its completed `response-template.json`
 for validation, import and human review. The button preserves unsaved editor fields
 and selections. Copy success is announced; if both clipboard methods fail, a

@@ -18,13 +18,14 @@ class DraftingDiscoveryTests(unittest.TestCase):
     setUp = routes.ImageDraftRouteTests.setUp
     post = routes.ImageDraftRouteTests.post
 
-    def test_section_is_distinct_collapsed_and_findings_link_to_existing_tools(self):
+    def test_section_is_distinct_open_when_useful_and_findings_link_to_existing_tools(self):
         screen = self.client.get('/structure').text
         self.assertIn('class="image-draft-workflow" aria-labelledby="image-draft-heading"', screen)
         self.assertEqual(screen.count('id="image-draft-heading"'), 1)
         self.assertIn('<h2 id="image-draft-heading" tabindex="-1">Image description drafts</h2>', screen)
         tag = re.search(r'<details id="image-description-tools"[^>]*>', screen).group()
-        self.assertNotIn(' open', tag)
+        self.assertIn(' open', tag)
+        self.assertLess(screen.index('id="image-description-tools"'), screen.index('id="blocks-heading"'))
         self.assertIn('href="#image-description-tools" class="draft-workflow-link"', screen)
         finding = self.client.get('/accessibility').text.split('id="finding-image-alt:ambiguous"')[1].split('</article>')[0]
         self.assertIn('href="/structure#image-description-tools"', finding)
@@ -44,6 +45,37 @@ class DraftingDiscoveryTests(unittest.TestCase):
         document['blocks'] = [b for b in document['blocks'] if b['type'] != 'image']
         save_review_document(self.root, document)
         self.assertNotIn('id="image-description-tools"', self.client.get('/structure').text)
+
+    def test_zip_result_stays_with_export_controls_before_manual_import(self):
+        before = (self.root / 'review/current.json').read_bytes()
+        screen = self.client.get('/structure').text
+        self.assertEqual(screen.count('id="draft-downloads"'), 1)
+        self.assertLess(screen.index('id="draft-export-zip"'), screen.index('id="draft-export-result"'))
+        self.assertEqual(screen.count('data-draft-batch="export"'), 1)
+        self.assertIn('<option value="pending">All pending images</option>', screen)
+        self.assertIn('<option value="selected">Selected images</option>', screen)
+        self.assertLess(screen.index('id="draft-downloads"'), screen.index('id="draft-manual-import"'))
+        self.assertLess(screen.index('id="draft-export-result"'), screen.index('id="draft-manual-flow"'))
+        import_controls = screen.split('id="draft-manual-import"')[1].split('</details>')[0]
+        self.assertIn('id="draft-import-findings"', import_controls)
+        self.assertNotIn('id="draft-downloads"', import_controls)
+        self.assertEqual((self.root / 'review/current.json').read_bytes(), before)
+
+    def test_saved_method_renders_its_route_without_changing_authoring(self):
+        self.assertEqual(self.post('settings', {'provider': 'manual', 'model': ''}).status_code, 200)
+        saved = (self.root / 'review/current.json').read_bytes()
+        screen = self.client.get('/structure').text
+        self.assertIn('id="draft-manual-route" aria-labelledby=', screen)
+        self.assertIn('id="draft-provider-route" hidden', screen)
+        self.assertIn('id="draft-model-label" hidden', screen)
+        self.assertIn('template.json is blank', screen)
+        self.assertEqual((self.root / 'review/current.json').read_bytes(), saved)
+        self.assertEqual(self.post('settings', {'provider': 'ollama-local', 'model': 'fixture-model'}).status_code, 200)
+        saved = (self.root / 'review/current.json').read_bytes()
+        screen = self.client.get('/structure').text
+        self.assertIn('id="draft-manual-route" hidden', screen)
+        self.assertIn('id="draft-provider-route" aria-labelledby=', screen)
+        self.assertEqual((self.root / 'review/current.json').read_bytes(), saved)
 
     def test_repeated_packages_remain_in_chosen_root_and_download_after_reopen(self):
         chosen = self.root.parent / 'Chosen folder α'

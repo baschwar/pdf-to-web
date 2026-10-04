@@ -1,6 +1,12 @@
 const authoringForms = [...document.querySelectorAll('.block-form, .complex-visual-form')];
 const authoringValue = form => JSON.stringify([...form.querySelectorAll('input:not([name="expected_review_token"]), textarea, select')].map(field => [field.name, field.type === 'checkbox' ? field.checked : field.value]));
 const authoringBaselines = new WeakMap(authoringForms.map(form => [form, authoringValue(form)]));
+const quitForms = [...document.querySelectorAll('form')].filter(form => form.id !== 'source-page-controls');
+const quitValue = form => JSON.stringify([...form.querySelectorAll('input:not([readonly]):not([type="hidden"]), textarea:not([readonly]), select')].map(field => [field.name, field.type === 'file' ? [...field.files].map(f => [f.name, f.size, f.lastModified]) : field.type === 'checkbox' || field.type === 'radio' ? field.checked : field.value]));
+const quitBaselines = new WeakMap(quitForms.map(form => [form, quitValue(form)]));
+const resetQuitForm = form => { if (form) quitBaselines.set(form, quitValue(form)); };
+let appRequestsActive = 0;
+let quitRequested = false;
 
 const bulkReview = document.querySelector('#bulk-review[data-review-token]');
 if (bulkReview) {
@@ -101,11 +107,102 @@ const csrfHeaders = () => ({
 });
 
 async function api(url, options = {}) {
-  const response = await fetch(url, options);
-  const data = await response.json();
-  if (!response.ok || data.status === 'error') throw new Error(data.error || data.detail || 'Request failed');
-  return data;
+  const lifecycleRequest = ['/api/lifecycle', '/api/quit'].includes(url);
+  if (quitRequested && !lifecycleRequest) throw new Error('PDF to Web is quitting. New work is unavailable.');
+  if (!lifecycleRequest) appRequestsActive += 1;
+  try {
+    const response = await fetch(url, options);
+    const data = await response.json();
+    if (!response.ok || data.status === 'error') throw new Error(data.error || data.detail || 'Request failed');
+    return data;
+  } finally { if (!lifecycleRequest) appRequestsActive -= 1; }
 }
+
+const quitDialog = document.getElementById('quit-dialog');
+const quitOpen = document.getElementById('quit-open');
+const quitConfirm = document.getElementById('quit-confirm');
+const quitStatus = document.getElementById('quit-status');
+const quitCancel = document.getElementById('quit-cancel');
+function unsavedQuitForms() {
+  return quitForms.filter(form => authoringBaselines.has(form)
+    ? authoringBaselines.get(form) !== authoringValue(form)
+    : quitBaselines.get(form) !== quitValue(form));
+}
+quitOpen?.addEventListener('click', async () => {
+  quitConfirm.disabled = true;
+  quitStatus.textContent = 'Checking this app’s running work…';
+  const dirty = unsavedQuitForms().length;
+  document.getElementById('quit-edits').textContent = dirty ? 'This tab has unsaved edits or choices. Keep working to save them, or explicitly quit without saving.' : 'No unsaved edits detected in this tab. Check other open tabs before quitting.';
+  quitConfirm.textContent = dirty ? 'Quit without saving' : 'Quit PDF to Web';
+  quitDialog.showModal(); quitCancel.focus();
+  try {
+    const state = await api('/api/lifecycle');
+    quitStatus.textContent = !state.available ? 'Quit is unavailable for this externally managed server. Stop its own launcher instead.'
+      : state.state === 'stopping' ? 'Quit has already been requested. Waiting for this app to stop…'
+      : state.error || (state.active_work || appRequestsActive ? 'Work is still in progress. Keep working until it finishes, then try Quit again.' : 'This app is ready to quit.');
+    quitConfirm.disabled = !state.available || state.active_work > 0 || appRequestsActive > 0 || state.state === 'stopping';
+  } catch { quitStatus.textContent = 'Could not check the app. Keep working and retry Quit when the connection is available.'; }
+});
+quitCancel?.addEventListener('click', () => quitDialog.close());
+quitDialog?.addEventListener('close', () => { if (!quitRequested) quitOpen.focus({preventScroll: true}); });
+quitDialog?.addEventListener('cancel', event => { if (quitRequested) event.preventDefault(); });
+async function confirmQuitStopped(error) {
+  // An accepted Quit followed by repeated loss of the local server supports
+  // completion. HTTP errors, offline browsers and timeouts remain uncertain.
+  if (!(error instanceof TypeError) || navigator.onLine === false) {
+    throw new Error('Could not confirm that PDF to Web stopped. Check the connection, then retry Quit or stop its own launcher.');
+  }
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await new Promise(resolve => setTimeout(resolve, 250));
+    if (navigator.onLine === false) throw new Error('Could not confirm that PDF to Web stopped while the browser is offline. Check the connection, then retry Quit or stop its own launcher.');
+    try {
+      await fetch('/api/health', {cache: 'no-store', signal: AbortSignal.timeout(1500)});
+      return false; // Any HTTP response means the server is still responding.
+    } catch (probeError) {
+      if (!(probeError instanceof TypeError) || navigator.onLine === false) {
+        throw new Error('Could not confirm that PDF to Web stopped. Check the connection, then retry Quit or stop its own launcher.');
+      }
+    }
+  }
+  return true;
+}
+function showQuitStopped() {
+  const message = 'PDF to Web has stopped. It’s safe to close this browser tab or window.';
+  quitDialog.dataset.state = 'stopped';
+  const heading = document.getElementById('quit-heading');
+  heading.textContent = 'PDF to Web has stopped'; heading.tabIndex = -1;
+  for (const id of ['quit-warning', 'quit-edits', 'quit-launcher-note']) document.getElementById(id).hidden = true;
+  document.getElementById('quit-actions').remove();
+  quitOpen.disabled = true;
+  quitDialog.setAttribute('aria-describedby', 'quit-status');
+  quitStatus.textContent = message;
+  heading.focus({preventScroll: true});
+  announce(message);
+}
+quitConfirm?.addEventListener('click', async () => {
+  if (appRequestsActive) { quitStatus.textContent = 'A request is still in progress. Wait for it to finish before quitting.'; return; }
+  quitConfirm.disabled = true; quitCancel.disabled = true;
+  quitStatus.textContent = 'Requesting Quit…';
+  try {
+    await api('/api/quit', {method: 'POST', headers: csrfHeaders(), body: JSON.stringify({confirm: true})});
+    quitRequested = true;
+    quitStatus.textContent = 'Waiting for this app’s server to stop…';
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 250));
+      let state;
+      try { state = await api('/api/lifecycle'); }
+      catch (error) {
+        if (await confirmQuitStopped(error)) { showQuitStopped(); return; }
+        continue;
+      }
+      if (state.error || state.state !== 'stopping') throw new Error(state.error || 'The server did not stop. Keep working and retry Quit.');
+    }
+    throw new Error('The server is still responding. Keep working and retry Quit or stop its own launcher.');
+  } catch (error) {
+    quitRequested = false; quitConfirm.disabled = false; quitCancel.disabled = false;
+    quitStatus.textContent = error.message; announce(error.message);
+  }
+});
 
 function announce(message) {
   const status = document.getElementById('app-status');
@@ -391,6 +488,13 @@ async function selectSourceBlock(card) {
   updateBlockNavigation();
   if (!page || page === 'Unknown') return;
   await showSourcePage(page, card);
+  // On narrow screens the source image grows above Reading order after loading.
+  // Resettle only the still-focused card; never move a reviewer to an old selection.
+  if (selectedSourceCard === card && document.activeElement === card && !card.hidden) {
+    requestAnimationFrame(() => {
+      if (selectedSourceCard === card && document.activeElement === card && !card.hidden) card.scrollIntoView({block: 'start'});
+    });
+  }
 }
 
 function blockCards() {
@@ -449,7 +553,7 @@ function updateBlockNavigation() {
   const position = document.getElementById('selected-block-position');
   if (previous) previous.disabled = index <= 0;
   if (next) next.disabled = cards.length === 0 || index === cards.length - 1;
-  if (page) page.textContent = index >= 0 ? `Page ${cards[index].dataset.page}` : 'Page -';
+  if (page) page.textContent = index >= 0 ? `Page ${cards[index].dataset.page}` : cards.length ? 'No block selected' : 'No blocks shown';
   if (position) position.textContent = index >= 0 ? `Block ${cards[index].dataset.blockIndex} · ${index + 1} of ${cards.length} shown`
     : cards.length ? 'No block selected. Use Next block to begin.'
       : document.querySelector('.block-card') ? '0 blocks shown' : 'No blocks are available.';
@@ -621,6 +725,20 @@ function focusLinkedBlock() {
     card.scrollIntoView({block: 'start'});
   }
 }
+const draftingTools = document.getElementById('image-description-tools');
+if (draftingTools) {
+  const projectId = document.getElementById('image-draft-toolbar').dataset.documentId;
+  const preferenceKey = `pdf-to-web-drafting-tools-${projectId}`;
+  try {
+    const preferred = localStorage.getItem(preferenceKey);
+    if (preferred === 'open' || preferred === 'closed') draftingTools.open = preferred === 'open';
+  } catch { /* The useful default still works when browser storage is unavailable. */ }
+  draftingTools.querySelector(':scope > summary').addEventListener('click', () => {
+    // Only a user's summary action persists. A direct help/hash link may reveal
+    // tools for this visit without replacing their preferred default.
+    try { localStorage.setItem(preferenceKey, draftingTools.open ? 'closed' : 'open'); } catch {}
+  });
+}
 document.addEventListener('click', event => {
   const link = event.target.closest('a[href]');
   if (!link || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -673,7 +791,8 @@ if (pendingBlockId) {
     if (focusEmptyBlockFilter()) return;
     const complete = document.getElementById('structure-review-complete');
     if (complete) { complete.focus({preventScroll: true}); complete.scrollIntoView({block: 'center'}); return; }
-    const pendingCard = document.getElementById(pendingBlockId);
+    const remembered = document.getElementById(pendingBlockId);
+    const pendingCard = remembered && !remembered.hidden ? remembered : blockCards()[0];
     if (!pendingCard) return;
     focusBlock(pendingCard);
   }, 50), { once: true });
@@ -681,8 +800,18 @@ if (pendingBlockId) {
 
 function nextReviewBlockId(card) {
   const cards = Array.from(document.querySelectorAll('.block-card'));
-  return cards.slice(cards.indexOf(card) + 1)
-    .find((item) => item.classList.contains('status-unreviewed') || item.classList.contains('status-needs_review'))?.id || '';
+  const index = cards.indexOf(card);
+  return [...cards.slice(index + 1), ...cards.slice(0, index)]
+    .find(item => !item.hidden && ['unreviewed', 'needs_review'].includes(item.dataset.reviewStatus))?.id || '';
+}
+function rememberReviewAdvance(card) {
+  const nextId = nextReviewBlockId(card) || card.id;
+  sessionStorage.setItem(reviewAdvanceKey, nextId);
+  sessionStorage.setItem(blockSelectionKey, nextId);
+  // An old hash can point to the now-hidden approved card and reveal All blocks
+  // before reload restores the pending selection. Keep the active filter instead.
+  history.replaceState(null, '', location.pathname + location.search);
+  if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 }
 
 document.querySelectorAll('.block-form').forEach((form) => form.addEventListener('submit', async (event) => {
@@ -714,7 +843,9 @@ document.querySelectorAll('.block-form').forEach((form) => form.addEventListener
     if (returnToAccessibility(form.closest('.block-card'))) return;
     const owner = form.closest('.block-card');
     sessionStorage.removeItem(reviewAdvanceKey);
-    if (owner) {
+    if (owner && saveAndApprove && form.classList.contains('image-block-form')) {
+      rememberReviewAdvance(owner);
+    } else if (owner) {
       sessionStorage.setItem(blockSelectionKey, owner.id);
       history.replaceState(null, '', location.pathname + location.search + '#' + encodeURIComponent(owner.id));
       if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
@@ -857,9 +988,7 @@ document.querySelectorAll('.block-action').forEach((button) => button.addEventLi
     if (returnToAccessibility(button.closest('.block-card'))) return;
     if (['approve', 'flag', 'exclude', 'include'].includes(action)) {
       const currentCard = button.closest('.block-card');
-      const nextId = nextReviewBlockId(currentCard);
-      sessionStorage.setItem(reviewAdvanceKey, nextId || currentCard.id);
-      if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+      rememberReviewAdvance(currentCard);
     }
     announce('Review action saved.');
     window.location.reload();
@@ -982,12 +1111,23 @@ function focusExportAfterMapping(data = {}) {
     }
     const link = document.createElement('a'); link.href = '#media-mapping-result';
     link.textContent = 'View media matching results'; feedback.append(link);
+    if (data.unmatched || data.ambiguous || (data.retained_images || []).length) {
+      const manual = document.createElement('a'); manual.href = '#manual-media-tools';
+      manual.dataset.manualMediaLink = ''; manual.textContent = 'Use manual CSV mapping';
+      feedback.append(document.createTextNode(' · '), manual);
+    }
   }
   focusExportReadiness();
 }
 document.getElementById('export-readiness-link')?.addEventListener('click', event => {
   event.preventDefault();
   focusExportReadiness();
+});
+document.getElementById('export-review-state')?.addEventListener('click', event => {
+  if (!event.target.closest('a[href="#content-export-heading"]')) return;
+  event.preventDefault();
+  const heading = document.getElementById('content-export-heading');
+  heading.tabIndex = -1; heading.focus({preventScroll: true}); heading.scrollIntoView({block: 'start'});
 });
 
 let recordedApprovalPlan = null;
@@ -1086,8 +1226,10 @@ document.getElementById('draft-copy-instructions')?.addEventListener('click', as
   }
 });
 async function copyExportHtml(file) {
-  focusExportReadiness();
-  if (exportForm?.dataset.publicationReady !== 'true') throw new Error('Resolve the required content reviews before copying.');
+  if (exportForm?.dataset.publicationReady !== 'true') {
+    focusExportReadiness();
+    throw new Error('Resolve the required content reviews before copying.');
+  }
   const response = await fetch(file.url, {cache: 'no-store'});
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
@@ -1096,6 +1238,45 @@ async function copyExportHtml(file) {
   }
   await copyText(await response.text());
 }
+
+function savedOutputControls(data) {
+  const region = document.createElement('div'); region.className = 'saved-output-controls';
+  const path = document.createElement('code'); path.textContent = data.output_root;
+  const location = document.createElement('p'); location.append('Saved in this project: ', path);
+  const open = document.createElement('button'); open.type = 'button'; open.className = 'review-approve';
+  open.textContent = 'Open output folder';
+  const status = document.createElement('p'); status.setAttribute('role', 'status');
+  open.addEventListener('click', async () => {
+    open.disabled = true;
+    try {
+      await api('/api/output-folder/open', {method: 'POST', headers: csrfHeaders(), body: JSON.stringify({project_root: data.project_root})});
+      status.textContent = 'Output folder opened. Use the saved files here.';
+    } catch (error) { status.textContent = error.message; }
+    finally { open.disabled = false; announce(status.textContent); }
+  });
+  region.append(location, open, status);
+  return region;
+}
+
+function browserCopy(file, label) {
+  const details = document.createElement('details'); details.className = 'browser-copy-option';
+  const summary = document.createElement('summary'); summary.textContent = 'Optional browser copy';
+  const note = document.createElement('p'); note.textContent = 'This makes an extra copy wherever your browser saves downloads. The project file is already saved.';
+  const link = document.createElement('a'); link.href = file.url; link.download = file.filename || '';
+  link.textContent = label || `Save browser copy of ${file.path.split('/').pop()}`;
+  details.append(summary, note, link);
+  return details;
+}
+document.querySelectorAll('[data-open-project-output]').forEach(button => button.addEventListener('click', async () => {
+  button.disabled = true;
+  try {
+    await api('/api/output-folder/open', {method: 'POST', headers: csrfHeaders(), body: JSON.stringify({project_root: document.body.dataset.projectRoot})});
+    announce('Output folder opened. The mapping CSV is in wordpress/reports.');
+  } catch (error) {
+    document.getElementById('manual-media-notice').textContent = error.message;
+    announce(error.message);
+  } finally { button.disabled = false; }
+}));
 function markExportReviewStale() {
   const region = document.getElementById('export-review-state');
   const heading = document.createElement('h2'); heading.id = 'readiness-heading'; heading.tabIndex = -1;
@@ -1119,8 +1300,8 @@ exportForm?.querySelectorAll('[name="title_in_template"], [name="heading_style"]
 exportForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (contentExportPending || exportMutationPending) return;
-  focusExportReadiness();
   if (exportForm.dataset.publicationReady !== 'true') {
+    focusExportReadiness();
     announce('Resolve the required content reviews before exporting.');
     return;
   }
@@ -1128,6 +1309,7 @@ exportForm?.addEventListener('submit', async (event) => {
   contentExportPending = true;
   updateExportAvailability();
   const controls = [...exportForm.querySelectorAll('select, input[type="checkbox"]')];
+  let focusResult = true;
   try {
     const prefixField = document.querySelector('#media-export-form [name="image_prefix"]');
     if (prefixField && prefixField.value !== prefixField.defaultValue) throw new Error('Prepare the images ZIP and mapping CSV to save the new image prefix before exporting content.');
@@ -1137,6 +1319,7 @@ exportForm?.addEventListener('submit', async (event) => {
     output.textContent = 'Exporting the reviewed document…';
     output.setAttribute('aria-busy', 'true');
     const data = await api('/api/export', { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(values) });
+    resetQuitForm(exportForm);
     const heading = document.createElement('p');
     const strong = document.createElement('strong');
     strong.textContent = 'Export complete.';
@@ -1157,13 +1340,9 @@ exportForm?.addEventListener('submit', async (event) => {
     const hasTemplateBody = downloads.some(file => file.kind === 'template_body');
     downloads.forEach((file) => {
       const item = document.createElement('li');
-      const link = document.createElement('a');
-      link.href = file.url;
-      link.download = '';
-      link.textContent = file.kind === 'template_body' ? 'Download content for your template' : `Download ${file.path.split('/').pop()}`;
       const actions = document.createElement('span');
       actions.className = 'export-file-actions';
-      actions.append(link);
+      actions.append(browserCopy(file));
       if (/\.html$/i.test(file.path) && (!hasTemplateBody || file.kind === 'template_body')) {
         const copyButton = document.createElement('button');
         copyButton.type = 'button';
@@ -1183,18 +1362,24 @@ exportForm?.addEventListener('submit', async (event) => {
         actions.append(copyButton);
       }
       const path = document.createElement('code');
-      path.textContent = file.path;
+      path.textContent = `${data.project_root}/${file.path}`;
       item.append(actions, document.createElement('br'), path);
       files.append(item);
     });
-    output.replaceChildren(heading, location, ...(data.media ? [media] : []), files);
+    output.replaceChildren(heading, savedOutputControls(data), ...(data.media ? [media] : []), files);
     announce('Export complete.');
-  } catch (error) { output.textContent = `Export failed: ${error.message} Correct the issue and try again.`; announce(error.message); }
+  } catch (error) {
+    if (error.message.startsWith('Publication requires current review:')) {
+      markExportReviewStale(); focusResult = false;
+    }
+    output.textContent = `Export failed: ${error.message} Correct the issue and try again.`; announce(error.message);
+  }
   finally {
     controls.forEach(control => { control.disabled = false; });
     output.setAttribute('aria-busy', 'false');
     contentExportPending = false;
     updateExportAvailability();
+    if (focusResult) { output.tabIndex = -1; output.focus({preventScroll: true}); output.scrollIntoView({block: 'start'}); }
   }
 });
 
@@ -1209,6 +1394,21 @@ function showMappingStatus(remaining) {
     : 'All included images that need WordPress URLs are mapped.';
   invalidateContentExport();
 }
+function revealManualMedia({focus = false, reason = ''} = {}) {
+  const tools = document.getElementById('manual-media-tools');
+  if (!tools) return;
+  tools.open = true;
+  if (reason) document.getElementById('manual-media-notice').textContent = reason;
+  if (focus) {
+    const heading = document.getElementById('manual-media-heading');
+    heading.focus({preventScroll: true}); heading.scrollIntoView({block: 'start'});
+  }
+}
+document.getElementById('open-manual-media')?.addEventListener('click', () => revealManualMedia({focus: true}));
+document.addEventListener('click', event => {
+  if (!event.target.closest('[data-manual-media-link]')) return;
+  event.preventDefault(); revealManualMedia({focus: true});
+});
 function showMappingFeedback(message, data = {}, focus = true) {
   const output = document.getElementById('media-mapping-result');
   output.hidden = false;
@@ -1248,10 +1448,17 @@ function showMappingFeedback(message, data = {}, focus = true) {
     table.append(body); wrap.append(table); detail.append(wrap);
     if (data.refresh_required) add(detail, 'p', 'For IDs awaiting refresh: choose the XML first, confirm that the uploads are the same reviewed images using the checkbox in step 2, then match again. Filename matches alone do not update saved IDs.');
     if ((data.unmatched_images || []).length || (data.ambiguous_images || []).length || (data.retained_images || []).length) add(detail, 'p', 'Enter the correct WordPress URLs for these images in the mapping CSV, then import it under “Map images manually with a CSV”.');
-    const csv = add(detail, 'a', 'Download current mapping CSV');
-    csv.href = '/download/output/wordpress/reports/media-mapping.csv'; csv.download = '';
+    if (document.getElementById('manual-media-download')?.hidden === false) {
+      add(detail, 'code', `${document.body.dataset.projectRoot}/output/wordpress/reports/media-mapping.csv`);
+      detail.append(browserCopy({path: 'output/wordpress/reports/media-mapping.csv', url: '/download/output/wordpress/reports/media-mapping.csv'}));
+    }
   }
   if (focus) { output.focus({preventScroll: true}); output.scrollIntoView({block: 'start'}); }
+  if (data.unmatched || data.ambiguous || (data.retained_images || []).length) {
+    revealManualMedia();
+    const link = add(detail, 'a', 'Use manual CSV mapping for these images');
+    link.href = '#manual-media-tools'; link.dataset.manualMediaLink = '';
+  }
   announce(message);
 }
 const mediaExportForm = document.getElementById('media-export-form');
@@ -1273,14 +1480,15 @@ mediaExportForm?.addEventListener('submit', async event => {
     const data = await api('/api/media-export', {method: 'POST', headers: csrfHeaders(), body: JSON.stringify(values)});
     const field = form.querySelector('[name="image_prefix"]');
     field.value = field.defaultValue = data.image_prefix;
+    resetQuitForm(form);
     output.replaceChildren(document.createTextNode(`${data.media.copied_assets} images packaged. Unzip and upload them to WordPress, then map their URLs in step 2. `));
+    output.append(savedOutputControls(data));
     for (const file of data.downloads) {
-      const link = document.createElement('a');
-      link.href = file.url; link.download = '';
-      link.textContent = file.path.endsWith('.zip') ? 'Download all images ZIP' : 'Download mapping CSV';
-      output.append(document.createElement('br'), link);
+      const path = document.createElement('code'); path.textContent = `${data.project_root}/${file.path}`;
+      output.append(document.createElement('br'), path, browserCopy(file));
     }
     showMappingStatus(data.media.unresolved);
+    document.getElementById('manual-media-download').hidden = false;
     announce('Images ZIP and mapping CSV are ready.');
   } catch (error) { output.textContent = error.message; announce(error.message); }
   finally { setExportMutationPending(false); }
@@ -1295,6 +1503,7 @@ document.getElementById('media-export-undo')?.addEventListener('click', async ()
     prefix.value = prefix.defaultValue = data.image_prefix;
     exportForm.elements.title_in_template.checked = data.publication.title_in_template ?? true;
     exportForm.elements.heading_style.value = data.publication.heading_style || 'nested';
+    resetQuitForm(mediaExportForm); resetQuitForm(exportForm);
     document.getElementById('export-page-title').value = data.page_title;
     document.getElementById('copy-page-title-status').textContent = '';
     document.getElementById('media-export-result').replaceChildren();
@@ -1309,7 +1518,8 @@ document.getElementById('media-mapping-form')?.addEventListener('submit', async 
   event.preventDefault();
   if (contentExportPending || exportMutationPending) return;
   const output = document.getElementById('media-mapping-result');
-  const file = new FormData(event.currentTarget).get('mapping');
+  const form = event.currentTarget;
+  const file = new FormData(form).get('mapping');
   setExportMutationPending(true);
   try {
     if (!(file instanceof File)) throw new Error('Choose a media mapping CSV.');
@@ -1317,6 +1527,7 @@ document.getElementById('media-mapping-form')?.addEventListener('submit', async 
       method: 'POST', headers: csrfHeaders(), body: JSON.stringify({ csv: await file.text() })
     });
     applyExportReviewState(data.export_state);
+    resetQuitForm(form);
     showMappingFeedback(`${data.mapped} image mapping${data.mapped === 1 ? '' : 's'} imported; ${data.remaining} images still need URLs. ${data.export_state.announcement}`, data, false);
     showMappingStatus(data.remaining);
     focusExportAfterMapping(data);
@@ -1343,7 +1554,8 @@ document.getElementById('media-wxr-form')?.addEventListener('submit', async (eve
   event.preventDefault();
   if (contentExportPending || exportMutationPending) return;
   const output = document.getElementById('media-mapping-result');
-  const formData = new FormData(event.currentTarget);
+  const form = event.currentTarget;
+  const formData = new FormData(form);
   const file = formData.get('media_wxr');
   const refreshExisting = formData.has('refresh_existing');
   setExportMutationPending(true);
@@ -1353,13 +1565,20 @@ document.getElementById('media-wxr-form')?.addEventListener('submit', async (eve
       method: 'POST', headers: csrfHeaders(), body: JSON.stringify({ xml: await file.text(), refresh_existing: refreshExisting })
     });
     applyExportReviewState(data.export_state);
+    resetQuitForm(form);
     const outcome = data.refresh_required
       ? `${data.refresh_required} existing attachment IDs were not refreshed because confirmation was not selected. ${data.mapped} mappings updated; ${data.unchanged} already current. Choose the XML first, then confirm unchanged images in step 2 and match again before generating fresh content.`
       : `${data.mapped} mappings updated; ${data.unchanged || 0} already current (no change needed).`;
     showMappingFeedback(`${outcome} ${data.matched} filename matches in ${data.attachments_found} media attachments; ${data.unmatched} unmatched and ${data.ambiguous} ambiguous. ${data.existing_kept || 0} existing mappings kept.`, data, false);
     showMappingStatus(data.remaining);
     focusExportAfterMapping(data);
-  } catch (error) { showMappingFeedback(error.message); }
+  } catch (error) {
+    showMappingFeedback(error.message);
+    revealManualMedia({reason: 'XML matching failed. Prepare or download the mapping CSV, enter the correct WordPress URLs, then import it here. Keep block IDs unchanged.'});
+    const link = document.createElement('a'); link.href = '#manual-media-tools';
+    link.dataset.manualMediaLink = ''; link.textContent = 'Use manual CSV mapping';
+    document.getElementById('media-mapping-details').append(link);
+  }
   finally { setExportMutationPending(false); }
 });
 
@@ -1403,9 +1622,10 @@ document.querySelectorAll('[data-page-export]').forEach(button => button.addEven
   try {
     const result = await api('/api/output-pages/export', { method: 'POST', headers: csrfHeaders(), body: JSON.stringify({ page_id: button.dataset.pageExport === 'individual' ? selectedPageId() : null, profile: document.getElementById('output-page-profile').value }) });
     pageMessage.replaceChildren(document.createTextNode('Export complete. Review the manifest and manual import instructions. '));
+    pageMessage.append(savedOutputControls(result));
     for (const file of result.downloads) {
-      const link = document.createElement('a'); link.href = file.url; link.textContent = file.path;
-      pageMessage.append(link, document.createElement('br'));
+      const path = document.createElement('code'); path.textContent = `${result.project_root}/${file.path}`;
+      pageMessage.append(path, browserCopy(file), document.createElement('br'));
     }
   } catch (error) { pageMessage.textContent = error.message; }
 }));
@@ -1421,9 +1641,16 @@ if (draftToolbar) {
   const providerSelect = document.getElementById('draft-provider');
   const providerMessage = document.getElementById('draft-provider-message');
   const updateProviderSetup = () => {
+    document.getElementById('draft-manual-route').hidden = providerSelect.value !== 'manual';
+    document.getElementById('draft-provider-route').hidden = providerSelect.value === 'manual';
+    document.querySelectorAll('[data-draft-action="generate"], [data-draft-action="regenerate"]').forEach(button => { button.hidden = providerSelect.value === 'manual'; });
+    document.querySelectorAll('[data-draft-action="export"], [data-draft-action="export-new"]').forEach(button => { button.hidden = providerSelect.value !== 'manual'; });
     document.getElementById('draft-model-label').hidden = providerSelect.value !== 'ollama-local';
     const help = document.getElementById('draft-provider-help');
     help.textContent = JSON.parse(help.dataset.providerHelp)[providerSelect.value];
+    const generateButton = draftToolbar.querySelector('[data-draft-batch="generate"]');
+    generateButton.textContent = providerSelect.value === 'manual' ? 'Export selected ZIP (manual provider)'
+      : providerSelect.value === 'openai' ? 'Generate selected with OpenAI' : 'Generate selected with local Ollama';
   };
   providerSelect.addEventListener('change', () => {
     updateProviderSetup();
@@ -1431,11 +1658,13 @@ if (draftToolbar) {
   });
   document.getElementById('draft-provider-form').addEventListener('submit', async event => {
     event.preventDefault();
-    const button = event.currentTarget.querySelector('button[type="submit"]');
+    const form = event.currentTarget;
+    const button = form.querySelector('button[type="submit"]');
     const keepFocus = document.activeElement === button;
     try {
       button.disabled = true;
       await postDraft('settings', {provider: providerSelect.value, model: document.getElementById('draft-model').value});
+      resetQuitForm(form);
       providerMessage.textContent = 'Provider settings saved for this project.';
     } catch (error) { providerMessage.textContent = error.message; }
     finally {
@@ -1447,17 +1676,22 @@ if (draftToolbar) {
   const selectedIds = () => [...document.querySelectorAll('.draft-selection:checked')].map(input => input.value);
   const pendingIds = () => [...document.querySelectorAll('.image-draft-panel[data-pending="true"]')]
     .filter(panel => !['ready', 'rejected', 'generating'].includes(panel.dataset.requestStatus)).map(panel => panel.dataset.blockId);
+  const exportScope = document.getElementById('draft-export-scope');
+  const exportIds = () => exportScope.value === 'selected' ? selectedIds() : pendingIds();
   const updateBatchControls = () => {
     const ids = selectedIds();
     const pending = pendingIds();
     document.getElementById('draft-selection-summary').textContent = `${ids.length} images selected · ${pending.length} pending images needing drafts.`;
+    exportScope.options[0].textContent = `All pending images (${pending.length})`;
+    exportScope.options[1].textContent = `Selected images (${ids.length})`;
     document.querySelectorAll('[data-draft-batch]').forEach(button => {
       const action = button.dataset.draftBatch;
       if (action === 'cancel') button.hidden = !ids.some(id => ['requested', 'generating'].includes(panelFor(id)?.dataset.requestStatus));
-      else button.disabled = !(action === 'pending' ? pending.length : ids.length);
+      else button.disabled = !(action === 'export' ? exportIds().length : ids.length);
     });
   };
   document.querySelectorAll('.draft-selection').forEach(input => input.addEventListener('change', updateBatchControls));
+  exportScope.addEventListener('change', updateBatchControls);
   updateBatchControls();
   let cloudRequest = null;
   let importPayload = null;
@@ -1468,14 +1702,16 @@ if (draftToolbar) {
     warnings: JSON.parse(form.dataset.warnings || '[]'), decorative: form.dataset.decorative === 'true'
   });
   const showDownload = result => {
-    const link = document.createElement('a'); link.href = result.url; link.textContent = 'Download drafting request ZIP'; link.download = result.filename;
+    const controls = savedOutputControls(result);
+    const open = controls.querySelector('button');
     const saved = document.createElement('p'); saved.className = 'draft-saved-path';
     const location = document.createElement('code'); location.textContent = result.saved_path;
     saved.append('Saved in this project: ', location);
-    document.getElementById('draft-downloads').replaceChildren(saved, link);
-    message.textContent = 'Drafting request ZIP saved. Download a copy to attach to your drafting tool. This is not a publication export; imported descriptions still need manual approval.';
-    link.focus();
-    link.scrollIntoView({block: 'nearest'});
+    document.getElementById('draft-downloads').replaceChildren(controls, saved, browserCopy(result, 'Save browser copy of image-draft ZIP'));
+    document.getElementById('draft-export-message').textContent = 'Image-draft ZIP saved in this project. Open the output folder and attach the ZIP with the copied instructions. Imported descriptions still need review.';
+    message.textContent = '';
+    open.focus({preventScroll: true});
+    open.scrollIntoView({block: 'start'});
     pollDrafts();
   };
   const generate = async (ids, regenerate = false) => {
@@ -1515,11 +1751,13 @@ if (draftToolbar) {
   });
   document.getElementById('draft-transmission-cancel').addEventListener('click', () => { cloudRequest = null; document.getElementById('draft-transmission').hidden = true; message.textContent = 'Cloud request cancelled.'; });
   document.querySelectorAll('[data-draft-batch]').forEach(button => button.addEventListener('click', async () => {
-    const ids = button.dataset.draftBatch === 'pending' ? pendingIds() : selectedIds();
+    const ids = button.dataset.draftBatch === 'export' ? exportIds() : selectedIds();
+    const exporting = ['export', 'pending'].includes(button.dataset.draftBatch);
+    const resultMessage = exporting ? document.getElementById('draft-export-message') : message;
     try {
       if (!ids.length) throw new Error('Select at least one image.');
-      message.textContent = 'Preparing image requests…';
-      if (['export', 'pending'].includes(button.dataset.draftBatch)) showDownload(await postDraft('export', {block_ids: ids}));
+      resultMessage.textContent = 'Preparing image requests…';
+      if (exporting) showDownload(await postDraft('export', {block_ids: ids}));
       else if (button.dataset.draftBatch === 'generate') await generate(ids);
       else {
         const current = await api('/api/image-drafts');
@@ -1528,8 +1766,8 @@ if (draftToolbar) {
         reloadDraft(ids[0]);
       }
     } catch (error) {
-      message.textContent = error.message;
-      message.tabIndex = -1; message.focus(); message.scrollIntoView({block: 'nearest'});
+      resultMessage.textContent = error.message;
+      resultMessage.tabIndex = -1; resultMessage.focus(); resultMessage.scrollIntoView({block: 'nearest'});
     }
   }));
   document.querySelectorAll('.draft-association-form').forEach(form => form.addEventListener('submit', async event => {
@@ -1572,7 +1810,16 @@ if (draftToolbar) {
       if (file.size > 4 * 1024 * 1024) throw new Error('Response exceeds 4 MiB.');
       const payload = JSON.parse(await file.text());
       const result = await postDraft('import', {response: payload});
-      document.getElementById('draft-import-findings').textContent = `${result.valid_count} valid drafts. ${result.findings.map(f => `Entry ${f.entry}: ${f.error}`).join(' ')}`;
+      const findings = document.getElementById('draft-import-findings');
+      const blankTemplate = !result.valid_count && payload.responses?.length && payload.responses.every(row => typeof row.alt === 'string' && !row.alt.trim())
+        && result.findings.every(f => f.error.startsWith('Invalid alt:'));
+      if (blankTemplate) {
+        findings.textContent = `Unfilled response template: all ${payload.responses.length} alt-text fields are blank. Send the exported ZIP with the copied instructions to your drafting tool, then upload its completed response JSON. Nothing was imported.`;
+      } else {
+        const groups = new Map();
+        for (const finding of result.findings) groups.set(finding.error, (groups.get(finding.error) || 0) + 1);
+        findings.textContent = `${result.valid_count} valid drafts. ${[...groups].map(([error, count]) => `${count} ${count === 1 ? 'entry' : 'entries'}: ${error}`).join(' ')}`;
+      }
       importPayload = payload; document.getElementById('draft-import-confirm').disabled = !result.valid_count;
     } catch (error) { document.getElementById('draft-import-findings').textContent = error.message; }
   });
@@ -1580,7 +1827,7 @@ if (draftToolbar) {
     try { requireSavedAuthoring(); const result = await postDraft('import', {response: importPayload, commit: true});
       if (!result.valid_count) throw new Error(result.findings.map(f => f.error).join(' '));
       reloadDraft();
-    } catch (error) { message.textContent = error.message; }
+    } catch (error) { document.getElementById('draft-import-findings').textContent = error.message; }
   });
   document.getElementById('draft-populate').addEventListener('click', async () => {
     try { requireSavedAuthoring(); await postDraft('populate', {}); reloadDraft(); } catch (error) { message.textContent = error.message; }

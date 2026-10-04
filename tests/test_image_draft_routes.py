@@ -45,6 +45,22 @@ class ImageDraftRouteTests(unittest.TestCase):
         self.client.cookies.clear()
         self.assertEqual(self.client.get('/api/image-drafts').status_code, 401)
 
+    def test_manual_exchange_needs_no_ollama_even_with_saved_local_provider_or_blank_model(self):
+        self.assertEqual(self.post('settings', {'provider': 'ollama-local', 'model': 'offline-fixture-model'}).status_code, 200)
+        with mock.patch.object(d, 'OllamaProvider', side_effect=AssertionError('Manual exchange must never initialize Ollama')):
+            exported = self.post('export', {'block_ids': ['photo']})
+            self.assertEqual(exported.status_code, 200, exported.text)
+            entry = next(iter(d.state(ensure_review_document(self.root))['requests'].values()))
+            self.assertEqual(entry['provider'], 'manual')
+            self.assertEqual(entry['model'], 'manual')
+            self.assertEqual(self.post('import', {'response': self.fixture.response(entry)}).json()['valid_count'], 1)
+            self.assertEqual(self.post('settings', {'provider': 'manual', 'model': ''}).status_code, 200)
+            screen = self.client.get('/structure').text
+            self.assertIn('id="draft-model-label" hidden', screen)
+            self.assertIn('id="draft-provider-route" hidden', screen)
+            self.assertNotIn('id="draft-model" name="model" required', screen)
+            self.assertEqual(self.post('export', {'block_ids': ['photo']}).status_code, 200)
+
     def test_manual_export_preview_import_and_apply(self):
         result = self.post('export', {'block_ids': ['photo']})
         self.assertEqual(result.status_code, 200, result.text)
@@ -82,6 +98,30 @@ class ImageDraftRouteTests(unittest.TestCase):
                 self.assertIsNone(reply['long_description'])
         self.assertIn('captions only when warranted (otherwise null)', MANUAL_EXCHANGE_PROMPT)
         self.assertIn('nothing is automatically approved', MANUAL_EXCHANGE_PROMPT)
+
+    def test_blank_export_template_rejects_without_save_and_completed_copy_validates_then_imports(self):
+        exported = self.post('export', {'block_ids': ['photo']}).json()
+        with zipfile.ZipFile(io.BytesIO(self.client.get(exported['url']).content)) as archive:
+            payload = json.loads(archive.read('response-template.json'))
+            self.assertIn('template.json is blank', archive.read('INSTRUCTIONS.txt').decode())
+        saved = (self.root / 'review/current.json').read_bytes()
+        rejected = self.post('import', {'response': payload}).json()
+        self.assertEqual(rejected['valid_count'], 0)
+        self.assertIn('Invalid alt:', rejected['findings'][0]['error'])
+        self.assertEqual((self.root / 'review/current.json').read_bytes(), saved)
+        payload['responses'][0]['alt'] = 'A meaningful synthetic description for review.'
+        accepted = self.post('import', {'response': payload}).json()
+        self.assertEqual(accepted['valid_count'], 1)
+        self.assertEqual((self.root / 'review/current.json').read_bytes(), saved)
+        original_blocks = ensure_review_document(self.root)['blocks']
+        committed = self.post('import', {'response': payload, 'commit': True}).json()
+        self.assertEqual(committed['valid_count'], 1)
+        document = ensure_review_document(self.root)
+        self.assertEqual(document['blocks'], original_blocks)
+        entry = d.state(document)['requests'][payload['responses'][0]['request_id']]
+        self.assertEqual(entry['draft']['alt'], payload['responses'][0]['alt'])
+        self.assertIsNone(entry['draft']['caption'])
+        self.assertIsNone(entry['draft']['long_description'])
 
     def test_copy_instructions_controls_render_read_only_without_changing_saved_state(self):
         from html.parser import HTMLParser

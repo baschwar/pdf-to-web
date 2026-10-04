@@ -47,6 +47,62 @@ class AccessibilityWorkflowFollowupTests(unittest.TestCase):
         self.assertIn('href="/structure?return_to=accessibility&amp;finding=link%3Aresource%3A3#block-p" role="button" class="secondary compact-action">Open block', page)
         self.assertIn('id="finding-link:resource:3" tabindex="-1"', page)
 
+    def save_link_and_approve(self, label, **extra):
+        from pdf_to_web.image_review import review_token
+        payload = {'link_block_id': 'resource', 'link_index': 2, 'link_text': label,
+                   'expected_review_token': review_token(ensure_review_document(self.root)), **extra}
+        return self.client.post('/api/blocks/p/save-and-approve', headers=self.headers, json=payload)
+
+    def test_nested_link_correction_and_owner_approval_are_one_saved_decision_with_undo(self):
+        from pdf_to_web.publication import content_digest, effective_block_status, readiness_findings
+        self.linked_list()
+        before = copy.deepcopy(ensure_review_document(self.root))
+        response = self.save_link_and_approve('Training resources and support')
+        self.assertEqual(response.status_code, 200, response.text)
+        after = ensure_review_document(self.root)
+        self.assertEqual(after['review_session']['revision'], before['review_session']['revision'] + 1)
+        owner = after['blocks'][1]
+        self.assertEqual(effective_block_status(owner, after), 'approved')
+        self.assertEqual(owner['review']['content_sha256'], content_digest(owner))
+        old_child, child = before['blocks'][1]['children'][0], owner['children'][0]
+        self.assertEqual(child['runs'][2]['text'], 'Training resources and support')
+        self.assertEqual(child['runs'][2]['url'], old_child['runs'][2]['url'])
+        self.assertEqual(child['runs'][:2] + child['runs'][3:], old_child['runs'][:2] + old_child['runs'][3:])
+        self.assertEqual(child['source_links'], old_child['source_links'])
+        items = assess_document(after)['items']
+        self.assertFalse(any(i['id'] in {'structure:p', 'link:resource:3'} for i in items))
+        self.assertFalse(any(i.get('block_id') == 'p' for i in readiness_findings(after)))
+        undo_last(self.root)
+        self.assertEqual(ensure_review_document(self.root)['blocks'], before['blocks'])
+        self.assertTrue(any(i['id'] == 'link:resource:3' for i in assess_document(ensure_review_document(self.root))['items']))
+
+    def test_other_link_findings_remain_and_later_material_edits_need_fresh_review(self):
+        self.linked_list()
+        document = ensure_review_document(self.root)
+        child = document['blocks'][1]['children'][0]
+        child['runs'].extend([{'type': 'text', 'text': ' / '}, {'type': 'link', 'text': 'click here', 'url': 'https://example.test/other'}])
+        child['content'] = ''.join(r['text'] for r in child['runs'])
+        document['blocks'][1]['content'] = child['content']
+        stamp_fixture_approvals(document); save_review_document(self.root, document)
+        self.assertEqual(self.save_link_and_approve('Training resources').status_code, 200)
+        after = ensure_review_document(self.root)
+        items = assess_document(after)['items']
+        self.assertFalse(any(i['id'] == 'structure:p' for i in items))
+        self.assertFalse(any(i['id'] == 'link:resource:3' for i in items))
+        self.assertTrue(any(i['id'] == 'link:resource:6' and i['status'] == 'unresolved' for i in items))
+        update_block(self.root, 'resource', {'link_index': 2, 'link_text': 'Changed later'})
+        self.assertTrue(any(i['id'] == 'structure:p' for i in assess_document(ensure_review_document(self.root))['items']))
+
+    def test_stale_blank_or_foreign_link_cannot_partially_save_or_approve(self):
+        self.linked_list()
+        saved = (self.root / 'review/current.json').read_bytes()
+        for label, extra in [('Resources', {'expected_review_token': 'stale'}),
+                             ('', {}), ('Resources', {'link_block_id': 'photo'})]:
+            with self.subTest(label=label, extra=extra):
+                response = self.save_link_and_approve(label, **extra)
+                self.assertEqual(response.status_code, 400, response.text)
+                self.assertEqual((self.root / 'review/current.json').read_bytes(), saved)
+
     def test_finding_numbers_match_current_reading_order_including_nested_links(self):
         self.linked_list()
         update_block(self.root, 'p', {'review_status': 'needs_review'})

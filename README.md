@@ -21,6 +21,38 @@ conformance.
 
 [Watch the 54-second silent end-to-end walkthrough](docs/media/pdf-to-web-walkthrough.mp4)
 
+## Generated files stay in the project
+
+Every app export saves inside the current project's `output/` folder, including
+projects opened from a chosen folder. Results show the exact path and **Open
+output folder**. This action opens the system file manager without downloading.
+If it is unavailable, use the displayed path. No global browser settings change.
+
+| Output | Folder inside the current project |
+| --- | --- |
+| Image drafting requests | `output/image-drafts/` (unique ZIP filenames) |
+| Semantic HTML and its local assets | `output/html/` |
+| Gutenberg / WXR | `output/wordpress/blocks/` / `output/wordpress/wxr/` |
+| Image upload ZIP and mapping CSV | `output/wordpress/media-upload.zip` / `output/wordpress/reports/` |
+| Arranged page packages | `output/pages/`, `output/pages.zip`, or `output/page-N/` and its ZIP |
+| Accessibility and export reports | `output/reports/` |
+| Previous app output snapshots | `output/history/` (dated unique folders) |
+
+Before replacing reusable output filenames, the app copies previous generated
+files into a unique history folder; prior drafts already have unique names.
+History is retained locally for recovery and is not offered as a current
+publication download. Failed preservation stops the new export before replacement.
+Source PDFs, extracted originals and existing Downloads files are preserved.
+**Optional browser copy** is collapsed by default; using it creates another copy
+wherever the browser saves downloads. Attach or upload saved project files directly
+for a project-only workflow. CLI commands retain their documented output behavior.
+
+Documents without included images skip drafting and WordPress media mapping;
+review the text, then export and copy content directly. Link-label editors offer
+**Save and approve** to save the label and approve the displayed containing block
+in one Undoable change. Other unresolved link findings still require correction.
+Ordinary **Save link text** and later material edits require fresh review.
+
 ## Development setup
 
 macOS or Linux:
@@ -96,6 +128,25 @@ double-click `Launch PDF to Web.bat` after setup. Both launchers use the local
 The launchers report missing setup without installing software. The macOS
 launcher adds the standard Homebrew executable paths for its app process only.
 
+**Quit PDF to Web** is available in the navigation on every screen. Keep working
+is the initial confirmation choice. Check and save edits in every open tab before
+quitting; the dialog identifies unsaved fields or choices in the current tab and
+offers an explicit Quit without saving action. Cancel or Escape preserves those
+fields. Saved project files are kept; Quit does not save or change review decisions.
+
+Quit refuses while processing, saves, downloads or queued/running image generation
+are active. Finish the work, then open Quit again. Only the server owned by
+`pdf-to-web serve` is stopped, and its dedicated launcher process ends normally.
+Terminal or shared command-prompt windows may stay open according to their profile
+settings; unrelated windows/processes are never terminated. An externally managed
+FastAPI server has no Quit capability and must be stopped through its own launcher.
+After accepted Quit and repeated unavailable local health checks, the dialog
+becomes **PDF to Web has stopped. It’s safe to close this browser tab or window.**
+Confirmation controls disappear and focus moves to the stopped heading. Offline,
+HTTP-error and timeout cases keep uncertainty/retry feedback rather than claiming
+success. Failures remain visible and allow retry. Actual Windows/window-closing
+acceptance remains pending.
+
 ### Platform support
 
 The application is developed and manually tested on macOS. Its Python paths,
@@ -170,6 +221,14 @@ matched into `media-mapping.csv`; unmatched or duplicate filenames are left for
 manual review rather than guessed. XML matching preserves current reviewed alt
 text and captions, even if they changed after preparing the CSV.
 
+**Use manual CSV mapping** is visible beside XML matching. Unmatched/ambiguous
+results and XML errors reveal the existing manual tools and link directly to them;
+successful matching still focuses Export readiness. Open the project output folder
+and edit the current mapping CSV in `output/wordpress/reports/` after preparing images, edit `wordpress_url` and optionally
+`wordpress_attachment_id`, and keep `block_id` and `asset_filename` unchanged.
+Verify each image before importing. This uses the existing validation and Undo;
+opening the tools never modifies mappings or approvals.
+
 Deleting and re-uploading unchanged WordPress images can assign new attachment
 IDs while keeping their filenames and URLs. Matching reports these as awaiting
 explicit refresh. Select **These are the same reviewed images; refresh existing
@@ -187,11 +246,15 @@ only establish names; Already current means no change was needed. Choose the XML
 first, then select refresh: a new file selection clears the checkbox and displays
 a notice when it clears an existing confirmation.
 
-Mapping instructions appear as ordered steps. Matching focuses Export readiness
-with a link to a result table
+Mapping instructions appear as ordered steps. XML matching and CSV import scroll
+to Export readiness and focus its heading. Ready exports focus the saved-output
+result; successful content copying stays at its button. Blocked or stale actions
+focus readiness with recovery guidance. Use **Continue to Export and copy content** to
+return to the content controls. Readiness includes a link to a result table
 with prominent totals and lists every unmatched or ambiguous image's filename,
-description, source page and link to its Structure block. Download the current
-CSV from that result to finish any remaining mappings manually.
+description, source page and link to its Structure block. Open the saved mapping
+CSV in the output folder to finish any remaining mappings manually; the optional
+browser-copy link makes a separate copy.
 
 Alternatively, enter each full WordPress media URL and optional attachment ID in
 the CSV and import it under **Map images manually with a CSV**. Stable `block_id`
@@ -335,6 +398,12 @@ state together. Their **Save and approve** action approves exactly that image an
 its displayed descriptions in one Undo revision. Missing text, ambiguous/missing
 associations or a stale project snapshot reject the entire action. Existing pending
 descriptions are never bulk-approved merely by opening or saving a project.
+Successful image Save and approve advances like solo Approve to the next block
+needing review in the current filter and reading order, wrapping to earlier pending
+work when necessary. The active filter stays selected; after its last item, the
+empty state offers Show all blocks with usable navigation. Failed validation/save
+or a stale snapshot stays on the current image and preserves entered fields.
+This navigation change does not alter existing approvals or require repeat review.
 Ordinary image Save keeps edited content awaiting review; later material edits
 invalidate current approval. A long description is sufficient without adjacent
 text. Adjacent text is authored text, not a reference to an existing instruction
@@ -552,20 +621,39 @@ hidden. Final approval brings the message into view; Undo
 or a new pending review decision removes it. This completes block review, while
 Accessibility remains a separate step.
 
-Structure also offers optional **Image description drafts**. Select images,
+Structure also offers optional **Image description drafts** before Reading order.
+Tools initially open when images need review or draft requests/results exist;
+completed images with no drafts stay compact. Your summary toggle remembers open
+or closed for this project in this browser, including later visits. A direct
+drafting link can reveal tools for that visit without changing your preference.
+Default visibility does not save, approve, generate, move focus or collapse an
+editor automatically. Select images,
 confirm ambiguous image associations, save the provider choice per project,
 generate through an existing local Ollama
 vision model or an explicitly authorized paid OpenAI request, or export a manual
-request ZIP for your chosen tool. **Export pending images ZIP** includes images
-needing drafts without individual selection; the toolbar shows selected and pending
-counts and brings the download link into view. Beside the ZIP controls,
+request ZIP for your chosen tool. Selecting **Manual exchange** shows export,
+saved project files, instructions and response import; direct generation/model controls are
+hidden, and Ollama help is replaced immediately. Manual exchange requires no
+installed model or model-field value; ZIP export/import works even before saving
+the changed method. Selecting Local Ollama or OpenAI shows its generation route.
+Switching methods preserves unsaved content, checkbox selection and export scope
+without sending requests. In the single export area, choose **All pending images**
+or **Selected images**, then **Export image-draft ZIP**. Pending uses saved review
+needs and skips generating, ready or rejected requests; Selected uses exactly the
+checked images and an empty scope cannot export. Both choices show counts.
+The green **Open output folder** action and saved ZIP path appear beneath export,
+before import controls. Attach that saved ZIP directly; optional browser copies
+are separately labeled and follow your browser’s download settings. Beside the ZIP controls,
 **Copy instructions for Codex/ChatGPT**
-copies a ready-to-use prompt: attach the downloaded ZIP, paste the instructions,
-validate and import the returned `response-template.json`, then review each image.
+copies a ready-to-use prompt: attach the saved ZIP, paste the instructions,
+upload and validate the completed JSON returned by the tool, explicitly import
+the drafts, then review each image. The ZIP's original `response-template.json`
+is blank and cannot supply completed descriptions. An unfilled template gets one
+actionable validation message. Validation alone does not import or approve.
 Copying preserves unsaved edits. If clipboard copying fails, selectable instructions
 appear for manual copying. The request ZIP is saved in the
 current project's `output/image-drafts/` folder, including explicitly chosen
-project roots. The saved full path appears beside its browser download link.
+project roots. The saved full path appears beside Open output folder.
 Names contain the project title, `image-drafting-request`, UTC time and a unique
 suffix; repeated exports retain earlier packages. Completed ZIPs appear atomically
 and failed writes preserve earlier packages. This drafting exchange is separate

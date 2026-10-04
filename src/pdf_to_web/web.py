@@ -27,6 +27,7 @@ from .image_review import descriptions_for, review_token, description_owner
 from . import output_pages as op
 from . import image_drafts as drafts
 from . import image_draft_ui
+from .app_lifecycle import LifecycleMiddleware, OwnedServerLifecycle, QuitUnavailable
 from .output_page_export import export_pages, contents_html
 from .review_state import update_output_pages
 from .errors import PdfToWebError
@@ -63,6 +64,7 @@ from .review_state import (
     review_path,
 )
 from .source_pages import render_source_page, source_page_size
+from .project_outputs import output_locations, preserve_previous_outputs, open_output_folder
 from .wordpress_preview import render_gutenberg_preview
 
 try:
@@ -339,7 +341,7 @@ def _nav(active: str, selected: bool) -> str:
         links.append(
             f'<li><a href="{href}"{current}>{label}</a></li>' if not disabled else f'<li><span aria-disabled="true">{label}</span></li>'
         )
-    return f'<nav aria-label="Primary"><ul><li><strong>{APP_NAME}</strong></li></ul><ul>{"".join(links)}</ul></nav>'
+    return f'<nav aria-label="Primary"><ul><li><strong>{APP_NAME}</strong></li></ul><ul>{"".join(links)}<li><button type="button" id="quit-open" class="neutral-action" aria-haspopup="dialog">Quit PDF to Web</button></li></ul></nav>'
 
 
 def _page(title: str, active: str, body: str, *, selected: bool = True, project=None, project_path=None) -> str:
@@ -354,9 +356,10 @@ def _page(title: str, active: str, body: str, *, selected: bool = True, project=
     return f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(tab_title)}</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/pico.min.css"><link rel="stylesheet" href="/static/app.css"></head>
-<body><header class="app-header" id="app-top" tabindex="-1"><div class="container">{_nav(active, selected)}</div></header>
+<body data-project-root="{html.escape(str(project_path or ''), quote=True)}"><header class="app-header" id="app-top" tabindex="-1"><div class="container">{_nav(active, selected)}</div></header>
 <main class="container">{document_reference}{body}</main><footer class="app-footer"><div class="container">{APP_NAME} v{html.escape(__version__)} · commit {html.escape(_commit_hash())}<p><a href="/help#acceptance">Accessibility review limits</a></p></div></footer><div id="app-status" class="visually-hidden" role="status" aria-live="polite"></div>
 <button type="button" id="back-to-top" class="back-to-top" hidden><span aria-hidden="true">&uarr;</span> Back to top</button>
+<dialog id="quit-dialog" aria-labelledby="quit-heading" aria-describedby="quit-warning"><article><h2 id="quit-heading">Quit PDF to Web?</h2><p id="quit-warning">This stops the app for every open tab. Save unsaved edits in all tabs first. Project files already saved are kept.</p><p id="quit-edits"></p><p id="quit-status" role="status" aria-live="polite"></p><div id="quit-actions" class="button-row"><button type="button" id="quit-cancel" class="neutral-action">Keep working</button><button type="button" id="quit-confirm" class="review-exclude" disabled>Quit PDF to Web</button></div><p id="quit-launcher-note">Its dedicated launcher process will end. A Terminal window or shared command prompt may stay open according to its settings; you can close this browser tab afterward.</p></article></dialog>
 {'<script src="/static/accessibility-scan.js"></script>' if active == 'accessibility' else ''}<script src="/static/app.js"></script></body></html>'''
 
 
@@ -379,15 +382,16 @@ def _help_page(*, selected=False, project=None, project_path=None):
 <li><a href="#image-descriptions">Image descriptions</a></li><li><a href="#bulk-review">Bulk review</a></li>
 <li><a href="#html-checks">Automated HTML checks</a></li><li><a href="#wordpress-media">WordPress media and approvals</a></li>
 <li><a href="#wordpress-preview">WordPress preview</a></li><li><a href="#title-export">Title export</a></li>
-<li><a href="#acceptance">Accessibility and platform acceptance</a></li></ul></nav>
+<li><a href="#quit-app">Quit the app</a></li><li><a href="#acceptance">Accessibility and platform acceptance</a></li></ul></nav>
 <section id="project-files"><h2>Project files and setup</h2><p>Folder I choose uses the exact selected folder. Default location creates a named folder under Documents/PDF to Web Projects. Existing loose files are preserved. The input PDF may be elsewhere; its source copy, extraction, review history, source-page cache and exports stay in the project folder.</p><p>Source-page rendering needs Poppler separately from Python dependencies. On a Mac with Homebrew already set up, install with <code>brew install poppler</code>. If pdftoppm is missing, finish setup and relaunch the app. Recreating the project is unnecessary. Extracted images and cached source pages are different; cached pages can display without Poppler. A Pillow extraction error is a separate dependency issue.</p></section>
 <section id="review-counts"><h2>Review counts</h2><p>Block and image approvals measure reviewed content. Each image with linked descriptions counts once; included descriptions are shown for context. Document accessibility findings cover judgments such as link purpose and extraction diagnostics. Automated HTML checks inspect rendered markup. These scopes overlap and their counts are not added together.</p><p>Resolved extraction notes retain the original diagnostic for reference. They do not add pending tasks. A diagnostic may point to a block already counted in content review.</p></section>
-<section id="image-descriptions"><h2>Image descriptions</h2><p>Review linked descriptions with the image alt and caption in Reading order. Save and approve covers every displayed included description. No separate description needed records a Not applicable decision; exclusion keeps the content recoverable. Genuine authored edits require review again.</p><p>Provide a long description or adjacent text equivalent. Adjacent text is written text, not a reference to another block. Decorative images use empty alt text and need no separate description. Extraction flags pages with at least five retained images or assets as possible complex visuals; the reviewer decides whether a longer description is needed. Standalone descriptions keep their own editor.</p><h3>Manual drafting with Codex or ChatGPT</h3><ol><li>In Structure, open Image description drafts and export the pending images ZIP, or select individual images and export the selected images ZIP. Download the saved package.</li><li>Choose Copy instructions for Codex/ChatGPT. Attach that ZIP in your chosen tool, paste the instructions and run the request. Copying preserves unsaved fields; if it fails, select the displayed instructions and copy them manually.</li><li>The package contains INSTRUCTIONS.txt, request.json, response-template.json, review-sheet.csv and the image files. Ask for the completed response-template.json as a downloadable JSON file. Preserve document_id, block_id, asset_hash, context_hash and request_id exactly. The CSV is a review companion, not an import format.</li><li>Open Import manual responses, choose the returned JSON and Validate responses. Inspect the findings, then choose Import drafts into image fields. Review each image before approving it. Existing authored text is preserved; Apply deliberately replaces it. Optional captions and long descriptions may be null. Imported drafts never approve content automatically.</li></ol></section>
+<section id="image-descriptions"><h2>Image descriptions</h2><p>Review linked descriptions with the image alt and caption in Reading order. Save and approve covers every displayed included description. No separate description needed records a Not applicable decision; exclusion keeps the content recoverable. Genuine authored edits require review again.</p><p>Provide a long description or adjacent text equivalent. Adjacent text is written text, not a reference to another block. Decorative images use empty alt text and need no separate description. Extraction flags pages with at least five retained images or assets as possible complex visuals; the reviewer decides whether a longer description is needed. Standalone descriptions keep their own editor.</p><p>The preparation tools precede Reading order. They open initially when images need review or drafts exist. Your summary choice remembers open or closed per project in this browser. Direct drafting links reveal them for that visit without replacing your preference. Defaults never move focus or generate drafts.</p><h3>Manual drafting with Codex or ChatGPT</h3><ol><li>In Structure, choose Manual exchange as the drafting method. In Images to export, choose All pending images or Selected images, then Export image-draft ZIP. Pending uses saved review needs and skips generating, ready or rejected requests; Selected uses your checkboxes and an empty scope cannot export. Open the output folder and attach the saved ZIP directly. Optional browser copy makes an extra copy wherever your browser saves downloads.</li><li>Choose Copy instructions for Codex/ChatGPT. Attach that ZIP in your chosen tool, paste the instructions and run the request. Copying preserves unsaved fields; if it fails, select the displayed instructions and copy them manually.</li><li>The package contains INSTRUCTIONS.txt, request.json, response-template.json, review-sheet.csv and the image files. The included response-template.json is blank. Ask your drafting tool to write usable alt text for every image and return the completed JSON as a downloadable file; uploading the unchanged template imports nothing. Preserve document_id, block_id, asset_hash, context_hash and request_id exactly. The CSV is a review companion, not an import format.</li><li>Open Import manual responses, choose the returned JSON and Validate responses. Inspect the findings, then choose Import drafts into image fields. Review each image before approving it. Existing authored text is preserved; Apply deliberately replaces it. Optional captions and long descriptions may be null. Imported drafts never approve content automatically.</li></ol></section>
 <section id="bulk-review"><h2>Bulk review</h2><p>Pending only is the default. Completed and All records expose earlier decisions. Classification and visibility filters define the exact selectable scope; changing either clears selections. Block approvals, description reviews and accessibility decisions have different permitted states. Image rows include their linked descriptions.</p><p>Saved-record counts can overlap image tasks and are not added to content progress. Confirmation applies only the displayed selection. One Undo restores the whole batch; a stale project or incomplete description prevents partial approval.</p></section>
 <section id="html-checks"><h2>Automated HTML checks</h2><p>Local axe-core checks use WCAG 2.2 A/AA rules on the saved semantic HTML. The scan is bound to the displayed saved revision. Passed counts rules with passing elements, not WCAG success criteria. Not applicable means no matching content was found. A rule can have different results for different elements, so rule counts are not a total of distinct WCAG criteria. Zero detected issues do not resolve human document judgments. Test the final WordPress page separately because the production theme and plugins can change markup and accessibility.</p></section>
-<section id="wordpress-media"><h2>WordPress media and approvals</h2><p>Media XML matching uses exact filenames. WordPress-renamed or duplicate filenames need manual CSV mapping. Keep block IDs unchanged and supply complete WordPress URLs. Pasting Gutenberg requires mapped image URLs; importing content WXR is optional and does not upload or map images.</p><p>Adding only WordPress URLs, attachment IDs or routing metadata preserves content approval. Re-uploaded unchanged images can have new attachment IDs: select the explicit same-reviewed-images refresh option to update IDs only for a unique exact filename and the same saved URL. Missing, duplicate or different-URL entries keep existing mappings. XML cannot verify image bytes. Changed images need fresh alt and description review; mapping never approves pending content. Genuine source, alt, caption and description edits require review. Matching invalidates earlier publication files; generate fresh content afterward.</p><p>For approvals lost to an earlier media-only change, Preview recorded approvals shows the exact eligible images and original approval dates. Confirm restore restores recorded decisions only when retained history proves unchanged authored content and descriptions through every intervening revision. Newer approvals remain intact. Missing, ambiguous or changed history requires manual review. Restoration supports one Undo and keeps current media mappings. Before confirmation, the Undo notice explains that Undo returns images to pending review and consumes a saved snapshot. Another restoration may be unavailable because the retained history has a gap; manually review the pending images before export in that case.</p></section>
+<section id="wordpress-media"><h2>WordPress media and approvals</h2><p>Media XML matching uses exact filenames. WordPress-renamed or duplicate filenames need manual CSV mapping. Use manual CSV mapping is visible beside XML matching. Unmatched or ambiguous results and XML errors reveal the tools and offer direct links. Prepare images first, download the current mapping CSV, edit wordpress_url and optionally wordpress_attachment_id, and keep block_id and asset_filename unchanged. Verify the correct image for each URL before importing. Existing validation and Undo apply; opening these tools does not change mappings or approval. Pasting Gutenberg requires mapped image URLs; importing content WXR is optional and does not upload or map images.</p><p>Adding only WordPress URLs, attachment IDs or routing metadata preserves content approval. Re-uploaded unchanged images can have new attachment IDs: select the explicit same-reviewed-images refresh option to update IDs only for a unique exact filename and the same saved URL. Missing, duplicate or different-URL entries keep existing mappings. XML cannot verify image bytes. Changed images need fresh alt and description review; mapping never approves pending content. Genuine source, alt, caption and description edits require review. Matching invalidates earlier publication files; generate fresh content afterward.</p><p>For approvals lost to an earlier media-only change, Preview recorded approvals shows the exact eligible images and original approval dates. Confirm restore restores recorded decisions only when retained history proves unchanged authored content and descriptions through every intervening revision. Newer approvals remain intact. Missing, ambiguous or changed history requires manual review. Restoration supports one Undo and keeps current media mappings. Before confirmation, the Undo notice explains that Undo returns images to pending review and consumes a saved snapshot. Another restoration may be unavailable because the retained history has a gap; manually review the pending images before export in that case.</p></section>
 <section id="wordpress-preview"><h2>WordPress preview</h2><p>WordPress Preview is an approximate content and structure preview using local minimal CSS. Selecting WSUWP changes the exported block profile; it does not fetch the production WSU theme CSS. The actual theme and plugin versions determine the final design. Semantic Preview shows the reviewed content independently of WordPress.</p></section>
 <section id="title-export"><h2>Title export</h2><p>When My WordPress template supplies the page title (H1) is checked, Gutenberg and WXR omit the title heading. Semantic HTML also provides a body file for pasting into a template; its standalone file retains one H1. Copy page title fills the separate WordPress title field and does not change review decisions.</p></section>
+<section id="quit-app"><h2>Quit the app</h2><p>Quit PDF to Web opens a confirmation on every screen. Keep working or Escape preserves edits. The dialog checks this tab for unsaved fields and choices; save your work in all open tabs before confirming. Quit without saving explicitly leaves those edits unsaved. Already saved project files and review decisions are kept.</p><p>Processing, saves, downloads and queued/running generation must finish before Quit is available. The server also refuses a busy request even if another tab starts work after confirmation opens. Only the server owned by pdf-to-web serve is stopped. An externally managed server must be stopped through its own launcher. Failure feedback allows retry. After an accepted Quit and repeated unavailable local health checks, confirmation changes to PDF to Web has stopped, with a safe-to-close message and no active Quit/Keep working controls. Offline, HTTP-error or timeout checks cannot establish success and keep uncertainty/retry feedback.</p><p>The dedicated launcher process ends with the server. Terminal and shared command-prompt windows may remain according to their settings. Unrelated sessions and processes are not terminated. Actual Windows and host-window closing checks remain pending.</p></section>
 <section id="acceptance"><h2>Accessibility and platform acceptance</h2><p>Review and automated checks do not certify WCAG conformance. Human VoiceOver review means a person listens and interacts with representative workflows and output using macOS VoiceOver, checking announcements, reading order, controls, focus and recovery.</p><p>Production-authoritative WSU WordPress/plugin imports, human VoiceOver review and actual Windows hardware verification remain separate acceptance steps. Local automated tests and browser checks establish local implementation readiness.</p></section>'''
     return _page('Help', 'help', body, selected=selected, project=project, project_path=project_path)
 
@@ -587,11 +591,12 @@ def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool
             yield from linked_runs(child)
     if can_edit:
         for node, run_index, run in linked_runs(block):
-            link_editors.append(f'''<form class="block-form link-text-form" data-block-id="{html.escape(str(node['id']), quote=True)}">
+            link_editors.append(f'''<form class="block-form link-text-form" data-block-id="{block_id}">
+<input type="hidden" name="link_block_id" value="{html.escape(str(node['id']), quote=True)}"><input type="hidden" name="expected_review_token" value="{review_token(document) if document else ''}">
 <input type="hidden" name="link_index" value="{run_index}">
 <label>Link text<input name="link_text" required value="{html.escape(str(run.get('text') or ''), quote=True)}"></label>
 <p><small>Destination: {html.escape(str(run.get('url') or run.get('href')))}</small></p>
-<button type="submit">Save link text</button><small>Changing the label keeps the destination and marks the block for review.</small></form>''')
+<div class="button-row"><button type="submit">Save link text</button>{save_and_approve}</div><small>Save link text keeps the destination and marks the block for review. Save and approve saves this label and approves the displayed block in one step; other unresolved link findings remain.</small></form>''')
     editor = (image_editor or table_editor or text_editor) + ''.join(link_editors) + draft_controls
     include_label = "Include" if review_status == "excluded" else "Exclude"
     merge_reason = merge_next_reason(block, following)
@@ -806,11 +811,16 @@ def _structure_page(model: dict[str, Any]) -> str:
     reading_order_undo = f'''<button id="reading-order-undo" type="button" class="neutral-action" title="Restore the most recent saved project change, including changes from earlier sessions."{' disabled' if not model['can_undo'] else ''}>Undo last saved change</button>''' if can_edit else ''
     completion_message = _structure_completion(document)
     review_label = "Conversion blocked" if not can_edit else "Structure reviewed" if 'id="structure-review-complete"' in completion_message else "Review in progress"
+    draft_useful = progress['pending_images'] > 0 or bool(drafts.state(document)['active'])
+    drafting_tools = ('<section class="image-draft-workflow" aria-labelledby="image-draft-heading"><h2 id="image-draft-heading" tabindex="-1">Image description drafts</h2>'
+        '<p>Prepare image descriptions here before reviewing the image blocks below. Drafting is optional; you can author descriptions directly.</p>'
+        f'<details id="image-description-tools" class="review-tools"{" open" if draft_useful else ""}><summary>Drafting tools (optional)</summary>'
+        + image_draft_ui.toolbar(document) + '</details></section>') if can_edit and any(b.get('type') == 'image' for b in blocks) else ''
     body = f'''<h1>Structure</h1><div class="review-toolbar"><p class="review-overall-status"{' hidden' if not can_edit or 'id="structure-review-complete"' in completion_message else ''}><strong>{review_label}</strong></p>{_review_task_summary(document, progress)}{undo_control}</div><div id="structure-completion-region">{completion_message}</div>{_status_banner(status, document.get("review", {}).get("issues", []), document) if not can_edit else ''}
-{('<section class="image-draft-workflow" aria-labelledby="image-draft-heading"><h2 id="image-draft-heading" tabindex="-1">Image description drafts</h2><details id="image-description-tools" class="review-tools"><summary>Open drafting tools (optional)</summary>' + image_draft_ui.toolbar(document) + '</details></section>') if can_edit and any(b.get("type") == "image" for b in blocks) else ""}
+{drafting_tools}
 {f'<details id="visual-description-tools" class="visual-descriptions review-tools"><summary>Standalone visual descriptions · <span id="visual-description-counts">{pending_visuals} to review · {len(visual_records) - pending_visuals} complete or not applicable</span></summary><h2 id="complex-heading">Standalone visual descriptions</h2><p>Add a long description or adjacent text, then choose Reviewed. Choose Not applicable if short alt text is sufficient. <a href="/help#image-descriptions">Image description help</a>.</p>{visuals}</details>' if visuals else ''}
 <div class="structure-layout"><section class="source-pane" aria-labelledby="source-heading" data-page-count="{page_count}" data-source-key="{source_preview_key}"><h2 id="source-heading">Source page</h2><form id="source-page-controls" class="source-page-controls"><button id="source-page-previous" type="button" class="secondary" disabled aria-label="Previous source page">Previous</button><label>Page <input id="source-page-number" type="number" min="1" max="{page_count}" value="1" inputmode="numeric" aria-describedby="source-page-total"></label><span id="source-page-total">of {page_count}</span><button id="source-page-next" type="button" class="secondary"{(' disabled' if page_count <= 1 else '')} aria-label="Next source page">Next</button></form><p id="source-page-label" aria-live="polite">Select a block to view and outline its source region.</p><p id="source-page-render-status" role="status" aria-live="polite">Loading source page 1…</p><button id="source-page-retry" type="button" class="neutral-action" hidden>Retry source page</button><div class="source-image-stage" aria-busy="true"><img id="source-image" data-source-url="/source-page/1.png?v={source_preview_key}" alt="Rendered source PDF page 1" hidden><span id="source-highlights" aria-hidden="true"></span></div><p><a id="open-source-page" href="/source.pdf?v={source_preview_key}#page=1" target="_blank" rel="noopener">Open source PDF page 1</a></p></section>
-<section class="blocks-pane" aria-labelledby="blocks-heading"><div class="reading-order-header"><h2 id="blocks-heading">Reading order</h2>{reading_order_undo}<div class="block-navigation" role="group" aria-label="Selected block navigation"><button id="previous-block" type="button" class="secondary" disabled>Previous block</button><span class="block-navigation-position" aria-live="polite"><span id="selected-block-page">Page -</span><span id="selected-block-position">No block selected</span></span><button id="next-block" type="button" class="secondary"{(' disabled' if not blocks else '')}>Next block</button></div><div class="block-filter"><div id="block-review-filter" role="group" aria-label="Show blocks"><span>Show:</span> <a href="#blocks-heading" data-filter="all" aria-current="true">All <span data-filter-count>({progress['total']})</span></a> <a href="#blocks-heading" data-filter="approved">Approved <span data-filter-count>({progress['approved']})</span></a> <a href="#blocks-heading" data-filter="pending">Needing review <span data-filter-count>({progress['unreviewed'] + progress['needs_review']})</span></a> <a href="#blocks-heading" data-filter="excluded">Excluded <span data-filter-count>({progress['excluded']})</span></a><span id="block-filter-count" role="status" aria-live="polite">{progress['total']} of {progress['total']} blocks</span></div></div><p id="block-filter-empty" class="block-filter-empty" hidden><span id="block-filter-empty-message" role="status" aria-live="polite"></span> <a id="show-all-blocks" href="#blocks-heading" aria-controls="block-review-filter">Show all blocks</a></p></div><p>Use the movement controls on each block to correct reading order. Changes save immediately.</p>{cards or '<p>No normalized blocks are available.</p>'}</section></div>'''
+<section class="blocks-pane" aria-labelledby="blocks-heading"><div class="reading-order-header"><h2 id="blocks-heading">Reading order</h2>{reading_order_undo}<div class="block-navigation" role="group" aria-label="Selected block navigation"><button id="previous-block" type="button" class="secondary" disabled>Previous block</button><span class="block-navigation-position" aria-live="polite"><span id="selected-block-page">No block selected</span><span id="selected-block-position">No block selected</span></span><button id="next-block" type="button" class="secondary"{(' disabled' if not blocks else '')}>Next block</button></div><div class="block-filter"><div id="block-review-filter" role="group" aria-label="Show blocks"><span>Show:</span> <a href="#blocks-heading" data-filter="all" aria-current="true">All <span data-filter-count>({progress['total']})</span></a> <a href="#blocks-heading" data-filter="approved">Approved <span data-filter-count>({progress['approved']})</span></a> <a href="#blocks-heading" data-filter="pending">Needing review <span data-filter-count>({progress['unreviewed'] + progress['needs_review']})</span></a> <a href="#blocks-heading" data-filter="excluded">Excluded <span data-filter-count>({progress['excluded']})</span></a><span id="block-filter-count" role="status" aria-live="polite">{progress['total']} of {progress['total']} blocks</span></div></div><p id="block-filter-empty" class="block-filter-empty" hidden><span id="block-filter-empty-message" role="status" aria-live="polite"></span> <a id="show-all-blocks" href="#blocks-heading" aria-controls="block-review-filter">Show all blocks</a></p></div><p>Use the movement controls on each block to correct reading order. Changes save immediately.</p>{cards or '<p>No normalized blocks are available.</p>'}</section></div>'''
     return _page("Structure", "structure", body, project=model["project"], project_path=model["project_dir"])
 
 
@@ -1116,8 +1126,9 @@ def _export_page(model: dict[str, Any]) -> str:
     page_title = html.escape(publication_document(document).get('publication_title', ''), quote=True)
     mapping_message = state['mapping_message']
     mapping_issues = '<div id="unmapped-media">' + state['unmapped_html'] + '</div>'
+    mapping_csv_available = (Path(model['project_dir']) / 'output/wordpress/reports/media-mapping.csv').is_file()
     body = f'''<h1>Export</h1><div id="export-review-state">{state["html"]}</div>
-<section aria-labelledby="media-export-heading"><h2 id="media-export-heading">1. Name and download images</h2>
+<section aria-labelledby="media-export-heading"><h2 id="media-export-heading">1. Prepare images in this project</h2>
 <p>{len(images)} included images. Choose a prefix before uploading them; original extracted files keep their names.</p>
 <form id="media-export-form"><label>Image filename prefix<input name="image_prefix" value="{prefix}" placeholder="citi-training-" required aria-describedby="image-prefix-help"></label>
 <small id="image-prefix-help">For example: citi-training-image1.png, citi-training-image2.png. Leave the document-based prefix or choose your own. Changing it after upload requires matching the uploaded filenames manually.</small>
@@ -1125,10 +1136,11 @@ def _export_page(model: dict[str, Any]) -> str:
 <button type="button" class="neutral-action" id="media-export-undo"{' disabled' if blocked else ''}>Undo last change</button></div></form><div id="media-export-result" role="status" aria-live="polite"></div></section>
 <section aria-labelledby="media-mapping-heading"><h2 id="media-mapping-heading">2. Map WordPress media</h2>
 <p id="media-mapping-status" role="status" aria-live="polite">{mapping_message}</p>{mapping_issues}
-<ol><li>Unzip the images download.</li><li>Upload the images to your WordPress Media Library.</li><li>In WordPress, choose Tools &gt; Export &gt; Media and download the XML file.</li><li>Choose that XML file below and select Match WordPress media.</li><li>Review any unmatched images listed in the result, then export your content in step 3.</li></ol><p><a href="/help#wordpress-media">Matching rules and WordPress import help</a>.</p>
+<p>WordPress renamed files or XML left images unmatched? Map their URLs with the CSV.</p><div class="button-row"><button type="button" id="open-manual-media" class="neutral-action" aria-controls="manual-media-tools">Use manual CSV mapping</button></div>
+<ol><li>Open the project output folder and unzip output/wordpress/media-upload.zip.</li><li>Upload the images to your WordPress Media Library.</li><li>In WordPress, choose Tools &gt; Export &gt; Media and download the XML file.</li><li>Choose that XML file below and select Match WordPress media.</li><li>Review any unmatched images listed in the result, then export your content in step 3.</li></ol><p><a href="/help#wordpress-media">Matching rules and WordPress import help</a>.</p>
 <form id="media-wxr-form" class="inline-file-form"><label>WordPress media export<input type="file" name="media_wxr" accept=".xml,application/xml,text/xml" required></label>
 <button type="submit" class="review-approve">Match WordPress media</button><div><label><input id="refresh-existing-media" type="checkbox" name="refresh_existing" aria-describedby="refresh-existing-media-help"> These are the same reviewed images; refresh existing attachment IDs</label><small id="refresh-existing-media-help">Choose the XML first, then check this option for re-uploaded unchanged images. Choosing another XML clears this confirmation. Only unique exact filenames with the same saved URL can refresh. XML cannot verify image contents. If images changed, review their alt text and descriptions first; use manual CSV mapping for different URLs.</small><p id="media-refresh-selection-notice" role="status" aria-live="polite" hidden></p></div></form>
-<details><summary>Map images manually with a CSV</summary><p>Fill in the WordPress URL and optional attachment ID for each image in media-mapping.csv, then import it here. Keep block IDs unchanged.</p>
+<details id="manual-media-tools"><summary>Map images manually with a CSV</summary><h3 id="manual-media-heading" tabindex="-1">Manual media mapping</h3><p id="manual-media-notice" role="status" aria-live="polite">Prepare the images ZIP and mapping CSV in step 1. Fill in wordpress_url and optionally wordpress_attachment_id for each image; keep block_id and asset_filename unchanged. Use full WordPress URLs and verify the correct image before importing. <a href="/help#wordpress-media">Manual mapping help</a>.</p><p><button type="button" class="neutral-action" data-open-project-output>Open output folder</button></p><details><summary>Optional browser copy of mapping CSV</summary><p>The original CSV is saved in output/wordpress/reports/. This makes an extra copy wherever your browser saves downloads.</p><p><a id="manual-media-download" href="/download/output/wordpress/reports/media-mapping.csv" download{"" if mapping_csv_available else " hidden"}>Save browser copy of current mapping CSV</a></p></details>
 <form id="media-mapping-form" class="inline-file-form"><label>Completed media mapping CSV<input type="file" name="mapping" accept=".csv,text/csv" required></label>
 <button type="submit" class="review-approve">Import media mapping</button></form></details><section id="media-mapping-result" tabindex="-1" hidden aria-label="Media mapping results"><p id="media-mapping-announcement" role="status" aria-live="polite"></p><div id="media-mapping-details"></div></section></section>
 <section aria-labelledby="content-export-heading"><h2 id="content-export-heading">3. Export and copy content</h2><p>This exports the whole reviewed document as one web page. Use <a href="/output-pages">Arrange Pages</a> only when arranging several pages.</p>
@@ -1139,10 +1151,15 @@ def _export_page(model: dict[str, Any]) -> str:
 <label><input type="checkbox" name="title_in_template"{' checked' if settings.get('title_in_template', True) else ''}> My WordPress template supplies the page title (H1)</label><p><a href="/help#title-export">Title export help</a></p>
 <label>Body headings<select name="heading_style"><option value="sections"{' selected' if settings.get('heading_style', 'nested') == 'sections' else ''}>H2 section headings</option><option value="nested"{' selected' if settings.get('heading_style', 'nested') == 'nested' else ''}>Keep nested headings without skipped levels</option></select></label>
 <div class="button-row workflow-next"><div class="copy-title-row"><button type="button" id="copy-page-title" class="neutral-action">Copy page title</button><span id="copy-page-title-status" role="status" aria-live="polite"></span></div><button type="submit" class="review-approve" aria-describedby="export-availability"{(' disabled' if not state['publication_ready'] else '')}>Export reviewed document</button></div><p id="export-availability" role="status" aria-live="polite"><span id="export-availability-message">{('Ready to export.' if state['publication_ready'] else 'Export is unavailable until the required content reviews are resolved.')}</span> <a id="export-readiness-link" href="#readiness-heading">View Export readiness</a></p><p class="blocked-export-note"{"" if blocked else " hidden"}>Conversion-blocked projects may export diagnostic HTML only.</p></form><div id="export-result" role="status" aria-live="polite"></div></section>'''
+    if not images:
+        start = body.index('<section aria-labelledby="media-export-heading">')
+        end = body.index('<section aria-labelledby="content-export-heading">')
+        body = body[:start] + '<p>No included images. Image drafting and WordPress media mapping are not needed.</p>' + body[end:]
+        body = body.replace('3. Export and copy content', 'Export and copy content')
     return _page("Export", "export", body, project=model["project"], project_path=model["project_dir"])
 
 
-def create_app(config: WebAppConfig):
+def create_app(config: WebAppConfig, *, lifecycle: OwnedServerLifecycle | None = None):
     try:
         from fastapi import Cookie, FastAPI, Header, HTTPException
         from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -1151,6 +1168,7 @@ def create_app(config: WebAppConfig):
         raise RuntimeError("Install PDF to Web application dependencies first") from exc
 
     app = FastAPI(title=APP_NAME)
+    lifecycle = lifecycle or OwnedServerLifecycle()
     active_project = config.project.expanduser().resolve() if config.project else None
     selections: dict[str, ProjectSelection] = {}
     destinations: dict[str, Path] = {}
@@ -1213,6 +1231,7 @@ def create_app(config: WebAppConfig):
         return await call_next(request)
 
     app.mount("/static", StaticFiles(directory=static_path(".").resolve()), name="static")
+    app.add_middleware(LifecycleMiddleware, lifecycle=lifecycle)
 
     draft_tasks = set()
     draft_semaphore = asyncio.Semaphore(2)
@@ -1302,10 +1321,11 @@ def create_app(config: WebAppConfig):
                 ids = data.get('block_ids')
                 provider_name = data.get('provider', 'ollama-local')
                 if action == 'export':
+                    output_locations(root)
                     entries = drafts.prepare(root, ids, regenerate=data.get('regenerate') is True)
                     path = drafts.exchange_package(root, entries)
                     relative = str(path.relative_to(root))
-                    return {'status': 'ok', 'url': '/download/' + quote(relative), 'filename': path.name, 'saved_path': str(path), 'relative_path': relative}
+                    return {'status': 'ok', **output_locations(root), 'url': '/download/' + quote(relative), 'filename': path.name, 'saved_path': str(path), 'relative_path': relative}
                 if provider_name not in {'ollama-local', 'openai'}:
                     raise ValueError('Unknown generation provider')
                 provider = drafts.OpenAIProvider() if provider_name == 'openai' else drafts.OllamaProvider(data.get('model', ''))
@@ -1324,9 +1344,12 @@ def create_app(config: WebAppConfig):
                 for entry in entries:
                     if entry['status'] == 'requested':
                         queued += 1
+                        if not lifecycle.start_work():
+                            raise ValueError('PDF to Web is quitting; generation cannot start.')
                         task = asyncio.create_task(generate_one(root, draft_epoch, provider, entry))
                         draft_tasks.add(task)
                         task.add_done_callback(draft_tasks.discard)
+                        task.add_done_callback(lambda _task: lifecycle.finish_work())
                 return {'status': 'ok', 'queued': queued, 'preserved': len(entries) - queued}
             raise ValueError('Unsupported draft action')
         except Exception as exc:
@@ -1335,6 +1358,26 @@ def create_app(config: WebAppConfig):
     @app.get("/api/health")
     async def health():
         return {"status": "ok", "app": APP_NAME}
+
+    @app.get('/api/lifecycle')
+    async def lifecycle_status(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+        require_session(session)
+        return {'status': 'ok', **lifecycle.status()}
+
+    @app.post('/api/quit')
+    async def quit_app(request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
+        require_change(request, session, csrf)
+        from starlette.background import BackgroundTask
+        try:
+            data = await request.json()
+            if not isinstance(data, dict) or data.get('confirm') is not True:
+                raise ValueError('Confirm Quit after checking unsaved edits in all tabs.')
+            lifecycle.prepare_quit()
+        except QuitUnavailable as exc:
+            return error_response(exc, status=409)
+        except ValueError as exc:
+            return error_response(exc)
+        return JSONResponse({'status': 'ok', 'state': 'stopping'}, background=BackgroundTask(lifecycle.stop))
 
     @app.get("/bootstrap/{token}")
     async def bootstrap(token: str):
@@ -1512,8 +1555,9 @@ def create_app(config: WebAppConfig):
         try:
             data = await request.json()
             if action == 'export':
+                preserve_previous_outputs(current())
                 paths = export_pages(current(), data.get('page_id'), data.get('profile'))
-                return {'status': 'ok', 'downloads': [{'path': str(p.relative_to(current())), 'url': '/download/' + quote(str(p.relative_to(current())), safe='/')} for p in paths]}
+                return {'status': 'ok', **output_locations(current()), 'downloads': [{'path': str(p.relative_to(current())), 'url': '/download/' + quote(str(p.relative_to(current())), safe='/')} for p in paths]}
             if action == 'undo':
                 undo_last(current())
                 cancel_draft_jobs()
@@ -1573,7 +1617,7 @@ def create_app(config: WebAppConfig):
         if not path.is_file():
             raise HTTPException(status_code=404, detail="Export file is unavailable")
         canonical = path.relative_to(current().resolve())
-        if not canonical.parts or canonical.parts[0] != 'output':
+        if not canonical.parts or canonical.parts[0] != 'output' or canonical.parts[1:2] == ('history',):
             raise HTTPException(status_code=404, detail="Export file is unavailable")
         from .publication import require_current_artifact
         try:
@@ -1581,6 +1625,19 @@ def create_app(config: WebAppConfig):
         except PdfToWebError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return FileResponse(path, filename=path.name, content_disposition_type="attachment", headers={'Cache-Control': 'private, no-store'})
+
+    @app.post('/api/output-folder/open')
+    async def open_saved_outputs(request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
+        require_change(request, session, csrf)
+        root = current()
+        try:
+            data = await request.json()
+            if data.get('project_root') != str(root.resolve()):
+                raise ValueError('The active project changed. Reload this page before opening its outputs.')
+            folder = open_output_folder(root)
+            return {'status': 'ok', 'output_root': str(folder)}
+        except Exception as exc:
+            return error_response(exc)
 
     @app.get("/source.pdf")
     async def source_pdf(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
@@ -1835,10 +1892,12 @@ def create_app(config: WebAppConfig):
     async def accessibility_report(request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
         require_change(request, session, csrf)
         try:
+            preserve_previous_outputs(current())
             paths = write_reports(current(), ensure_review_document(current()))
             files = [str(path.relative_to(current())) for path in paths]
             return {
                 "status": "ok",
+                **output_locations(current()),
                 "files": files,
                 "downloads": [{"path": path, "url": f"/download/{quote(path, safe='/')}"} for path in files],
             }
@@ -1877,6 +1936,7 @@ def create_app(config: WebAppConfig):
             wordpress.update({"post_type": post_type, "status": "draft"})
             project["export"]["wrap_in_section"] = str(data.get("wrap_in_section", "")).lower() == "true"
             save_project(current(), project)
+            preserve_previous_outputs(current())
             paths = export_project(current(), target, profile)
             files = [str(path.relative_to(current())) for path in paths]
             media_manifest_path = current() / "output" / "wordpress" / "reports" / "media-manifest.json"
@@ -1885,6 +1945,7 @@ def create_app(config: WebAppConfig):
                 media = json.loads(media_manifest_path.read_text(encoding="utf-8"))["summary"]
             return {
                 "status": "ok",
+                **output_locations(current()),
                 "files": files,
                 "downloads": [
                     {"path": path, "url": f"/download/{quote(path, safe='/')}", 'kind': 'template_body' if path.endswith('.body.html') else 'file'}
@@ -1935,11 +1996,12 @@ def create_app(config: WebAppConfig):
             document = ensure_review_document(current())
             previous = document.get('media_export', {}).copy()
             document.setdefault('media_export', {})['image_prefix'] = prefix
+            preserve_previous_outputs(current())
             paths, manifest = _write_media_manifest(current(), document)
             if document['media_export'] != previous:
                 save_review_document(current(), document)
             downloads = [p for p in paths if p.suffix in {'.zip', '.csv'}]
-            return {'status': 'ok', 'image_prefix': prefix, 'media': manifest['summary'], 'downloads': [
+            return {'status': 'ok', **output_locations(current()), 'image_prefix': prefix, 'media': manifest['summary'], 'downloads': [
                 {'path': str(p.relative_to(current())), 'url': '/download/' + quote(str(p.relative_to(current())), safe='/')}
                 for p in downloads]}
         except (ValueError, PdfToWebError, OSError) as exc:
@@ -1996,6 +2058,7 @@ def create_app(config: WebAppConfig):
             return error_response(exc)
 
     app.state.project_selections = selections
+    app.state.lifecycle = lifecycle
     app.state.get_active_project = lambda: active_project
     return app
 
@@ -2017,4 +2080,8 @@ def run_server(project: Path | None, host: str, port: int, *, open_browser: bool
             daemon=True,
             name="pdf-to-web-browser-launcher",
         ).start()
-    uvicorn.run(create_app(config), host=host, port=port, log_level="info")
+    lifecycle = OwnedServerLifecycle()
+    app = create_app(config, lifecycle=lifecycle)
+    server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="info"))
+    lifecycle.bind(lambda: setattr(server, 'should_exit', True))
+    server.run()

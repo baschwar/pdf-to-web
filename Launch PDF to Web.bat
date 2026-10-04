@@ -12,7 +12,7 @@ if not exist ".venv\Scripts\pdf-to-web.exe" (
 )
 
 echo Starting PDF to Web...
-echo Leave this window open while using the application.
+echo Leave this window open while using the application. Use Quit PDF to Web in the app to exit.
 echo.
 
 ".venv\Scripts\pdf-to-web.exe" serve
