@@ -7,7 +7,7 @@ import uuid
 from typing import Any
 
 from .accessibility import assess_document
-from .exporters.common import is_excluded
+from .exporters.common import is_excluded, standalone_description_blocks
 from .project import slugify
 
 SCHEMA = 'pdf-to-web-output-pages-v1'
@@ -369,14 +369,7 @@ def page_document(document, page_id):
     result_ids = {str(b['id']) for b in visible_walk(result['blocks'])}
     result['review']['complex_visuals'] = [v for v in result.get('review', {}).get('complex_visuals', []) if (v['source_block_id'] in result_ids if v.get('source_block_id') else v.get('source_page') in source_pages or not v.get('source_page'))]
     result['review']['issues'] = [i for i in result.get('review', {}).get('issues', []) if not i.get('page') or i.get('page') in source_pages]
-    associated = {str(b.get('complex_visual_id')) for b in visible_walk(result['blocks']) if b.get('type') == 'image'}
-    for visual in result['review']['complex_visuals']:
-        if str(visual['id']) in associated:
-            continue
-        a = visual.get('accessibility', {})
-        text = a.get('long_description') or a.get('adjacent_text')
-        if text and visual.get('status') != 'excluded':
-            result['blocks'].append({'id': prefix + str(visual['id']), 'type': 'paragraph', 'content': text, 'review': {'status': 'approved'}})
+    result['blocks'].extend(standalone_description_blocks(result, prefix=prefix))
     result['output_anchor_ids'] = [str(b['id']) for b in visible_walk(result['blocks'])]
     result['output_link_mappings'] = []
     result['output_unresolved_targets'] = []

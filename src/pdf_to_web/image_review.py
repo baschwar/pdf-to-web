@@ -56,7 +56,7 @@ def association_issue(document, block):
 
 def validate_token(document, token):
     if not isinstance(token, str) or token != review_token(document):
-        raise ValueError('The project changed or the review snapshot is missing. Reload and review the current content before approving.')
+        raise ValueError('The project changed or the review snapshot is missing. Reload and review the current content before saving or approving.')
 
 
 def invalidate_image_edit(document, block, previous_records):

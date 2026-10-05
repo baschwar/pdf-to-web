@@ -143,7 +143,7 @@ class ImageDraftRouteTests(unittest.TestCase):
         page = self.client.get('/structure')
         self.assertEqual(page.status_code, 200, page.text)
         parsed = Controls(); parsed.feed(page.text)
-        self.assertEqual(parsed.text, MANUAL_EXCHANGE_PROMPT)
+        self.assertEqual(parsed.text, d.manual_exchange_prompt(self.root))
         _, button = parsed.fields['draft-copy-instructions']
         self.assertEqual(button['type'], 'button')
         self.assertEqual(button['aria-describedby'], 'draft-manual-flow')

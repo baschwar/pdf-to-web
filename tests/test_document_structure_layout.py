@@ -127,9 +127,9 @@ class DocumentStructureLayoutTests(unittest.TestCase):
         self.assertIn('hidden', parsed.attrs['block-filter-empty'])
         self.assertEqual(parsed.attrs['block-filter-empty-message']['role'], 'status')
         self.assertEqual(parsed.attrs['block-filter-empty-message']['aria-live'], 'polite')
-        self.assertEqual(parsed.attrs['show-all-blocks']['aria-controls'], 'block-review-filter')
+        self.assertEqual(parsed.attrs['show-all-blocks']['aria-controls'], 'block-review-filter block-type-filter')
         self.assertEqual(page.count('id="block-filter-empty"'), 1)
-        self.assertIn('>Show all blocks</a>', page)
+        self.assertIn('>Reset filters</a>', page)
 
     def resolved_document(self):
         document = ensure_review_document(self.root)

@@ -1,12 +1,302 @@
 # Phase 3B acceptance ledger
 
-Version: 0.7.0. Updated: 2026-10-04.
+Version: 0.7.1. Updated: 2026-10-05.
 
 Local implementation, external acceptance and publication are separate. The
 public ledger records behavior and verification without source-document names,
 private project identities, attachment IDs, revision histories or input hashes.
 Detailed earlier reports are retained only in ignored local evidence. Sanitizing
 this checkout does not remove material from previously published Git history.
+
+## Version 0.7.1 branch handoff — 2026-10-05
+
+The authorized handoff reconciles the changes since `07d9311` on
+`codex/phase3b/output-page-builder`. Version 0.7.1 is a patch for existing review,
+source-preview, manual-response and export behavior; stored schemas are unchanged.
+Bulk PDF importing was not started. General bold/italic preservation and automatic
+small-running-header title selection remain backlog/limitations. The saved-title
+preservation correction and manual arranged-title repair are verified below;
+no actual project repair, re-extraction or approval was performed.
+
+Final runtime/test/tool/launcher candidate:
+`a24f4a3acb88ff98f42000c7fa5839e416d610699399734b38da4b93b84fb716`
+(144 files, documentation excluded). **515 tests passed in 35.193 seconds** with
+`TMPDIR=/private/tmp .venv/bin/python -m unittest discover -s tests -v`.
+Separate previously authored functional and artifact drivers were rerun against
+this exact candidate: **32 filter/merge browser groups**, **four manual-response
+browser groups**, **11 source/export/readiness/Copy browser groups**, and **five
+saved-artifact groups**. These are overlapping coverage, not extra unit tests or
+a new independent human review. The source-header repair additionally passed six
+disposable browser groups, inspected saved artifacts and exact Undo.
+
+Final coverage includes every review/type intersection, first-result focus below
+sticky controls, empty/reset behavior, dirty cancellation with exact selection/
+scroll/text preservation, delayed source rendering, keyboard/narrow/reduced-motion
+behavior, stale saves/merges, Save/approval/Undo/reopen, source pixel alignment,
+manual ZIP/clipboard destination agreement, preserved earlier responses, clipboard
+fallback, partial/complete media-to-readiness, saved-export focus, exact Copy,
+stale Copy recovery and owned Quit. Actual HTML/Gutenberg/WXR/Markdown and arranged
+package inspections retain authored standalone equivalents once, all 19 fixture
+images with exact alternatives/local bytes, and WXR's exact Gutenberg content.
+Acceptance stamps on the disposable artifact fixture are test instrumentation,
+not editorial approval. Providers were forbidden and native folder opening mocked.
+An initial copied artifact fixture required renewed page review after changed
+export settings; the gate correctly blocked it, and the instrumented rerun passed.
+
+Private evidence is retained under `build/release-0.7.1-20261005/`. The final
+before/after checks matched all 144 candidate hashes and all 314 files across four
+original projects. Six final screenshots were visually inspected, and all owned
+test servers exited 0. Public source
+and documentation scans found only synthetic test attachment IDs, with no actual
+source names, project paths or private attachment metadata. No private PDF,
+source screenshot, generated project export or evidence file is included in Git.
+The existing public origin is `https://github.com/baschwar/pdf-to-web.git`; its
+branch matched `07d9311` before publication. GitHub reports zero configured Actions
+workflows. The final completion report supplies the pushed commit, verified remote
+SHA and any check results. No main merge, tag, GitHub release or deployment is
+included. Human VoiceOver, production WSUWP/plugin imports, Windows hardware and
+the representative multi-page WordPress round trip remain pending.
+
+## Small running-header title recovery — 2026-10-05
+
+The author reported good content results apart from a missing document H1 in a
+four-page sample. Read-only inspection confirmed that its small repeated header
+is present in source pixels and PDF text on every page, but absent from raw JSON,
+normalized blocks and saved exports. It has no block ID and was not removed by
+review exclusion. Both the committed baseline and current largest-font selector
+choose a larger body section instead; automatic title detection remains limited.
+
+A disposable repair probe exposed a separate preservation defect: after demoting
+that section, reopening added it again as a recovered title. Source-title
+initialization now refuses to add a title once a review revision has been saved,
+while fresh normalization and existing matching-title box backfill retain their
+behavior. One new regression test covers the saved demotion. **49 normalization
+and source-geometry tests passed in 0.571 seconds**, and **28 arrangement tests
+passed in 0.720 seconds** before the preservation fix.
+
+The final disposable browser repair passed **six groups**: section H1-to-H2 change,
+explicit arranged title, exactly one semantic H1 with both tables retained,
+save/reopen at 390px, actual saved HTML/Gutenberg/WXR exports and exact Undo of
+block and arrangement records. Source text, IDs, provenance, links, tables and
+other block decisions stayed intact. The WordPress template-title option was
+honored: WXR carries the correct page title while body Gutenberg omits H1.
+Zero JavaScript errors or horizontal overflow; desktop/narrow screenshots were
+visually inspected. The owned server exited 0. An initial probe exposed the real
+recovery defect; a subsequent driver synchronization race was corrected and its
+log retained. No blanket initial-pass claim is made.
+
+Existing projects need an explicit author repair through Structure and Arrange
+Pages after relaunch; automatic re-extraction, source-header insertion or review
+approval was not performed. README describes the arranged export route and
+WordPress title-field distinction. Private source text, IDs, screenshots, saved
+artifacts and recovery instructions remain under
+`build/bloodborne-title-readonly-20261005/`. Final candidate-wide verification and
+publication status are recorded separately.
+
+## Inline formatting feasibility — 2026-10-05
+
+This low-priority read-only follow-up inspected the requested table-heavy sample,
+identified by the newest Recent projects record and matching project/source
+metadata. The authenticated live session was not separately queried or navigated.
+Both cached source-page images and PDF font dictionaries were inspected. The
+sample has clear regular, bold, italic and combined font metadata, but some raw
+elements coalesce differently styled PDF spans under one font label.
+
+Of 51 normalized table cells, 27 retain multiple raw font names in provenance;
+39 contain raw bold/italic text. No cell has normalized formatting runs. General
+normalization does not translate font names into runs; table normalization joins
+descendant text, and HTML/Gutenberg table rendering escapes plain cell content.
+The actual saved WordPress export matches its manifest hash and the current
+serializer byte-for-byte: four tables, no strong elements, and one emphasis
+element for the recovered source note. This confirms partial support, not a
+regression in an already-supported formatting path. Markdown also currently
+ignores typed formatting runs.
+
+Thirteen existing focused tests passed in 0.198 seconds, covering Gutenberg,
+recovered-note emphasis, unchanged list saves and rich list editing with Undo.
+Synthetic artifact probes confirm existing paragraph strong/emphasis runs survive
+HTML, Gutenberg and WXR, while table-cell output and Markdown remain plain.
+The 514-test full-suite result in the first-matching-block entry below applies to
+the runtime unchanged by this follow-up's documentation-only edits. README and
+Future Features
+record a bounded proposal that separates reliable source presentation from
+author-confirmed semantic emphasis and retains links, footnotes, IDs, table spans,
+review fingerprints and explicit existing-project recovery. No formatting feature,
+re-extraction, migration, dependency installation or live-app restart was performed.
+All 44 original project files retained their before/after hashes, and all 144
+runtime candidate hashes remained unchanged. Diff whitespace checks passed.
+Private evidence is retained in `build/inline-style-readonly-20261005/`.
+
+## First matching block after filtering — 2026-10-05
+
+Explicit changes to either Structure filter, including Reset filters, select the
+first matching block in saved reading order and reveal it below the sticky
+controls with its source context selected. Both filter values remain active.
+Empty intersections focus and announce Reset filters without selecting a hidden
+block. Save, approval, Undo, reopening and finding-link navigation retain their
+existing behavior; they do not use the new first-result action.
+
+The existing unsaved-editor guard runs before a filter change. Cancel and Escape
+preserve both filters, selection, exact scroll position and entered fields.
+Confirmation closes the dialog before focusing the first permitted result.
+Delayed source rendering resettles the selected block only while it still owns
+focus. Narrow-layout and reduced-motion checks passed without forced animation.
+
+The 144-file runtime/test/tool/launcher candidate is
+`21d2fe216770714635ddc55a6c379e8a5d4a2152065d06edc9cdaa9790f39a51`
+(documentation excluded). **514 tests passed in 35.227 seconds** using
+`TMPDIR=/private/tmp .venv/bin/python -m unittest discover -s tests -v`.
+Synthetic browser verification passed **32 groups** at 1440px and 390px, including
+all 28 review/type intersections at each width, first-result focus, an already
+matching later selection, empty results, dirty cancel/confirm, delayed source
+rendering, keyboard navigation, reduced motion and retained Save/approval/Undo/
+reload behavior. Zero JavaScript errors or horizontal overflow. Both representative
+screenshots were visually inspected. JavaScript syntax and diff whitespace checks
+passed. All 144 candidate hashes matched after testing; all 84 files in the
+original project's before/after inventory retained their hashes. The owned fixture
+server exited 0; the real app was not restarted or navigated.
+
+A dense infographic remains an explicit regression case: its author's assessment
+of the preview did not pass automatic grouping/layout acceptance. Retained assets
+are useful, but manual semantic reconstruction may be necessary. Local filter,
+source-outline and export tests do not establish acceptable automatic content
+grouping. No real-project reconstruction, re-extraction or migration was performed.
+This limitation is recorded in README and ignored local evidence.
+
+Private evidence is retained in `build/filter-first-result-20261005/`, including
+the browser report, full-suite log, before/after inventory and infographic
+regression record. README and changelog describe first-result navigation. Work
+remains uncommitted on `codex/phase3b/output-page-builder` at base `07d9311`;
+nothing was pushed, merged, tagged or released. Human VoiceOver, production
+WSUWP/plugin imports and actual Windows acceptance remain pending.
+
+## Structure filters and Merge next safeguards — 2026-10-05
+
+Structure now combines Review state and Block type in two compact rows. Their
+intersection drives visible cards, contextual counts and Previous/Next. Linked
+image descriptions affect their owner's state without adding block rows. Choices
+remain separate per canonical project folder in browser-tab storage, including
+projects with identical source filenames. Save, approval, classification changes,
+Undo and reopening preserve both filters; empty views retain them and focus Reset
+filters. Explicit finding links reveal their target with an explanation of the
+necessary filter changes. Hiding dirty editors requires confirmation and keeps
+their fields in the tab. Other saves, structural actions and Undo cannot discard
+those fields; snapshot checks reject stale saves without overwriting newer work.
+
+Merge next retains the shared server eligibility for adjacent matching text
+blocks and same-level headings. List, mixed-type, rich/nested, excluded and final
+block boundaries remain disabled with accessible reasons. Unsaved edits, saving
+and hidden actual neighbors disable merging; filters never change its candidate.
+Snapshot and target validation reject stale merges. Older server markup remains
+disabled until relaunch rather than being enabled by newer JavaScript. Supported
+merges retain their existing fresh-review and Undo behavior. Existing projects
+are not re-extracted, migrated, merged or approved by these changes.
+
+The final 144-file runtime/test/tool/launcher candidate is
+`4bde04fb2c2fd621a6ab5b7dfa55711bf32b7daa9d7a1c23a4a7be1d9bdb1492`
+(documentation excluded). **514 tests passed in 34.524 seconds** with the
+documented macOS command `TMPDIR=/private/tmp .venv/bin/python -m unittest discover
+-s tests -v`. The first default-temporary-directory run exposed seven existing
+`/var` versus `/private/var` path-sensitive failures; its log is retained. No
+unrelated path implementation or dependency changes were made.
+
+Eight merge tests, five new filter tests and 16 existing layout tests passed.
+Synthetic browser verification passed **23 groups** at 1440px and 390px, including
+all 28 review/type combinations at each width, keyboard navigation, contextual
+counts, dirty confirmation and Escape, classification save/Undo, finding links,
+last matching Save and approve, stale save/merge rejection, supported merge/Undo,
+older markup and project isolation. Zero JavaScript errors or horizontal overflow.
+Both representative filter screenshots were visually inspected. All 144 candidate
+hashes matched after testing; all 58 original project files retained their hashes.
+Owned fixture servers were stopped; the real app was not restarted or navigated.
+
+README and changelog explain the workflow and relaunch step. Work remains
+uncommitted on `codex/phase3b/output-page-builder` at base commit `07d9311`;
+nothing was pushed, merged, tagged or released. Private evidence is retained in
+`build/merge-safeguards-20261005/`. Human VoiceOver, production WSUWP/plugin imports
+and actual Windows acceptance remain pending.
+
+## Manual response destination and infographic review — 2026-10-04
+
+This local follow-up builds on published branch commit `07d9311`. New work is
+uncommitted; no additional push, merge, tag, release or deployment is authorized.
+Original projects and the live app remain untouched. Authorized source inspection,
+editing, review and export checks use disposable copies or synthetic fixtures.
+
+- Copied manual drafting instructions, ZIP instructions and request metadata name
+  the selected project's absolute response destination and unique suggested JSON
+  filename. Earlier files are preserved. Tools without authorized local access
+  return an attachment/download instead of inventing a folder or claiming a save.
+  Manual sharing discloses the local path. Exchange-v1 identities and explicit
+  validate/import/review remain unchanged; responses may be selected elsewhere.
+- Recovered title/subtitle outlines compose PDF text and graphics transforms and
+  encoded glyph widths. Ordinary source boxes account for the actual MediaBox
+  origin and rotation. A read-only display overlay preserves existing saved text,
+  coordinates and decisions. Edited or ambiguous text receives an explanatory
+  no-outline state. Tall rendered pages and highlights share the visible image
+  dimensions; the desktop pane reveals selected regions within the available
+  viewport and supports keyboard scrolling. Narrow layouts keep natural page
+  scrolling; long response paths wrap.
+- Authored standalone visual equivalents are included in document HTML,
+  Gutenberg, WXR and Markdown. The shared arranged-page projection avoids
+  duplication, preserves image associations and exclusions, and leaves original
+  records unchanged. Pending reviews still prevent publication; unaccepted
+  drafting suggestions are not included.
+
+The independent source review accounts for all 44 saved blocks and all 19 image
+assets in an approved source snapshot. It identifies repeated/shadow title text,
+a truncated duplicate introduction, numbered-section placement and icon/group
+reading-order decisions. These are explicit author-review findings, with private
+block-level evidence retained locally. No deduplication, reclassification,
+automatic ordering or medical/editorial approval is applied to real data.
+
+Focused regressions pass: six manual-destination tests, 15 geometry tests, seven
+standalone-description export tests and 28 existing arranged-page tests. Browser
+review checks exercise description counts, image saves/approval, exact filters,
+late rendering, Undo and reopening on a disposable source copy. Saved export
+checks inspect HTML, Gutenberg, WXR, Markdown, image bytes and arranged output.
+The final 142-file runtime/test/tool/launcher candidate is
+`2e37a0575a4c03cdede736f1a6cdbea89d461022a27eb50303c1894514c48e5c`
+(documentation excluded). **505 tests passed in 30.748 seconds**; all 142 hashes
+matched afterward. JavaScript syntax and diff whitespace checks passed. The
+source owner's actual copied-PDF browser probe passed 26 geometry/resize/late-load
+assertions with zero JavaScript errors. Twelve actual Poppler rendering cases
+cover three paper sizes, four rotations, nonzero MediaBox origins and a distinct
+CropBox; all exited 0 and pixel alignment stayed within two pixels.
+
+Before the final sticky-pane correction, the independent functional reviewer
+passed **18 groups** on runtime candidate `bed0812a`:
+four destination checks, five actual saved-export/package inspections and nine
+browser source/navigation/review-gate groups. All 142 hashes matched before/after
+and at cleanup; zero JavaScript errors were recorded. Original project inventories
+remained byte-identical across all 41 files. The owned server exited 0 through
+Quit. Earlier eight review groups cover counts, ordinary Save, Save and approve,
+advance, exact filters, late rendering, newer editor focus, Undo and reopen.
+Native folder opening was mocked; native macOS select keystrokes and external
+acceptance were not established.
+
+On the final candidate, independent visual review passed **88 selections** across
+all 44 blocks at desktop/390px, all 44 desktop selected-region visibility checks,
+resize alignment, keyboard pane scrolling and editor-focus preservation. Ten
+representative screenshots were visually inspected; title and References outlines
+are correct and visible. All 142 candidate hashes matched before/after; all 41
+original files retained their hashes, sizes and mtimes. Zero JavaScript errors or
+horizontal overflow; the owned visual QA server exited 0. The source owner also
+passed ten integrated pane/keyboard/resize/late-load groups.
+
+The final independent functional smoke passed **11 groups** on `2e37a057`,
+covering desktop footer visibility, preserved review focus, keyboard pane
+scrolling, natural narrow layout, source-title alignment, pending review gates,
+partial/complete media matching to readiness, Continue to controls, saved-export
+results, exact Copy bytes/focus, no-image export and stale-copy recovery. All
+142 hashes matched before/after and cleanup; original 41 files remained unchanged.
+Zero JavaScript errors; the owned functional QA server exited 0 through Quit.
+
+Private evidence: `build/response-destination-highlight-20261004/`,
+`build/infographic-source-review-20261004/` and
+`build/infographic-functional-independent-20261005/`. Local browser/fixture
+approval does not establish human VoiceOver, production WSUWP or Windows
+acceptance; those remain pending.
 
 ## Latest authorized UI continuation — 2026-10-04
 
@@ -283,13 +573,14 @@ implementation. Local browser/axe checks do not certify WCAG conformance.
 
 ## Publication status
 
-Version remains **0.7.0**; stabilization changes are recorded under **Unreleased**
-in CHANGELOG.md. The authorized destination is the existing public repository's
+Version **0.7.1** records stabilization in CHANGELOG.md. The patch version reflects
+corrections to existing workflows with unchanged stored schemas. The authorized
+destination is the existing public repository's
 `codex/phase3b/output-page-builder` branch. Publication is a source handoff, not a
 backup of private projects. No main merge, tag, deployment or release is included.
 The completion report identifies the exact pushed commit and any CI outcome.
 
-Final publication checkout: **452 tests passed in 26.531 seconds** after
+Earlier branch publication at `07d9311`: **452 tests passed in 26.531 seconds** after
 documentation sanitization. Python/JavaScript syntax, corpus JSON parsing,
 version consistency and `git diff --check` passed. Runtime hashes still match the
 browser-tested candidate above, so existing affected-workflow browser evidence

@@ -26,6 +26,8 @@ representative PDF corpus are deliberately marked **unverified**.
 - Export-specific settings stay in `project.json`, outside document semantics.
 - Inline formatting is represented as optional typed runs, allowing links,
   strong text, and emphasis without storing Gutenberg or HTML in the model.
+  This is partial support: general source font styles do not create those runs,
+  table cells are flattened to plain text, and Markdown does not serialize runs.
 - Image attachment IDs are optional and are never invented.
 
 ## Representative-PDF findings

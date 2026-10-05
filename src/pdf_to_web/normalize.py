@@ -629,7 +629,7 @@ def _select_source_title(
     return title, bbox
 
 
-def recover_source_title_region(project_dir: Path) -> tuple[str, list[float] | None] | None:
+def _source_title_candidate(project_dir: Path) -> tuple[str, list[float] | None] | None:
     project = load_project(project_dir)
     source = project_dir / str(project.get("source", {}).get("path") or "")
     if not source.is_file():
@@ -664,7 +664,27 @@ def recover_source_title_region(project_dir: Path) -> tuple[str, list[float] | N
     return _select_source_title(text, regions)
 
 
-def recover_source_supplemental_regions(project_dir: Path) -> dict[str, tuple[str, list[float]]]:
+def recover_source_title_region(project_dir: Path) -> tuple[str, list[float] | None] | None:
+    # Preserve title selection; correcting geometry must not change authored text.
+    candidate = _source_title_candidate(project_dir)
+    if not candidate:
+        return None
+    try:
+        from pypdf import PdfReader
+        from .source_pages import source_text_regions, matched_source_text_box
+
+        source = project_dir / str(load_project(project_dir).get('source', {}).get('path') or '')
+        page = PdfReader(source).pages[0]
+        box = matched_source_text_box(candidate[0], source_text_regions(page)[1])
+        if box and (box[0] < float(page.mediabox.left) - 1 or box[1] < float(page.mediabox.bottom) - 1
+                    or box[2] > float(page.mediabox.right) + 1 or box[3] > float(page.mediabox.top) + 1):
+            box = None
+    except Exception:
+        box = None
+    return candidate[0], box
+
+
+def recover_source_supplemental_regions(project_dir: Path) -> dict[str, tuple[str, list[float] | None]]:
     project = load_project(project_dir)
     source = project_dir / str(project.get("source", {}).get("path") or "")
     if not source.is_file():
@@ -686,8 +706,10 @@ def recover_source_supplemental_regions(project_dir: Path) -> dict[str, tuple[st
     except Exception:
         return {}
 
-    recovered: dict[str, tuple[str, list[float]]] = {}
-    title = recover_source_title_region(project_dir)
+    recovered: dict[str, tuple[str, list[float] | None]] = {}
+    # Selection retains its existing local-coordinate heuristic. Only its source
+    # association changes; do not rewrite or reclassify the recovered subtitle.
+    title = _source_title_candidate(project_dir)
     if title and title[1]:
         title_box = title[1]
         subtitle_lines = [
@@ -702,10 +724,9 @@ def recover_source_supplemental_regions(project_dir: Path) -> dict[str, tuple[st
             subtitle = " ".join(item[0] for item in selected)
             subtitle = re.sub(r"\b(\d{3})\s+(\d)\b", r"\1\2", subtitle)
             if subtitle and len(subtitle) <= 160:
-                recovered["subtitle"] = (
-                    subtitle,
-                    [min(item[1] for item in selected), min(item[2] - item[3] * 0.25 for item in selected), page_width - 36, max(item[2] + item[3] for item in selected)],
-                )
+                from .source_pages import source_text_regions, matched_source_text_box
+                box = matched_source_text_box(subtitle, source_text_regions(page)[1])
+                recovered["subtitle"] = (subtitle, box)
 
     footer_match = re.search(
         r"(?P<note>\*?Please note\b.+?)(?P<revision>Revised\s+[^\n]+)$", text, re.IGNORECASE | re.MULTILINE
@@ -739,15 +760,18 @@ def apply_source_title(document: dict[str, Any], project_dir: Path) -> bool:
     existing = next((block for block in blocks if block.get("id") == "recovered-document-title"), None)
     if existing:
         provenance = existing.setdefault("provenance", {})
-        changed = False
-        if provenance.get("source_type") == "recovered first-page header" and str(existing.get("content", "")) != title:
-            existing["content"] = title
-            metadata["title"] = title
-            changed = True
-        if bounding_box and provenance.get("bounding_box") != bounding_box:
+        # Existing source coordinates are corrected by a read-only UI overlay.
+        # Loading must preserve authored text/metadata, even if it no longer
+        # matches the extracted title. Only legacy missing-box backfill remains,
+        # and only for text still matching that source title.
+        if bounding_box and not provenance.get("bounding_box") and str(existing.get('content', '')).strip() == title:
             provenance["bounding_box"] = bounding_box
-            changed = True
-        return changed
+            return True
+        return False
+    # Source recovery initializes fresh content. Once an author has saved a
+    # decision, reopening must not recreate a title they demoted or removed.
+    if int(document.get('review_session', {}).get('revision', 0)) > 0:
+        return False
     if current not in fallback_titles and current != title:
         return False
     changed = current != title

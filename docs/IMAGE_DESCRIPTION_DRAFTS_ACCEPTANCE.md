@@ -1,5 +1,26 @@
 # Image description drafts — acceptance record
 
+## Version 0.7.1 continuation — 2026-10-05
+
+The current-project manual response destination is included in copied
+instructions, ZIP instructions and request metadata. Unique filenames and
+collision guidance preserve earlier JSON responses; inaccessible destinations
+use an attachment/download fallback. Shared prompts disclose the local path.
+Response identity/schema checks and explicit validation/import/review are intact.
+
+Six focused destination regressions pass, including chosen roots with spaces and
+Unicode, project switching, collisions, renamed response import and no active
+project. Independent desktop/narrow browser checks verify exact clipboard/ZIP
+agreement, unsaved fields, repeated exports and clipboard-failure recovery without
+provider calls. The source-review continuation also fixes standalone-equivalent
+publication loss with seven export regressions. Current candidate, full-suite
+and final browser evidence are recorded in `PHASE3B_ACCEPTANCE.md`; detailed
+source evidence stays ignored locally. The authorized versioned branch handoff
+and its final verification are recorded in that ledger; no main merge or GitHub
+release is included.
+
+## Initial feature implementation
+
 Date: 2026-09-30. Base version: 0.7.0; feature is Unreleased. Implemented on
 `codex/phase3b/output-page-builder` from baseline `668d2e4`. The pre-existing
 untracked `AGENTS.md` was preserved. No push, merge, tag, publication or release.

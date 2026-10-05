@@ -307,6 +307,23 @@ class NormalizeTests(unittest.TestCase):
             self.assertTrue(apply_source_title(document, project))
             self.assertEqual(len(document["blocks"]), 1)
 
+    @mock.patch("pdf_to_web.normalize.recover_source_title_region", return_value=("Source section", [1, 2, 3, 4]))
+    def test_title_recovery_does_not_recreate_a_demoted_heading_after_saved_review(self, _recover):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            (project / "project.json").write_text(
+                json.dumps({"schema_version": "pdf-to-web-project-v1", "title": "Project", "source": {}})
+            )
+            document = {
+                "metadata": {"title": "Source section"},
+                "review_session": {"revision": 1},
+                "blocks": [{"id": "section", "type": "heading", "level": 2,
+                            "content": "Source section", "review": {"status": "approved"}}],
+            }
+            before = json.loads(json.dumps(document))
+            self.assertFalse(apply_source_title(document, project))
+            self.assertEqual(document, before)
+
     def test_known_and_unknown_elements_preserve_provenance(self):
         raw = {
             "file name": "sample.pdf",

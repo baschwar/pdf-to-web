@@ -2,8 +2,47 @@
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-05
+
 ### Stabilization
 
+- Preserve saved heading decisions when reopening a project: source-title recovery
+  does not recreate a demoted or removed title after an author has saved a review
+  change. Fresh normalization retains its existing initialization. Document the
+  smaller-running-header limitation and explicit arranged-page title recovery;
+  existing projects are not automatically re-extracted or approved.
+- Combine Structure review-state and block-type filters, with contextual counts,
+  project-specific browser preferences and navigation within their intersection.
+  Keep selections after Save, approval, classification changes, Undo and reopening;
+  offer Reset filters for empty results and explain finding-link filter changes.
+  Confirm before hiding unsaved editors; retain their fields and reject stale saves.
+  Explicit filter changes select and reveal the first matching block below sticky
+  controls; empty results focus Reset filters. Cancelling the dirty-editor prompt
+  preserves the previous selection, scroll and fields.
+- Keep Merge next disabled for list and other unsupported pairs, using the same
+  saved-state eligibility as the server and concise accessible reasons. Disable
+  merging during unsaved edits or saves and when the actual next block is hidden.
+  Recheck the snapshot and target, preserve newer decisions and Undo, and keep
+  older running-server markup disabled until the app is relaunched.
+- Name the current project's completed-response destination in copied manual
+  drafting instructions, ZIP instructions and request metadata. Use unique JSON
+  names, preserve prior responses and explain authorized local saves versus an
+  attachment/download fallback. Disclose the shared local path; retain existing
+  response identities, validation and explicit import/review.
+- Correct recovered title/subtitle source outlines using PDF text and graphics
+  transforms and encoded glyph widths. Account for MediaBox offsets and rotation
+  for existing block outlines. Use a read-only display overlay for saved projects;
+  preserve authored text and review decisions, and explain unavailable outlines
+  when a source association is ambiguous. Infographic grouping and duplicate-text
+  decisions still require review against the source.
+- Keep desktop source-page previews within the viewport, with a keyboard-scrollable
+  pane that reveals the selected outline without moving review/editor focus.
+  Preserve natural page scrolling on narrow layouts.
+- Retain authored standalone infographic/complex-visual equivalents in document
+  HTML, Gutenberg, WXR and Markdown exports. Reuse the same projection for arranged
+  pages, avoiding duplicated descriptions and content-ID collisions. Preserve
+  image associations and exclusions; pending reviews still block publication and
+  unaccepted drafting suggestions remain outside published content.
 - Make saved project outputs the primary export result, with exact paths and
   authenticated Open output folder. Browser copies are optional and collapsed;
   app exports preserve previous reusable files in unique output/history snapshots.

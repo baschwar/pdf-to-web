@@ -1,6 +1,44 @@
 const authoringForms = [...document.querySelectorAll('.block-form, .complex-visual-form')];
 const authoringValue = form => JSON.stringify([...form.querySelectorAll('input:not([name="expected_review_token"]), textarea, select')].map(field => [field.name, field.type === 'checkbox' ? field.checked : field.value]));
 const authoringBaselines = new WeakMap(authoringForms.map(form => [form, authoringValue(form)]));
+let mergeInProgress = false;
+let mergeSnapshotStale = false;
+function mergeDisabledReason(button) {
+  if (button.dataset.mergeReason) return button.dataset.mergeReason;
+  if (mergeSnapshotStale) return 'Reload Structure to check the current blocks before merging.';
+  if (mergeInProgress) return 'Finishing the merge…';
+  if (authoringForms.some(form => form.dataset.saving === 'true')) return 'Finish saving before merging.';
+  if (authoringForms.some(form => authoringBaselines.get(form) !== authoringValue(form))) {
+    return 'Save or revert unsaved edits before merging.';
+  }
+  const following = document.getElementById('block-' + button.dataset.nextBlockId);
+  if (following?.hidden) return 'The next block is hidden by this filter. Show All before merging.';
+  return '';
+}
+function updateMergeControls() {
+  for (const button of document.querySelectorAll('[data-action="merge"]')) {
+    // A running older server can serve new JavaScript before it is relaunched.
+    // Keep its disabled controls and require the updated saved-state metadata.
+    if (!button.hasAttribute('data-merge-reason')) {
+      let help = document.getElementById(button.getAttribute('aria-describedby'));
+      button.dataset.mergeReason = button.disabled && help?.textContent.trim()
+        || 'Relaunch PDF to Web to use the updated merge controls.';
+      if (!help) {
+        help = document.createElement('small'); help.className = 'merge-help';
+        help.id = 'merge-help-' + button.dataset.blockId;
+        button.setAttribute('aria-describedby', help.id);
+        button.closest('.block-actions')?.append(help);
+      }
+    }
+    const reason = mergeDisabledReason(button);
+    button.disabled = Boolean(reason);
+    const help = document.getElementById(button.getAttribute('aria-describedby'));
+    if (help) { help.textContent = reason; help.hidden = !reason; }
+  }
+}
+for (const eventName of ['input', 'change']) document.addEventListener(eventName, event => {
+  if (event.target.closest('.block-form, .complex-visual-form')) updateMergeControls();
+});
 const quitForms = [...document.querySelectorAll('form')].filter(form => form.id !== 'source-page-controls');
 const quitValue = form => JSON.stringify([...form.querySelectorAll('input:not([readonly]):not([type="hidden"]), textarea:not([readonly]), select')].map(field => [field.name, field.type === 'file' ? [...field.files].map(f => [f.name, f.size, f.lastModified]) : field.type === 'checkbox' || field.type === 'radio' ? field.checked : field.value]));
 const quitBaselines = new WeakMap(quitForms.map(form => [form, quitValue(form)]));
@@ -369,6 +407,22 @@ if ('ResizeObserver' in window) {
 let sourceSelection = 0;
 let sourceImageRequest = null;
 let sourceObjectUrl = null;
+function revealSourceRegions(pane, highlights) {
+  // Scroll the source panel itself, preserving the reviewer's editor/card focus.
+  if (!pane || !highlights?.children.length || getComputedStyle(pane).overflowY !== 'auto') return;
+  const bounds = pane.getBoundingClientRect();
+  const top = bounds.top + pane.clientTop;
+  const bottom = top + pane.clientHeight;
+  const regions = Array.from(highlights.children, region => region.getBoundingClientRect());
+  const first = Math.min(...regions.map(region => region.top));
+  const last = Math.max(...regions.map(region => region.bottom));
+  if (first < top + 8) pane.scrollTop += first - top - 8;
+  else if (last > bottom - 8) {
+    pane.scrollTop += last - first > pane.clientHeight - 16 ? first - top - 8 : last - bottom + 8;
+  }
+}
+window.addEventListener('resize', () => requestAnimationFrame(() =>
+  revealSourceRegions(document.querySelector('.source-pane'), document.getElementById('source-highlights'))));
 async function loadSourcePageImage(url) {
   const image = document.getElementById('source-image');
   if (sourceImageRequest?.url !== url) sourceImageRequest?.controller.abort();
@@ -476,6 +530,7 @@ async function showSourcePage(page, card = selectedSourceCard) {
       highlights.append(highlight);
     });
     label.textContent = `${blockLabel} ${regions.length === 1 ? 'The approximate source region is' : `${regions.length} source regions are`} outlined.${coverage}`;
+    revealSourceRegions(pane, highlights);
   } catch (error) {
     if (selection === sourceSelection) label.textContent = `${blockLabel} Its source region could not be outlined.`;
   }
@@ -502,22 +557,40 @@ function blockCards() {
 }
 
 const blockFilter = document.getElementById('block-review-filter');
-const blockFilterKey = `pdf-to-web-block-filter:${document.querySelector('.current-document')?.textContent || ''}`;
+const blockTypeFilter = document.getElementById('block-type-filter');
+const blockFilterKey = `pdf-to-web-block-filter:${document.body.dataset.projectRoot || document.querySelector('.current-document')?.textContent || ''}`;
+const blockTypeFilterKey = `${blockFilterKey}:type`;
 const blockSelectionKey = `${blockFilterKey}:selected`;
 let selectedBlockFilter = 'all';
+let selectedBlockType = 'all';
+function matchesReviewFilter(card, filter) {
+  return filter === 'all' || (filter === 'pending' ? ['unreviewed', 'needs_review'].includes(card.dataset.reviewStatus) : card.dataset.reviewStatus === filter);
+}
+function matchesTypeFilter(card, filter) {
+  return filter === 'all' || card.dataset.filterType === filter;
+}
 function applyBlockFilter() {
   if (!blockFilter) return;
   const cards = Array.from(document.querySelectorAll('.block-card'));
-  const counts = { all: cards.length, approved: 0, pending: 0, excluded: 0 };
+  const counts = { all: 0, approved: 0, pending: 0, excluded: 0 };
   for (const card of cards) {
     const status = card.dataset.reviewStatus;
-    if (['unreviewed', 'needs_review'].includes(status)) counts.pending += 1;
-    else if (status in counts) counts[status] += 1;
-    card.hidden = selectedBlockFilter !== 'all' && (selectedBlockFilter === 'pending' ? !['unreviewed', 'needs_review'].includes(status) : status !== selectedBlockFilter);
+    if (matchesTypeFilter(card, selectedBlockType)) {
+      counts.all += 1;
+      if (['unreviewed', 'needs_review'].includes(status)) counts.pending += 1;
+      else if (status in counts) counts[status] += 1;
+    }
+    card.hidden = !matchesReviewFilter(card, selectedBlockFilter) || !matchesTypeFilter(card, selectedBlockType);
   }
   blockFilter.querySelectorAll('[data-filter]').forEach(link => {
     link.querySelector('[data-filter-count]').textContent = `(${counts[link.dataset.filter]})`;
     if (link.dataset.filter === selectedBlockFilter) link.setAttribute('aria-current', 'true');
+    else link.removeAttribute('aria-current');
+  });
+  blockTypeFilter?.querySelectorAll('[data-type-filter]').forEach(link => {
+    const filter = link.dataset.typeFilter;
+    link.querySelector('[data-filter-count]').textContent = `(${cards.filter(card => matchesReviewFilter(card, selectedBlockFilter) && matchesTypeFilter(card, filter)).length})`;
+    if (filter === selectedBlockType) link.setAttribute('aria-current', 'true');
     else link.removeAttribute('aria-current');
   });
   document.getElementById('block-filter-count').textContent = `${blockCards().length} of ${cards.length} blocks`;
@@ -531,16 +604,77 @@ function applyBlockFilter() {
     else showSourcePage(document.getElementById('source-page-number')?.value || 1, null);
   }
   sessionStorage.setItem(blockFilterKey, selectedBlockFilter);
+  sessionStorage.setItem(blockTypeFilterKey, selectedBlockType);
   updateBlockNavigation();
+  updateMergeControls();
 }
+const blockFilterDialog = document.getElementById('block-filter-dialog');
+let requestedBlockFilters = null;
+function setBlockFilters(review, type, notice = '', selectFirst = false) {
+  selectedBlockFilter = review; selectedBlockType = type;
+  applyBlockFilter();
+  const feedback = document.getElementById('block-filter-notice');
+  if (feedback) { feedback.textContent = notice; feedback.hidden = !notice; }
+  if (selectFirst) focusFirstFilterResult();
+}
+function focusFirstFilterResult() {
+  updateStickyHeaderOffset();
+  const cards = blockCards();
+  if (cards.length) {
+    selectDescription(null);
+    focusBlock(cards[0]);
+    announce(`Showing ${cards.length} matching block${cards.length === 1 ? '' : 's'}. First matching block ${cards[0].dataset.blockIndex} selected.`);
+  } else {
+    selectedSourceCard = null;
+    updateBlockNavigation();
+    if (!focusEmptyBlockFilter()) {
+      const heading = document.getElementById('blocks-heading');
+      if (heading) { heading.tabIndex = -1; heading.focus({preventScroll: true}); }
+    }
+    announce(document.getElementById('block-filter-empty-message')?.textContent || 'No blocks are available.');
+  }
+}
+function requestBlockFilters(review, type, trigger) {
+  const hiddenDirty = authoringForms.filter(form => {
+    const card = form.closest('.block-card');
+    return card && authoringBaselines.get(form) !== authoringValue(form)
+      && (!matchesReviewFilter(card, review) || !matchesTypeFilter(card, type));
+  });
+  if (hiddenDirty.length && blockFilterDialog) {
+    requestedBlockFilters = {review, type, trigger, scrollX: window.scrollX, scrollY: window.scrollY};
+    blockFilterDialog.showModal();
+    document.getElementById('block-filter-cancel').focus({preventScroll: true});
+    return;
+  }
+  setBlockFilters(review, type, '', true);
+}
+function closeBlockFilterDialog(restoreScroll = true) {
+  const previous = requestedBlockFilters;
+  requestedBlockFilters = null;
+  blockFilterDialog.close();
+  previous?.trigger?.focus({preventScroll: true});
+  if (restoreScroll && previous) window.scrollTo({left: previous.scrollX, top: previous.scrollY, behavior: 'instant'});
+}
+document.getElementById('block-filter-cancel')?.addEventListener('click', () => closeBlockFilterDialog());
+blockFilterDialog?.addEventListener('cancel', event => { event.preventDefault(); closeBlockFilterDialog(); });
+document.getElementById('block-filter-confirm')?.addEventListener('click', () => {
+  const requested = requestedBlockFilters;
+  closeBlockFilterDialog(false);
+  if (requested) setBlockFilters(requested.review, requested.type,
+    'Edited blocks are hidden. Your unsaved edits remain in this tab; reset filters to show them again.', true);
+});
 if (blockFilter) {
   const saved = sessionStorage.getItem(blockFilterKey);
   if (['all', 'approved', 'pending', 'excluded'].includes(saved)) selectedBlockFilter = saved;
+  const savedType = sessionStorage.getItem(blockTypeFilterKey);
+  if (['all', 'heading', 'paragraph', 'list', 'image', 'table', 'other'].includes(savedType)) selectedBlockType = savedType;
   applyBlockFilter();
   blockFilter.querySelectorAll('[data-filter]').forEach(link => link.addEventListener('click', event => {
     event.preventDefault();
-    selectedBlockFilter = link.dataset.filter;
-    applyBlockFilter();
+    requestBlockFilters(link.dataset.filter, selectedBlockType, link);
+  }));
+  blockTypeFilter?.querySelectorAll('[data-type-filter]').forEach(link => link.addEventListener('click', event => {
+    event.preventDefault(); requestBlockFilters(selectedBlockFilter, link.dataset.typeFilter, link);
   }));
 }
 
@@ -558,11 +692,11 @@ function updateBlockNavigation() {
     : cards.length ? 'No block selected. Use Next block to begin.'
       : document.querySelector('.block-card') ? '0 blocks shown' : 'No blocks are available.';
   const empty = document.getElementById('block-filter-empty');
-  const emptyFilter = cards.length === 0 && !!document.querySelector('.block-card') && selectedBlockFilter !== 'all';
+  const emptyFilter = cards.length === 0 && !!document.querySelector('.block-card') && (selectedBlockFilter !== 'all' || selectedBlockType !== 'all');
   if (empty) {
     empty.hidden = !emptyFilter;
     document.getElementById('block-filter-empty-message').textContent = emptyFilter
-      ? selectedBlockFilter === 'pending' ? 'No items left to review in this filter.' : 'No blocks match this filter.'
+      ? selectedBlockFilter === 'pending' ? 'No items left to review with these filters.' : 'No blocks match these filters.'
       : '';
   }
   [previous, next].forEach(button => {
@@ -574,14 +708,7 @@ function updateBlockNavigation() {
 
 document.getElementById('show-all-blocks')?.addEventListener('click', event => {
   event.preventDefault();
-  const remembered = document.getElementById(sessionStorage.getItem(blockSelectionKey));
-  selectedBlockFilter = 'all';
-  applyBlockFilter();
-  const target = remembered?.classList.contains('block-card') ? remembered : blockCards()[0];
-  if (target) {
-    selectSourceBlock(target);
-    focusBlock(target);
-  }
+  setBlockFilters('all', 'all', '', true);
 });
 
 function focusEmptyBlockFilter() {
@@ -592,9 +719,16 @@ function focusEmptyBlockFilter() {
   return true;
 }
 
+function revealLinkedBlock(card) {
+  if (card.hidden && blockFilter) {
+    setBlockFilters(matchesReviewFilter(card, selectedBlockFilter) ? selectedBlockFilter : 'all',
+      matchesTypeFilter(card, selectedBlockType) ? selectedBlockType : 'all',
+      'Filters changed to show the linked block. Your saved content and review decisions are unchanged.');
+  }
+}
 function focusBlock(card) {
   if (!card) return;
-  if (card.hidden && blockFilter) { selectedBlockFilter = 'all'; applyBlockFilter(); }
+  if (card.hidden) return;
   card.focus({ preventScroll: true });
   card.scrollIntoView({ block: 'start' });
 }
@@ -702,14 +836,16 @@ function focusLinkedBlock() {
   if (card?.classList.contains('block-card')) {
     // A saved action/reload must not turn an empty chosen filter into All.
     // Explicit incoming block links still reveal their target as before.
-    if (card.hidden && !blockCards().length && (pendingBlockId || performance.getEntriesByType('navigation')[0]?.type === 'reload')) return;
+    if (pendingReviewFocus) return;
+    revealLinkedBlock(card);
     selectDescription(null);
     focusBlock(card);
   }
   else if (card?.classList.contains('image-description-record')) {
     const owner = card.closest('.block-card');
     if (owner) {
-      if (owner.hidden) { selectedBlockFilter = 'all'; applyBlockFilter(); }
+      if (pendingReviewFocus) return;
+      revealLinkedBlock(owner);
       selectSourceBlock(owner);
       selectDescription(null);
       card.focus({preventScroll: true});
@@ -771,48 +907,51 @@ function focusAccessibilityFinding() {
   target.scrollIntoView({block: 'start'});
 }
 window.addEventListener('load', focusAccessibilityFinding, {once: true});
-const pendingBlockId = sessionStorage.getItem(reviewAdvanceKey);
+let pendingReviewFocus = null;
+try { pendingReviewFocus = JSON.parse(sessionStorage.getItem(reviewAdvanceKey)); } catch { /* Ignore a superseded selection format. */ }
 window.addEventListener('load', () => {
-  if (!pendingBlockId && performance.getEntriesByType('navigation')[0]?.type === 'reload' && focusEmptyBlockFilter()) return;
-  if (pendingBlockId || location.hash.startsWith('#block-') || location.hash.startsWith('#visual-') || location.hash === '#image-description-tools') return;
+  if (!pendingReviewFocus && focusEmptyBlockFilter()) return;
+  if (pendingReviewFocus || location.hash.startsWith('#block-') || location.hash.startsWith('#visual-') || location.hash === '#image-description-tools') return;
   const card = document.getElementById(sessionStorage.getItem(blockSelectionKey));
   if (!card?.classList.contains('block-card')) return;
   selectedSourceCard = card;
   applyBlockFilter();
   if (selectedSourceCard) focusBlock(selectedSourceCard);
 }, {once: true});
-if (pendingBlockId) {
+if (pendingReviewFocus) {
   sessionStorage.removeItem(reviewAdvanceKey);
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
   window.addEventListener('load', () => setTimeout(() => {
+    try {
     if (location.hash === '#image-description-tools') return;
     // A reviewer who has entered provider setup keeps focus there.
     if (document.activeElement?.closest('#image-draft-toolbar')) return;
     if (focusEmptyBlockFilter()) return;
     const complete = document.getElementById('structure-review-complete');
-    if (complete) { complete.focus({preventScroll: true}); complete.scrollIntoView({block: 'center'}); return; }
-    const remembered = document.getElementById(pendingBlockId);
-    const pendingCard = remembered && !remembered.hidden ? remembered : blockCards()[0];
+    if (pendingReviewFocus.advance && complete) { complete.focus({preventScroll: true}); complete.scrollIntoView({block: 'center'}); return; }
+    const remembered = document.getElementById(pendingReviewFocus.blockId);
+    const cards = Array.from(document.querySelectorAll('.block-card'));
+    const index = cards.indexOf(remembered);
+    const following = [...cards.slice(index + 1), ...cards.slice(0, Math.max(0, index))].filter(card => !card.hidden);
+    const pendingCard = !pendingReviewFocus.advance && remembered && !remembered.hidden ? remembered
+      : following.find(card => ['unreviewed', 'needs_review'].includes(card.dataset.reviewStatus)) || following[0]
+        || (remembered && !remembered.hidden ? remembered : blockCards()[0]);
     if (!pendingCard) return;
     focusBlock(pendingCard);
+    } finally { pendingReviewFocus = null; }
   }, 50), { once: true });
 }
 
-function nextReviewBlockId(card) {
-  const cards = Array.from(document.querySelectorAll('.block-card'));
-  const index = cards.indexOf(card);
-  return [...cards.slice(index + 1), ...cards.slice(0, index)]
-    .find(item => !item.hidden && ['unreviewed', 'needs_review'].includes(item.dataset.reviewStatus))?.id || '';
-}
-function rememberReviewAdvance(card) {
-  const nextId = nextReviewBlockId(card) || card.id;
-  sessionStorage.setItem(reviewAdvanceKey, nextId);
-  sessionStorage.setItem(blockSelectionKey, nextId);
+function rememberReviewResult(card, advance = false) {
+  if (!card) return;
+  sessionStorage.setItem(reviewAdvanceKey, JSON.stringify({blockId: card.id, advance}));
+  sessionStorage.setItem(blockSelectionKey, card.id);
   // An old hash can point to the now-hidden approved card and reveal All blocks
   // before reload restores the pending selection. Keep the active filter instead.
   history.replaceState(null, '', location.pathname + location.search);
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 }
+function rememberReviewAdvance(card) { rememberReviewResult(card, true); }
 
 document.querySelectorAll('.block-form').forEach((form) => form.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -833,23 +972,17 @@ document.querySelectorAll('.block-form').forEach((form) => form.addEventListener
   else delete values.level;
   const saveAndApprove = event.submitter?.hasAttribute('data-save-and-approve');
   try {
+    const otherDirty = authoringForms.find(other => other !== form && authoringBaselines.get(other) !== authoringValue(other));
+    if (otherDirty) throw new Error('Save or revert changes in the other editor before saving this block.');
     if (saveAndApprove) {
-      const otherDirty = authoringForms.find(other => other !== form && authoringBaselines.get(other) !== authoringValue(other));
-      if (otherDirty) throw new Error('Save or undo changes in the other editor before saving and approving this block.');
       delete values.review_status;
     }
     form.dataset.saving = 'true';
+    updateMergeControls();
     const saved = await api(`/api/blocks/${encodeURIComponent(form.dataset.blockId)}${saveAndApprove ? '/save-and-approve' : ''}`, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(values) });
     if (returnToAccessibility(form.closest('.block-card'))) return;
     const owner = form.closest('.block-card');
-    sessionStorage.removeItem(reviewAdvanceKey);
-    if (owner && saveAndApprove && form.classList.contains('image-block-form')) {
-      rememberReviewAdvance(owner);
-    } else if (owner) {
-      sessionStorage.setItem(blockSelectionKey, owner.id);
-      history.replaceState(null, '', location.pathname + location.search + '#' + encodeURIComponent(owner.id));
-      if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
-    }
+    rememberReviewResult(owner, Boolean(saveAndApprove));
     announce(saveAndApprove ? 'Block saved and approved.' : saved.block_status === 'needs_review' ? 'Changes saved. Review the saved content, then approve it.' : 'Block saved.');
     window.location.reload();
   } catch (error) {
@@ -858,6 +991,7 @@ document.querySelectorAll('.block-form').forEach((form) => form.addEventListener
     announce(error.message);
   } finally {
     delete form.dataset.saving;
+    updateMergeControls();
   }
 }));
 
@@ -952,6 +1086,7 @@ document.querySelectorAll('.complex-visual-form').forEach((form) => form.addEven
   finally {
     button.disabled = false;
     if (restoreFocus && document.activeElement === document.body) button.focus({preventScroll: true});
+    updateMergeControls();
   }
 }));
 
@@ -971,17 +1106,30 @@ document.querySelectorAll('.block-action').forEach((button) => button.addEventLi
   const blockId = button.dataset.blockId;
   const body = {};
   if (action === 'toggle-excluded') action = button.dataset.currentStatus === 'excluded' ? 'include' : 'exclude';
+  if (action === 'merge') {
+    const reason = mergeDisabledReason(button);
+    if (reason) {
+      updateMergeControls(); announce(reason);
+      const message = button.closest('.block-card')?.querySelector('.block-action-message');
+      if (message) { message.textContent = reason; message.hidden = false; }
+      return;
+    }
+    body.expected_review_token = button.dataset.mergeToken;
+    body.expected_next_block_id = button.dataset.nextBlockId;
+    mergeInProgress = true;
+    updateMergeControls();
+  }
   if (action === 'split') {
     const textarea = button.closest('.block-card').querySelector('textarea');
     body.offset = textarea?.selectionStart || 0;
     if (!body.offset) { announce('Place the text cursor where the block should split.'); textarea?.focus(); return; }
   }
   try {
-    if (action === 'approve') {
+    if (action !== 'merge') {
       const dirty = authoringForms.find(form => authoringBaselines.get(form) !== authoringValue(form));
       if (dirty) {
         dirty.closest('.block-card')?.querySelector('[data-save-and-approve]')?.focus();
-        throw new Error('There are unsaved edits. Use Save and approve for the edited block, or save its other edited fields first.');
+        throw new Error('There are unsaved edits. Save or revert them before changing the saved blocks.');
       }
     }
     await api(`/api/blocks/${encodeURIComponent(blockId)}/${action}`, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(body) });
@@ -989,13 +1137,16 @@ document.querySelectorAll('.block-action').forEach((button) => button.addEventLi
     if (['approve', 'flag', 'exclude', 'include'].includes(action)) {
       const currentCard = button.closest('.block-card');
       rememberReviewAdvance(currentCard);
-    }
+    } else rememberReviewResult(button.closest('.block-card'));
     announce('Review action saved.');
     window.location.reload();
   } catch (error) {
     announce(error.message);
     const message = button.closest('.block-card')?.querySelector('.block-action-message');
     if (message) { message.textContent = error.message; message.hidden = false; }
+    if (action === 'merge' && /^(The document changed|The next block changed)\./.test(error.message)) mergeSnapshotStale = true;
+  } finally {
+    if (action === 'merge') { mergeInProgress = false; updateMergeControls(); }
   }
 }));
 
@@ -1007,10 +1158,13 @@ document.querySelectorAll('#undo-action, #reading-order-undo').forEach(button =>
   const disabledStates = controls.map(control => control.disabled);
   controls.forEach(control => { control.disabled = true; });
   try {
+    const dirty = authoringForms.find(form => authoringBaselines.get(form) !== authoringValue(form));
+    if (dirty) {
+      dirty.closest('.block-card')?.querySelector('button[type="submit"]')?.focus();
+      throw new Error('Save or revert unsaved edits before Undo so they remain recoverable.');
+    }
     await api('/api/review/undo', { method: 'POST', headers: csrfHeaders(), body: '{}' });
-    sessionStorage.removeItem(reviewAdvanceKey);
-    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
-    if (selectedSourceCard) history.replaceState(null, '', location.pathname + location.search + '#' + encodeURIComponent(selectedSourceCard.id));
+    rememberReviewResult(selectedSourceCard || document.getElementById(sessionStorage.getItem(blockSelectionKey)));
     announce('Last action undone.');
     window.location.reload();
   } catch (error) {
@@ -1702,6 +1856,14 @@ if (draftToolbar) {
     warnings: JSON.parse(form.dataset.warnings || '[]'), decorative: form.dataset.decorative === 'true'
   });
   const showDownload = result => {
+    const responsePath = document.getElementById('draft-response-path');
+    if (typeof result.manual_instructions === 'string' && result.response_delivery?.suggested_path) {
+      document.getElementById('draft-copy-instructions-text').value = result.manual_instructions;
+      if (responsePath) responsePath.textContent = result.response_delivery.suggested_path;
+      document.getElementById('draft-copy-instructions-status').textContent = '';
+    } else {
+      document.getElementById('draft-copy-instructions-status').textContent = 'Save your work and relaunch the app to include the project response destination in the ZIP and copied instructions.';
+    }
     const controls = savedOutputControls(result);
     const open = controls.querySelector('button');
     const saved = document.createElement('p'); saved.className = 'draft-saved-path';

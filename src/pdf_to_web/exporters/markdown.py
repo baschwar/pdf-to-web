@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .common import is_excluded, table_cell, list_render_items
+from .common import blocks_with_image_descriptions, is_excluded, table_cell, list_render_items
 
 
 def _block(block: dict[str, Any], depth: int = 0) -> str:
@@ -45,5 +45,5 @@ def _block(block: dict[str, Any], depth: int = 0) -> str:
 
 def render_document(document: dict[str, Any]) -> str:
     return "\n\n".join(
-        content for block in document.get("blocks", []) if (content := _block(block))
+        content for block in blocks_with_image_descriptions(document) if (content := _block(block))
     ) + "\n"

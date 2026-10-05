@@ -204,6 +204,42 @@ def block_anchors(block, anchors):
     return markup + ''.join(block_anchors(child, anchors) for child in block.get('children', []))
 
 
+def standalone_description_blocks(document, *, prefix=''):
+    """Project authored standalone equivalents without changing review records."""
+    from ..image_review import descriptions_for
+
+    def walk(blocks):
+        for block in blocks:
+            yield block
+            yield from walk(block.get('children', []))
+
+    blocks = list(walk(document.get('blocks', [])))
+    represented = {str(b['publication_description_id']) for b in blocks
+                   if b.get('publication_description_id')}
+    linked = {str(v.get('id')) for b in blocks if b.get('type') == 'image'
+              for v in descriptions_for(document, b)}
+    identities = {str(b.get('id')) for b in blocks}
+    result = []
+    for visual in document.get('review', {}).get('complex_visuals', []):
+        identity = str(visual.get('id') or '')
+        if (visual.get('status') == 'excluded' or visual.get('source_block_id')
+                or identity in linked or identity in represented):
+            continue
+        fields = visual.get('accessibility', {})
+        text = fields.get('long_description') or fields.get('adjacent_text')
+        if not text:
+            continue
+        base = prefix + (identity or 'visual-description')
+        block_id, suffix = base, 2
+        while block_id in identities:
+            block_id, suffix = base + f'-description-{suffix}', suffix + 1
+        identities.add(block_id)
+        represented.add(identity)
+        result.append({'id': block_id, 'type': 'paragraph', 'content': text,
+                       'publication_description_id': identity})
+    return result
+
+
 def blocks_with_image_descriptions(document):
     """Render every explicit image equivalent beside its image, preserving IDs."""
     from ..image_review import descriptions_for
@@ -225,4 +261,4 @@ def blocks_with_image_descriptions(document):
                     identity = str(block['id']) + '-description' + (f'-{index + 1}' if index else '')
                     result.append({'id': identity, 'type': 'paragraph', 'content': text})
         return result
-    return expand(document.get('blocks', []))
+    return expand(document.get('blocks', [])) + standalone_description_blocks(document)

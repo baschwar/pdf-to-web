@@ -512,6 +512,9 @@ def _approve_block(block: dict[str, Any]) -> None:
 
 def update_block(project_dir: Path, block_id: str, changes: dict[str, Any], *, approve_after_save: bool = False) -> dict[str, Any]:
     document = ensure_review_document(project_dir)
+    if 'expected_review_token' in changes:
+        from .image_review import validate_token
+        validate_token(document, changes['expected_review_token'])
     if 'link_block_id' in changes:
         # Link labels can belong to a nested item, while the displayed top-level
         # block owns its content review. Save both in one existing Undo snapshot.
@@ -789,7 +792,7 @@ def merge_next_reason(block: dict[str, Any], following: dict[str, Any] | None) -
     if following is None:
         return 'There is no following block to merge.'
     if block.get('type') == 'list' or following.get('type') == 'list':
-        return 'Merge next cannot join list containers or create a list from mixed blocks. Edit the list items separately.'
+        return 'List blocks cannot be merged here. Edit the list items separately.'
     if block.get('type') not in TEXT_BLOCK_TYPES or block.get('type') != following.get('type'):
         return 'Merge next only joins adjacent text blocks of the same type. It does not convert headings or paragraphs into list items.'
     if any(node.get('excluded') or node.get('review', {}).get('status') == 'excluded' for node in (block, following)):
@@ -809,10 +812,17 @@ def merge_next_reason(block: dict[str, Any], following: dict[str, Any] | None) -
     return ''
 
 
-def merge_with_next(project_dir: Path, block_id: str) -> dict[str, Any]:
+def merge_with_next(project_dir: Path, block_id: str, *, expected_review_token: str | None = None,
+                    expected_next_block_id: str | None = None) -> dict[str, Any]:
     document = ensure_review_document(project_dir)
+    if expected_review_token is not None:
+        from .image_review import review_token
+        if not isinstance(expected_review_token, str) or expected_review_token != review_token(document):
+            raise ValueError('The document changed. Reload Structure and review both blocks before merging.')
     siblings, index, block = _find_location(document.get("blocks", []), block_id)
     following = siblings[index + 1] if index + 1 < len(siblings) else None
+    if expected_next_block_id is not None and (following is None or following.get('id') != expected_next_block_id):
+        raise ValueError('The next block changed. Reload Structure and review both blocks before merging.')
     reason = merge_next_reason(block, following)
     if reason:
         raise ValueError(reason)

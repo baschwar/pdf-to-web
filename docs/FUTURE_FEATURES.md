@@ -5,6 +5,53 @@ observed issues; they are not implemented unless explicitly marked complete.
 Implementation requires a scoped directive and verification. Keep private
 project snapshots, screenshots and assessment output untracked under `build/`.
 
+## Explicit source-header title recovery
+
+Recorded 2026-10-05. **Automatic detection remains a limitation; manual arranged
+page recovery is locally verified.** A source can have a small repeated running
+header omitted from raw extraction while the largest-font heuristic selects a
+body section as the title. The author's sample assessment was positive apart
+from this missing H1. Inspection confirmed that the header has no extracted block
+ID and that the committed baseline makes the same title choice.
+
+A bounded preservation fix prevents reopening from adding a replacement source
+title after saved heading decisions. On a disposable copy, demoting the wrong H1
+and setting an explicit Arrange Pages title produced one semantic H1, preserved
+tables and links, exported saved artifacts and supported Undo. No actual project
+was repaired or re-extracted. A future source-title choice should display source
+candidates, let the author select or enter the title, preserve existing text and
+IDs, record provenance only when verified and require review. Do not silently
+treat every running header or largest-font line as the document title. Private
+evidence is in `build/bloodborne-title-readonly-20261005/`.
+
+## Preserve verified PDF bold and italic spans
+
+Recorded 2026-10-05. **Low-priority proposal; not implemented or a release blocker.**
+Read-only source, raw-extraction, model and saved-export comparison confirmed that
+font metadata can survive in provenance while normalized table cells lose their
+mixed styles. Existing paragraph/list strong and emphasis runs render correctly
+in HTML, Gutenberg and WXR content. General font-to-run normalization, styled
+table-cell output and Markdown formatting remain gaps. Some raw elements combine
+different PDF fonts under one font value, so a whole-element font label cannot
+reliably describe every span. Private evidence is in
+`build/inline-style-readonly-20261005/`; no real project was changed.
+
+A bounded first implementation should preserve unambiguous ordered source spans
+in newly processed paragraphs, list items and table cells. Use explicit font
+metadata and exact text/region correspondence; ambiguous PDF associations remain
+for review. Visual weight or slant alone does not establish semantic importance
+or emphasis. Preserve structural headings and table header scope rather than
+turning every bold label into strong text. Define presentation styling separately
+from author-confirmed strong/em semantics before changing the run contract.
+
+Combined bold/italic, styled links and footnote references need a deliberate run
+composition plan. Extend shared rendering across HTML, Gutenberg and WXR, and
+define Markdown behavior. Preserve table spans, IDs, reading order, destinations,
+footnote backlinks and approval fingerprints. Existing projects require an
+explicit reversible action with fresh review, never automatic re-extraction or
+approval. Acceptance should cover mixed/combined runs, links, footnotes, lists,
+table cells, editing, Undo, save/reopen, arranged pages and saved artifacts.
+
 ## Discoverable manual WordPress media mapping
 
 Recorded 2026-10-04 at the user's request. **Locally implemented; verification

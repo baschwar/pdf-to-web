@@ -46,13 +46,15 @@ main form > button { margin-right: .5rem; margin-bottom: .65rem; }
 .review-task-summary { width: 100%; }
 .review-task-summary p { margin-bottom: .5rem; }
 .block-filter { width: 100%; margin-block: .25rem; font-size: .825rem; }
-#block-review-filter { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem; }
-#block-review-filter > * { flex: none; margin: 0; }
-#block-review-filter a { display: inline-block; padding-block: .15rem; text-underline-offset: .2rem; white-space: nowrap; }
-#block-review-filter [aria-current="true"] { font-weight: 700; color: var(--pico-color); text-decoration-thickness: 2px; }
+#block-review-filter, #block-type-filter { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem; }
+#block-review-filter > *, #block-type-filter > * { flex: none; margin: 0; }
+#block-review-filter a, #block-type-filter a { display: inline-block; padding-block: .15rem; text-underline-offset: .2rem; white-space: nowrap; }
+#block-review-filter [aria-current="true"], #block-type-filter [aria-current="true"] { font-weight: 700; color: var(--pico-color); text-decoration-thickness: 2px; }
+#block-type-filter { margin-block-start: .15rem; }
 #block-review-filter #block-filter-count { margin-inline-start: auto; color: var(--app-muted); white-space: nowrap; }
 .block-filter-empty { width: 100%; margin: 0; padding: .5rem .65rem; background: #f4f7f7; border-left: 3px solid var(--app-teal); font-size: .875rem; }
 .block-filter-empty a { display: inline-block; padding-block: .2rem; }
+.block-filter-notice { width: 100%; margin: 0; font-size: .8rem; }
 .block-card[hidden] { display: none; }
 .result-table-wrap { overflow-x: auto; }
 .result-table .result-count { font-size: 1.5rem; font-weight: 750; }
@@ -102,7 +104,8 @@ main .inline-file-form > button { flex: 0 0 auto; width: auto; margin: 0; }
 .checkbox-label input { margin: 0; }
 .review-toolbar, .block-card > header, .block-card > footer, .preview-controls, .preview-toolbar, .segmented-control { display: flex; gap: .75rem; align-items: center; justify-content: space-between; flex-wrap: wrap; }
 .structure-layout { display: grid; grid-template-columns: minmax(20rem, 42%) minmax(28rem, 1fr); gap: 1.5rem; align-items: start; }
-.source-pane { position: sticky; top: calc(var(--app-header-height) + 1rem); }
+.source-pane { position: sticky; top: calc(var(--app-header-height) + 1rem); max-height: calc(100vh - var(--app-header-height) - 2rem); max-height: calc(100dvh - var(--app-header-height) - 2rem); overflow-y: auto; }
+.source-pane:focus-visible { outline: 3px solid #1c6ea4; outline-offset: 2px; }
 .source-page-controls { display: flex; align-items: center; gap: .5rem; margin-bottom: .75rem; }
 .source-page-controls button { width: auto; margin: 0; }
 .source-page-controls label { display: flex; align-items: center; gap: .4rem; margin: 0; }
@@ -116,10 +119,10 @@ button:disabled { opacity: 1; color: #4b5563; background: #e5e7eb; border-color:
 .block-navigation-position { min-width: 8rem; text-align: center; color: var(--app-muted); line-height: 1.25; }
 .block-navigation-position span { display: block; }
 #selected-block-page { color: var(--pico-color); font-size: .8rem; font-weight: 700; }
-.source-image-stage { position: relative; display: block; width: 100%; max-width: 100%; }
+.source-image-stage { position: relative; display: block; width: fit-content; max-width: 100%; border: 1px solid var(--app-border); background: #eee; }
 .source-pane img[hidden] { display: none; }
 #source-page-retry { width: auto; margin-bottom: .75rem; }
-.source-pane img { display: block; width: 100%; max-height: calc(100vh - 14rem); object-fit: contain; object-position: top center; border: 1px solid var(--app-border); background: #eee; }
+.source-pane img { display: block; width: auto; height: auto; max-width: 100%; max-height: calc(100vh - 14rem); border: 0; }
 #source-highlights { position: absolute; inset: 0; pointer-events: none; }
 .source-highlight { position: absolute; border: 4px solid #c2410c; background: rgb(255 237 213 / 35%); box-shadow: 0 0 0 2px white; }
 .block-card { border: 1px solid var(--app-border); border-radius: 6px; padding: .75rem; margin-bottom: .75rem; box-shadow: none; scroll-margin-top: var(--structure-scroll-offset); }
@@ -170,7 +173,7 @@ button:disabled { opacity: 1; color: #4b5563; background: #e5e7eb; border-color:
 .segmented-control[role="group"] > button[type="button"] { --pico-form-element-spacing-horizontal: 1rem; flex: none; border-radius: var(--pico-border-radius); margin: 0; }
 .visually-hidden { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid #1c6ea4; outline-offset: 2px; }
-@media (max-width: 900px) { .structure-layout, .project-actions { grid-template-columns: 1fr; } .source-pane { position: static; } .source-pane img { max-height: 60vh; } .project-list > li { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .structure-layout, .project-actions { grid-template-columns: 1fr; } .source-pane { position: static; max-height: none; overflow-y: visible; } .source-pane img { max-height: 60vh; } .project-list > li { grid-template-columns: 1fr; } }
 @media (max-width: 520px) { .block-navigation { grid-template-columns: 1fr 1fr; } .block-navigation-position { grid-column: 1 / -1; grid-row: 1; } }
 
 .output-pages-layout { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(0, 3fr); gap: 2rem; }
@@ -244,6 +247,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .bulk-description { border-left: 3px solid #98b4c6; padding-left: 1rem; }
 #bulk-review-confirmation { padding: 1rem; border: 2px solid #17466a; }
 
-.saved-output-controls code, .draft-saved-path code, #export-result code, #media-export-result code, #output-page-message code { overflow-wrap: anywhere; white-space: normal; }
+.saved-output-controls code, .draft-saved-path code, #draft-response-destination code, #export-result code, #media-export-result code, #output-page-message code { overflow-wrap: anywhere; white-space: normal; }
 .browser-copy-option { margin-block: .75rem; }
 #draft-downloads button, #export-result, #media-export-result, #output-page-message { scroll-margin-top: calc(var(--app-header-height) + 1rem); }

@@ -72,6 +72,11 @@ the useful default.
 Drafts are not generated automatically when a project is created or reopened.
 Manual exchange requires attaching the package to the chosen tool and importing
 its completed response JSON; it does not inherit another project's descriptions.
+Authored standalone visual equivalents are included after document content in
+HTML, Gutenberg, WXR and Markdown. Arranged pages include each applicable
+equivalent once; linked image descriptions stay beside their image. Publication
+still requires the existing review decisions, and excluded descriptions and
+unaccepted drafting suggestions are omitted.
 Local Ollama and paid OpenAI generation require the explicit generation action
 and their existing provider setup/consent. Importing drafts never grants approval.
 
@@ -96,7 +101,26 @@ and cannot be applied. Request a replacement after inspecting the changed contex
 Beside the ZIP controls, **Copy instructions for Codex/ChatGPT** copies the
 package handoff prompt. Attach the saved project ZIP in your chosen tool, paste the
 instructions and run the request. Return its completed `response-template.json`
-for validation, import and human review. The button preserves unsaved editor fields
+for validation, import and human review. Copied instructions, `INSTRUCTIONS.txt`
+and `request.json` all name the current project's absolute `output/image-drafts/`
+response destination. Before export, the prompt names the folder and refers to
+`response_delivery.suggested_path` in the attached request for the unique filename.
+After export, the copied prompt matches the ZIP instructions and includes that
+exact suggested JSON path. Project switching updates the destination.
+
+A receiving tool with authorized local filesystem access saves there; it must
+never overwrite earlier responses. If the suggested name is occupied, append
+`-2`, `-3` or the next unused number before `.json` and report the actual path.
+A browser or tool without access returns the completed JSON as an attachment or
+download. It must not invent another folder or claim a local save. These manual
+handoffs include your local project path, which is disclosed when you share the
+prompt or ZIP; the app does not send it automatically. The delivery metadata is
+additive and does not change the response schema or identity checks. A completed
+JSON already saved elsewhere can be selected from that location in the original
+project's **Validate responses**, followed by explicit **Import valid drafts**;
+moving or renaming it is unnecessary.
+
+The button preserves unsaved editor fields
 and selections. Copy success is announced; if both clipboard methods fail, a
 read-only, selected prompt appears for manual copying. More guidance is in
 **Help → Image descriptions**, which opens separately from unsaved authoring.

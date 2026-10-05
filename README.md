@@ -1,5 +1,9 @@
 # PDF to Web
 
+Current development version: **0.7.1**. This patch stabilizes existing review,
+source-preview and export workflows without changing stored schema versions.
+Bulk PDF importing has not been started in this version.
+
 PDF to Web is a local-first conversion tool that turns PDF publications into a
 reviewable normalized document, semantic HTML, Gutenberg block markup, and
 WordPress WXR/XML. [OpenDataLoader PDF](https://github.com/opendataloader-project/opendataloader-pdf)
@@ -334,16 +338,29 @@ an external service. See `docs/GUTENBERG_PREVIEW.md` for its compatibility and
 security boundaries.
 
 The original document filename appears above each workflow screen and in the
-browser tab title. Button groups have spacing, and small text links below
-Previous/Next filter reading order to all blocks, approved blocks, blocks needing
-review, or excluded blocks. Each filter includes its current count in parentheses;
-the visible/total block count shares that line when space permits and wraps on
-narrow screens. The active link is emphasized and selection persists
-when the screen reloads. A direct finding link reveals and focuses its block even
-when filtered out. Saving block content, link text or review state returns to that
-block below the sticky toolbar. Nested link edits return to their owning list;
-if the saved block no longer matches the active filter, All opens to keep it
-visible. Corrections opened from Accessibility still return to the finding.
+browser tab title. Two compact filter rows below Previous/Next combine **Review
+state** (All, Needing review, Approved, Excluded) with **Block type** (All types,
+Headings, Paragraphs, Lists, Images, Tables, Other). Other includes quotes,
+captions, callouts and unclassified blocks. Each row's counts reflect the other
+row's selection; the visible/total count reports their intersection. Linked image
+descriptions affect the image's review state and do not create extra block rows.
+The active links are emphasized; both choices persist separately for each project
+in the browser tab, including Save, approval, Undo and reopening.
+Choosing either filter row selects the first matching block in saved reading
+order and brings it below the sticky controls, with its source context selected.
+This first-result behavior applies to explicit filter changes and Reset filters.
+
+Saving returns to the edited block when it still matches; otherwise it advances
+within the chosen filters. Approval advances within the results. An empty view
+keeps both choices, explains that nothing matches and offers **Reset filters**.
+Before filters hide an unsaved editor, Keep editing is the initial confirmation
+choice. Confirming keeps its text in this tab; reset filters to show it again and
+save before leaving or reloading. Other saves, structural actions and Undo refuse
+to discard those unsaved fields. Stale saves preserve entered fields and newer
+saved decisions. Explicit finding links reveal their target and explain any
+filter changes; ordinary saves do not silently open All. Nested link edits remain
+associated with their owning list. Corrections opened from Accessibility still
+return to the finding.
 Arrange Pages keeps **Continue to Preview** separate from the
 four arrangement actions, aligned to the right. Preview's top and bottom
 **Continue to Export** buttons also align to the right, with space between the
@@ -597,6 +614,22 @@ paragraphs. If an element has no recorded region, the source status explains
 that coverage is partial; unoutlined text may still be present in the block.
 No source coordinates are invented.
 
+Source outlines use the PDF's actual MediaBox origin and rotation, including
+nonstandard page sizes. The highlight layer follows the visible page image as
+the window resizes, without including margins around a tall page. Recovered
+first-page titles and subtitles use composed
+PDF text and graphics transforms and encoded glyph widths. Existing projects
+receive a read-only display correction; their stored text, source boxes, review
+decisions and Undo history stay intact. When edited text cannot be associated
+confidently with one source region, the app omits the outline and explains why.
+On desktop, the source pane stays within the available window height and scrolls
+internally to reveal the selected region. It is keyboard focusable for manual
+scrolling; selecting a block preserves focus in its review controls. Narrow
+layouts retain normal page scrolling.
+An accurate outline does not establish correct classification, reading order or
+text completeness. Compare infographic headings, duplicate text, numbered groups
+and icon meaning with the original before approving publication.
+
 The Accessibility screen derives review items from the current reviewed
 document, including incomplete structural decisions, image alternatives,
 complex-visual text equivalents, table semantics, heading hierarchy, link
@@ -651,7 +684,17 @@ the drafts, then review each image. The ZIP's original `response-template.json`
 is blank and cannot supply completed descriptions. An unfilled template gets one
 actionable validation message. Validation alone does not import or approve.
 Copying preserves unsaved edits. If clipboard copying fails, selectable instructions
-appear for manual copying. The request ZIP is saved in the
+appear for manual copying. The copied instructions, ZIP `INSTRUCTIONS.txt` and
+`request.json` identify this project's absolute `output/image-drafts/` destination
+for the completed response. Export chooses a unique response filename; a tool
+with authorized local access must keep existing files and choose the next unused
+numeric suffix if that name is occupied. A tool without access returns the
+completed JSON as an attachment/download, without inventing another folder or
+claiming a local save. The instructions disclose your local project path when
+you manually share them or the ZIP. The app does not send them automatically.
+You can validate a completed JSON from its current location in the original
+project; moving it is unnecessary. Validation and import still check its original
+identities and context, regardless of filename. The request ZIP is saved in the
 current project's `output/image-drafts/` folder, including explicitly chosen
 project roots. The saved full path appears beside Open output folder.
 Names contain the project title, `image-drafting-request`, UTC time and a unique
@@ -663,6 +706,11 @@ fields directly. Existing text is preserved; use Apply to replace it deliberatel
 Long descriptions are editable beside the image and retained through exports.
 Their image-description cards show the associated image and share its short alt
 text. Saving a visual review confirms in place and retains keyboard focus.
+Authored standalone visual equivalents also appear in semantic HTML, Gutenberg,
+WXR and Markdown, after the document content. Arranged-page projections retain
+each applicable equivalent once. Image-linked equivalents stay beside their
+image; excluded records are omitted. Required review still blocks publication
+until complete, and unaccepted drafting suggestions are not published.
 Structure places **Needs review**, **Exclude**, and **Approve** above each block
 header and source details, in yellow, red, and green respectively.
 Use **Fill empty fields from existing drafts** for previously imported drafts.
@@ -671,14 +719,24 @@ Undo remain available; populated images still need human approval. No key or net
 exchange. See [workflow, providers and exchange schema](docs/IMAGE_DESCRIPTION_DRAFTS.md)
 and [acceptance evidence](docs/IMAGE_DESCRIPTION_DRAFTS_ACCEPTANCE.md).
 
-**Merge next** joins adjacent matching text blocks; it does not combine list
-containers or convert mixed headings/paragraphs into one list. Unsupported
-controls are disabled with an explanation, and failed actions show feedback
-beside the block. Linked, formatted, nested and excluded content is protected
-from merges that would discard it. Supported text merges preserve footnote
+**Merge next** joins a block with the immediately following block in saved reading
+order. It supports matching paragraphs, quotes, captions, callouts, unclassified
+text blocks, and headings at the same level. List blocks cannot be merged here.
+Unsupported pairs are disabled with an explanation. Filters never make a merge
+skip hidden blocks; show All to inspect a hidden neighbor before merging.
+Unsaved edits disable merging immediately, and the saved snapshot and next block
+are checked again before saving. An older running app must be relaunched to load
+the updated controls; existing projects do not need regeneration. Linked,
+formatted, nested and excluded content is protected from merges that would
+discard it. Supported text merges preserve footnote
 references and backlinks, retain source pages, require fresh approval and support
 Undo. A mixed-block list conversion needs an explicit item/nesting design rather
 than a bulk type-change workaround.
+
+Dense infographics can retain useful image assets while their extracted grouping
+and reading order still need manual semantic reconstruction. Review the actual
+preview against the source; retained assets and passing local UI tests do not
+establish automatic infographic conversion acceptance.
 
 Publication exports require current manual approval of included source blocks and
 visual descriptions. Arranged-page exports also require approval of each exported
@@ -812,12 +870,34 @@ in [Future Features](docs/FUTURE_FEATURES.md). The backlog distinguishes missing
 text from nested text whose source outline is incomplete; it does not imply
 these features or corrections are already implemented.
 
+A small repeated running header can be omitted by extraction while title
+recovery chooses a larger section heading. Compare the first source page with
+the chosen title. For an existing project, Arrange Pages lets you set an explicit
+page title without re-extraction: keep all content on one page, demote an incorrect
+document H1 to the appropriate section level in Structure and review that change,
+then save the intended Title in Arrange Pages. Preview, review the page and use
+**Export page** or **Export complete package** there. Standalone HTML includes
+the page H1; when the WordPress template supplies H1, the WXR page title supplies
+it and Gutenberg body markup omits it. Copying body markup alone also requires
+setting the WordPress title field. Ordinary document exports retain their own
+document title. Reopening after a saved review change no longer recreates a
+demoted title; automatic running-header title selection remains a limitation.
+
 Phase 2 structural review and Phase 3A accessibility authoring are complete.
 The application does not include OCR remediation, a spreadsheet-like table
 editor, media sideloading, direct publishing, or
 a claim of automated WCAG conformance. The Phase 1B fixtures have been imported,
 edited, saved, and reopened in an isolated local WordPress instance. Production
 WSUWP compatibility still requires the exact deployed WSU block versions.
+
+PDF bold and italic formatting is only partially preserved. Existing typed
+strong/emphasis runs in paragraphs and list items survive Semantic HTML,
+Gutenberg and WXR content; general PDF font styles are not automatically converted
+to those runs. Table cells currently export plain text with their reviewed header
+and span semantics, and Markdown does not serialize formatting runs. A recovered
+source note can retain italics without implying support for every styled span.
+Broader formatting preservation is a low-priority proposal in
+[Future Features](docs/FUTURE_FEATURES.md).
 
 ## License
 
