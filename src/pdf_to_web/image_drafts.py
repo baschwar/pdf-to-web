@@ -218,6 +218,9 @@ def inspect_response(root, payload):
 
 
 def populate_empty_fields(root, document, entry):
+    from .manual_reconstruction import managed_ids
+    if str(entry['block_id']) in managed_ids(document):
+        return
     """Populate editable fields; retain existing author text and review decisions."""
     block = image(document, entry['block_id'])
     if block.get('decorative') or block.get('review', {}).get('status') == 'excluded':
@@ -381,6 +384,8 @@ def mutate(root, action, data):
         store['settings'] = {'provider': provider, 'model': model.strip()}
         return save_review_document(root, document)
     block_id = data.get('block_id')
+    from .manual_reconstruction import require_unmanaged
+    require_unmanaged(document, block_id)
     block = image(document, block_id)
     if action == 'associate':
         ref = data.get('asset_path')

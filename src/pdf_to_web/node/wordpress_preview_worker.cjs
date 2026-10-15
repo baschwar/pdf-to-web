@@ -107,12 +107,13 @@ function sanitizePreview(fragment) {
     allowedTags: [
       'a', 'blockquote', 'br', 'caption', 'code', 'div', 'em', 'figcaption',
       'figure', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'img', 'li', 'ol',
-      'p', 'pre', 'section', 'span', 'strong', 'table', 'tbody', 'td', 'tfoot',
+      'p', 'pre', 'section', 'span', 'strong', 'sup', 'table', 'tbody', 'td', 'tfoot',
       'th', 'thead', 'tr', 'ul'
     ],
     allowedAttributes: {
       '*': ['class', 'id', 'data-*'],
-      a: ['href', 'title'],
+      a: ['href', 'title', 'aria-label'],
+      section: ['aria-labelledby'],
       img: ['src', 'alt', 'width', 'height', 'loading'],
       ol: ['start', 'type'],
       td: ['colspan', 'rowspan'],

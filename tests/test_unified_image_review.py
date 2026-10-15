@@ -17,6 +17,56 @@ from pdf_to_web.review_state import ensure_review_document, save_review_document
 class UnifiedImageReviewTests(unittest.TestCase):
     setUp = routes.ImageDraftRouteTests.setUp
 
+    def top_approve(self, identity='image-2', **overrides):
+        document = ensure_review_document(self.root)
+        block = next(b for b in document['blocks'] if b['id'] == identity)
+        data = {'review_refresh': True, 'expected_review_token': review_token(document),
+                'displayed_description_ids': [str(v['id']) for v in descriptions_for(document, block)], **overrides}
+        return self.client.post(f'/api/blocks/{identity}/approve', headers=self.headers, json=data)
+
+    def test_top_image_approval_validates_saved_content_and_description_atomically(self):
+        before = self.model(3)
+        result = self.top_approve()
+        self.assertEqual(result.status_code, 200, result.text)
+        after = ensure_review_document(self.root)
+        image = next(b for b in after['blocks'] if b['id'] == 'image-2')
+        self.assertEqual(image['alt'], 'Image purpose 2')
+        self.assertEqual(image['review']['status'], 'approved')
+        self.assertEqual(descriptions_for(after, image)[0]['status'], 'reviewed')
+        self.assertEqual(after['review_session']['revision'], before['review_session']['revision'] + 1)
+        self.assertIn('review_patch', result.json())
+        undo_last(self.root)
+        self.assertEqual(ensure_review_document(self.root)['review']['complex_visuals'], before['review']['complex_visuals'])
+
+    def test_top_image_approval_rejects_missing_alt_or_equivalent_without_write(self):
+        for missing in ('alt', 'long_description'):
+            with self.subTest(missing=missing):
+                document = self.model(3)
+                if missing == 'alt':
+                    document['blocks'][-1]['alt'] = ''
+                else:
+                    document['review']['complex_visuals'][-1]['accessibility']['long_description'] = ''
+                save_review_document(self.root, document)
+                before = (self.root / 'review/current.json').read_bytes()
+                self.assertEqual(self.top_approve().status_code, 400)
+                self.assertEqual((self.root / 'review/current.json').read_bytes(), before)
+
+    def test_top_decorative_image_approval_needs_no_text_equivalent(self):
+        document = self.model(3)
+        document['blocks'][-1].update(decorative=True, alt='')
+        document['review']['complex_visuals'][-1]['accessibility']['long_description'] = ''
+        save_review_document(self.root, document)
+        result = self.top_approve()
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(ensure_review_document(self.root)['review']['complex_visuals'][-1]['status'], 'not_applicable')
+
+    def test_top_image_approval_rejects_stale_or_hidden_description_scope(self):
+        self.model(3)
+        for overrides in ({'expected_review_token': 'stale'}, {'displayed_description_ids': []}):
+            before = (self.root / 'review/current.json').read_bytes()
+            self.assertEqual(self.top_approve(**overrides).status_code, 400)
+            self.assertEqual((self.root / 'review/current.json').read_bytes(), before)
+
     def test_bulk_description_badges_distinguish_readiness_from_recorded_decision(self):
         for kind, expected_state, expected_label, recorded in (
             ('excluded', 'excluded', 'Excluded', 'Needs Text Equivalent'),

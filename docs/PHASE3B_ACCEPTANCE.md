@@ -1,5 +1,150 @@
 # Phase 3B acceptance ledger
 
+## Unreleased expanded Preview → Export regression — 2026-10-14
+
+Read-only live observation confirmed page 4 of 16, expanded Preview, document
+readyState complete and no captured console warning/error. Both Continue links
+and header Export were outside the workspace under inert ancestors. The local
+server health endpoint returned HTTP 200 and its process was present. This
+establishes unreachable navigation in the observed expanded state; no user
+click/network history was available to prove any earlier request sequence.
+The earlier pagination QA did not exercise Continue while expanded.
+
+Continue now sits inside the expanded toolbar. It carries selected-page,
+mode/profile return context into Export, which explicitly retains whole-document
+scope and existing readiness gates. Opening uses a bounded read-only GET check,
+visible busy feedback and a repeated-click guard. HTTP errors/timeouts restore
+controls and show retry guidance. Restore/Escape remain available. Browser back
+resets busy state and cancels the old recovery timer. No serializer, approval,
+project schema or export-generation behavior changes.
+
+Verification: six focused preview route tests passed; aggregate suite passed
+635 tests. Isolated synthetic 16-page Chrome checks passed page 4, first/last,
+and reconstruction pages at 1280×720, 1440×1000 and 320×650, including expanded
+Continue, selected context, return/back navigation, blocked incomplete exports,
+HTTP 503 recovery, ten-second timeout/retry and one request for repeated clicks.
+No JavaScript errors; navigation left review bytes unchanged. Independent code
+review checked the fix and its back-navigation timer recovery.
+
+No live tab navigation, reload, quit, restart, project mutation or export action
+was performed. No commit/push/release. The current-tab workaround is Restore
+preview (or Escape), then Continue; save drafts before any later deliberate
+relaunch to load changed Python markup. Human VoiceOver, production WSU
+WordPress/plugin compatibility and Windows hardware acceptance remain pending.
+
+
+## Unreleased preview pagination and compact arrangement — 2026-10-13
+
+Preview has Previous/Next, compact Output page selection, Page N of M, Whole
+document and Arrange this page. Navigation carries saved page identity, mode
+and WordPress profile. Empty/reconstruction pages remain visible as unfinished.
+Expanded preview keeps controls reachable, prevents focus on covered background
+controls and restores focus on exit, including Escape from the content frame.
+Content typography, export styles, serializers and stored schema are unchanged.
+
+Arrange Pages uses compact metadata, wrapped assign/reorder actions and inline
+merge controls. Metadata and reviewer-note drafts block in-app navigation and
+mutations; browser departure presents its native unsaved-edit confirmation.
+Saved slugs supply preview URLs. No reconstruction, H1 or extraction finding is
+resolved by these UI changes. Existing approved work remains in the checkout.
+
+Verification: baseline 629 tests passed; four new read-only route/projection
+tests passed; aggregate suite passed 633 tests. Independent screenshot/code UI
+review found no remaining blocker after focus and reconstruction roundtrip fixes.
+Isolated headless Chrome passed at 1440×1000, 1280×720, 1048×650, 390×844 and
+320×650: repeated pagination, boundary focus, empty/held pages, reload, draft
+protection, page/mode/profile return and back navigation, expansion, overflow,
+and disposable save/reopen/Undo. Scoped WCAG A/AA axe checks reported no
+violations; no JavaScript errors were observed. Synthetic review bytes stayed
+unchanged throughout navigation; saved Undo restored page metadata and blocks.
+The supplied Library screenshot was materialized and inspected locally.
+
+Production WSU WordPress/plugin validation, human VoiceOver and actual Windows
+hardware acceptance remain pending. The live server and live project were not
+restarted or edited; no commit, push, tag or release was performed. Save drafts
+in all open tabs before deliberately quitting/relaunching to load Python markup,
+then reopen the same project and reload the browser.
+
+
+## Unreleased generated page title repair — 2026-10-13
+
+Source and heading groups use their first included H1/H2 in reviewed reading
+order, with numbered fallbacks and preserved reconstruction labels. Excluded
+ancestors/headings and paragraph merge provenance do not supply a heading.
+Repeated titles retain distinct automatic slugs. Exact existing custom metadata
+remains preserved. Generated title tracking distinguishes later manual edits;
+legacy recognition requires the precise prior source-builder identity/default.
+
+Preview generated page titles proposes only metadata repair, not regrouping.
+Apply checks the existing proposal digest/review token and supports saved Undo.
+Custom titles and manual slugs stay unchanged; automatic slugs follow refreshed
+titles. Assignments, page identities/order/type/parent metadata, block content and
+block approvals remain intact. Changed page metadata uses the existing review
+invalidation. No automatic repair occurs on project open or code installation.
+
+Verification: 34 focused tests passed, covering source/heading groups, repeated
+and excluded headings, numbered fallbacks, merged provenance, custom overrides,
+manual slugs, conservative legacy recognition, preview/apply/reopen and Undo.
+The full suite passed 629 tests in 37.781 seconds. Separate headless Chrome on
+a disposable grouped-project copy passed four workflow groups, including draft
+protection and exact saved Undo, at 1440px, 390px and 320px, with no JavaScript
+errors or targeted axe violations. Live saved review bytes were verified unchanged.
+No live app restart, project repair, commit, push or release was performed.
+Production WordPress/plugin, human VoiceOver and Windows acceptance remain pending.
+
+## Unreleased explicit page grouping and visual context — 2026-10-13
+
+Implemented separate physical source-page and optional heading-section methods,
+checkbox selection, read-only proposals, exact moves and readable metadata
+effects. Apply recomputes the proposal and checks its digest/current review token,
+saves once and supports saved Undo. Source grouping retains exact matches,
+excluded references, reconstruction placeholders and existing empty drafts;
+ambiguous source bundles need an explicit available destination. Heading
+selection preserves unselected assignments and metadata. Held fragments are not
+implicitly moved into heading sections. Empty/no-included-content pages remain
+unfinished, and no arrangement clears review or publication gates.
+
+New title-derived slugs are normalized, unique, reserved-name safe and bounded
+to 100 characters. Custom overrides persist. Empty pages expose Add content;
+unsaved metadata/reviewer notes prevent arrangement navigation and saves lock
+editable fields while pending. Incomplete contents lists every page and recovery
+actions without weakening package export validation. Populated source-built
+placeholders retain their references as ordinary unfinished pages on restoration;
+subsequent single-page regrouping does not create duplicate assignments.
+
+Standalone visual findings now show real source-page context and pending-check
+links beside the source preview. Classification remains explicitly heuristic.
+Source navigation/filtering, image failure/retry, description decisions,
+save/reopen and Undo preserve block approvals and drafts. Busy preview text wraps
+correctly. Changes do not alter live project data or extraction.
+
+Verification: 37 focused planner/route/reconstruction/visual tests passed. The
+full documented suite passed 622 tests in 37.551 seconds. Generated synthetic
+page-package HTML, Gutenberg and WXR retained the correct page content, with two
+parsed WXR items and no cross-page duplication. Separate headless Chrome passed
+seven grouping workflow groups, explicit ambiguous-source destination selection,
+and six complex-visual groups at desktop, 390px and 320px. Targeted axe checks
+reported no violations or JavaScript errors. Independent UI review checked the
+proposal controls without saving; its wording findings were corrected.
+
+A disposable copy of a local project confirmed distinct physical-page
+and heading-section counts, numeric source grouping and a retained reconstruction
+hold without applying any arrangement. Private input evidence stays ignored.
+Shared Chrome and the live app were untouched. Human VoiceOver, production WSU
+WordPress/plugin compatibility and actual Windows hardware acceptance remain
+pending. No release or publication was performed.
+
+## Unreleased grouping disclosure appearance — 2026-10-13
+
+Arrange Pages' Grouping suggestions uses a bold dark heading and chevron,
+compact tinted section styling, and a visible keyboard focus outline. The
+disclosure is 44px high at 1440px, 390px and 320px viewport widths; Enter and
+Space toggle it without saving. Separate headless Chrome checks found no
+JavaScript errors, POST requests or changes to fixture review bytes. The full
+documented suite passed 595 tests in 35.666 seconds. Final CSS touch-target and
+chevron adjustments were then verified in the browser. Shared Chrome and live
+project data were untouched. Human VoiceOver acceptance remains pending.
+
 Version: 0.7.1. Updated: 2026-10-05.
 
 Local implementation, external acceptance and publication are separate. The
@@ -7,6 +152,532 @@ public ledger records behavior and verification without source-document names,
 private project identities, attachment IDs, revision histories or input hashes.
 Detailed earlier reports are retained only in ignored local evidence. Sanitizing
 this checkout does not remove material from previously published Git history.
+
+## Heading approval and visible rejection feedback — local verification, 2026-10-12
+
+The reported saved H2 heading was reproduced on a disposable copy. H2→H1
+Save & Approve sent the correct final level, preserved text, saved approval in
+one revision and worked again after an in-place patch. No live pending edit was
+changed. This establishes current implementation behavior, not the exact cause
+in the user's open tab, which remains unconfirmed without its error/state evidence.
+Save/approval errors now appear beside the top review actions instead of the
+lower footer; client code also relocates messages on earlier page markup. Another
+unsaved editor names its Block number. Missing atomic endpoints give explicit
+preserve-drafts/relaunch guidance. Stale snapshots, invalid fields and uncertain
+responses retain edits and make the required recovery visible.
+A synthetic API regression verifies level-only approval, unchanged text, one saved
+revision and Undo. 12 focused tests passed; full suite: 592 passed in 33.202s.
+Eight copied-project headless groups passed: heading round trips, other dirty
+editor, earlier-server guard, stale snapshot, native invalid field, missing
+endpoint, responsive feedback and committed-write lost-response protection.
+Zero JavaScript errors and zero targeted card WCAG A/AA violations. A narrow
+feedback screenshot was inspected. Evidence remains ignored under
+build/heading-approval; private content is not checked into Git or shared.
+Keep pending live edits intact while identifying the original rejection. Load
+updated client feedback only after preserving/saving/reverting drafts; no live
+reload or restart was performed. External human acceptance remains pending.
+
+## Compact reading-order type icons — local verification, 2026-10-12
+
+Row type words are replaced by small monochrome icons for paragraph, ordered /
+unordered list, heading, image, table and quote, with a labeled fallback for other
+types. Full names remain in accessible image labels and tooltips shown on hover
+or keyboard focus. Tooltips use the existing manual-popover convention to avoid
+clipping inside scroll panels; they remain hoverable, stay within the viewport,
+and Escape dismisses the tooltip before closing Repair. Glyphs inherit a dark
+contrasting color and have a visible focus outline. No new dependencies.
+Six synthetic headless browser groups passed at 1440×900, 390×844, 320×568 and
+760×320, covering eight labels, focus/Escape, bounded tooltips, compact rows,
+specific mixed-type feedback and compatible staged list merge/Unmerge. Zero
+JavaScript errors and zero targeted full-dialog WCAG A/AA violations. Desktop
+and narrow screenshots were inspected. Full suite: 591 passed in 33.507s.
+Evidence stays ignored under build/type-icons. The live project and browser were
+untouched; save edits and finish/cancel drafts before Command–Shift–R. No restart
+is needed for this icon update. External human VoiceOver acceptance remains pending.
+
+## Mixed-type merge eligibility — local verification, 2026-10-12
+
+Repair reading order now shows each row's saved block type and explains a mixed
+selection with current Block numbers and types. The existing eligibility rule
+still prevents paragraph/list joins; selection never converts extracted types or
+strips list structure. The backend gives the same specific rejection for callers
+that bypass the disabled button. A synthetic regression checks global Block
+104/105 numbering and byte-identical saved state after both preview and Apply
+rejections. Real reported content was tested only on an ignored disposable copy.
+Five browser groups passed: the exact copied selection at desktop, narrow and
+short viewport sizes with keyboard toggles and visible explanation/actions, plus
+server preview/Apply rejection with no copied review mutation. Zero JavaScript
+errors and zero targeted footer WCAG A/AA violations. 20 affected tests passed;
+full suite: 591 passed in 34.992s. Screenshots were inspected locally; private
+source/project evidence stays ignored under build/mixed-merge. Live saved data,
+selection, forms and prior targeted legacy repair were not changed. A separate
+explicit repair is needed if source review confirms extraction misclassification.
+
+## Merge confirmation layout and block labels — local verification, 2026-10-12
+
+The supplied screenshot was materialized through Library and inspected as pixels.
+Pico's global dialog styles imposed a horizontal flex layout and full-viewport
+minimum dimensions. The confirmation now overrides those defaults, stacks one
+scrolling preview above a separate action group, and keeps controls visible.
+Full-app CSS browser checks passed at 1440×900, 390×844, 320×568 and 760×320 with
+long preview text and unbroken strings, keyboard navigation and Escape recovery.
+Block labels follow current draft positions and explicitly identify result numbers
+after Apply. Absorbed origins use original positions, without inventing current
+numbers or changing internal IDs. A fifth browser group verified staged reorder,
+merge, retained originals, Apply/reopen and Unmerge/Apply numbering and stable IDs.
+No JavaScript errors or targeted confirmation WCAG A/AA violations were found.
+19 affected functional tests passed; the full suite passed 590 tests in 33.077s.
+Evidence stays ignored under build/merge-modal. Save edits and finish/cancel a
+draft before Command–Shift–R to load the updated CSS/bundle; these changes require
+no server restart. Live project/browser state was not changed.
+
+## Source-page review pill — local verification, 2026-10-12
+
+A compact text-and-color pill beside Source page reports saved whole-page review:
+green Reviewed, yellow Partially Reviewed and red Needs review. Filters, current
+selection and unsaved fields cannot redefine its scope. Existing effective block
+status, publication requirements, visual readiness and source ranges determine
+it. Required image descriptions belong to their owner task, standalone descriptions
+add tasks, and retained absorbed origins are not live blocks. Shared blocks use
+the same whole-block review decision on each recorded source page.
+
+Exclusions resolve review decisions; all-excluded pages can be Reviewed with an
+explicit explanation that no included content is ready to export. Empty pages,
+reconstruction holds and blocked conversion stay Needs review. A status pill is
+not export approval. Unknown/uncertain write or refresh results stay Needs review
+until authoritative reload. Confirmed save/approve/exclude patches, page navigation,
+merge/unmerge/structural operations, reconstruction and Undo refresh the page map
+before image work or their existing reload, retaining the source pane and edits.
+
+**590 tests passed in 32.955 seconds** using the documented macOS TMPDIR command.
+Focused source projection/async/manual/order routes/top approval: **28 passed in
+1.550 seconds**. **Eight headless browser groups passed with zero JavaScript
+errors and zero targeted source-panel WCAG A/AA violations**. Covered mixed/all/
+none/empty/excluded states, filters with zero visible rows, page boundaries,
+in-place approve/save/exclusion and next-page advancement, required image
+alternatives/descriptions, merged/absorbed origins, persistent Unmerge/Undo,
+manual holds/page switching and committed-write lost-response recovery. Mutation
+samples showed the displayed page and status snapshot stay aligned. Desktop,
+390px and 320px status screenshots were inspected. A fresh disposable merge
+dialog also verified row checkboxes and its visible Merge selected footer.
+
+Evidence is retained under ignored `build/source-page-status`. Runtime diagnosis
+was read-only: the earlier listener stopped, then process91993 appeared on8765
+with this checkout as its working directory, matching public static assets and
+staged-preview route. No packaged app replacement/rebuild is required for merge.
+A supplied screenshot showed the earlier Undo move / Apply reading order UI,
+not hidden/disabled new controls. Detailed private screenshot evidence stays
+untracked. No authenticated live tab was reloaded or inspected, so its exact
+current origin/cache state was not established. Save edits and finish/cancel an
+ordering draft before a cache-bypassing Structure reload for merge visibility;
+new pill server markup requires quit/relaunch and reload after saving.
+
+Version0.7.1, branch main, HEAD6f35cbe; existing dirty work retained. No live
+project mutations, application restart, shared Chrome control, commits, pushes
+or publication were performed. The user's manually saved merge was untouched.
+Human VoiceOver, physical hardware and production WordPress/plugin acceptance
+remain separate and pending.
+
+## Staged paragraph/list merge and persistent Unmerge — 2026-10-12
+
+Approved implementation is now integrated into Repair reading order. Native
+checkboxes select consecutive plain paragraphs or compatible list blocks; Merge
+selected beside Cancel/Apply opens an exact confirmation. Stage merge produces
+one compact draggable row with original-count badge, full result/originals and
+Move to. Draft Undo/Reset/Unmerge/Cancel do not write. Apply replays all ordering,
+merges and unmerges atomically as one saved revision/Undo action. Redundant
+per-block up/down controls are removed; document start/end and accessible Move to
+remain. Existing top Approve / Save & Approve behavior remains intact.
+
+Paragraph joining uses one explicit space and preserves hyphens/internal breaks.
+List joining preserves item IDs, nesting and marker semantics; ordered lists must
+continue numbering. Refuse mixed/image/heading/unsafe rich or associated content,
+numbering restarts, skipped/other-page/excluded/shared-boundary content, incoming
+links to absorbed IDs and conflicting page assignments. Run text remains
+export-authoritative. New merged content is Needs review, never auto-approved.
+
+Versioned optional provenance retains full originals, source regions/assignments,
+review metadata and integrity/fingerprint checks. Persistent Unmerge restores
+unchanged origins after reopen at the current position/page assignment. Changed
+content, nested exclusions, custom notes/source or corrupted/colliding origin IDs
+refuse restoration with an explanation instead of silently losing later work.
+Approval-only changes permit Unmerge. No migration or re-extraction of old projects
+is performed; older stored schema versions remain. Historical Merge next results
+without this provenance do not gain exact Unmerge automatically.
+
+Final documented suite: **584 tests passed in 34.760 seconds** with
+`TMPDIR=/private/tmp .venv/bin/python -m unittest discover -s tests -v`.
+Focused transaction/order/routes/top-approval tests: **34 passed in 1.442 seconds**.
+**25 browser check groups passed with zero JavaScript errors**, including
+**10 independent groups** and separate emulated-touch selection/merge/sort checks.
+Covered exact paragraph/list preview, checkbox keyboard/pointer/touch, stage
+Undo/Reset/Cancel/no writes, one-revision Apply/double-click, persistent Unmerge
+and source regions, item nesting/numbering, changed-exclusion protection,
+stale/failed-preview/lost-response recovery, confirmation focus, missing-image
+feedback, desktop/390/320×600 and 200% equivalent browser-zoom reflow. Independent
+and final targeted automated WCAG A/AA checks had **zero violations**. Actual
+screenshots were inspected. Short windows scroll the bounded panel body while
+footer actions remain reachable; resizing retains the selected row. Source scroll
+regions are labelled/focusable; button contrast avoids intermediate fades.
+
+Independent read-only code review found initial plain-run, absorbed-anchor,
+exclusion and recovered-outline risks. Each was fixed and regression-tested;
+final review found no remaining blocking data-integrity issue. Independent browser
+review found focus, pointer-scroll, short-window and contrast issues, all fixed
+and rechecked. Generated semantic HTML, Gutenberg, arranged-page HTML and parsed
+WXR preserved exact joined text, ordered starts and nested items.
+
+Evidence remains ignored under `build/reading-order-merge` and
+`build/reading-order-merge-independent`. Version **0.7.1**, branch `main`, HEAD
+`6f35cbe`; dirty work preserved. No commit, push, merge or release. Real projects,
+shared Chrome and the live listener at port8765/PID75336 were untouched. Save
+edits, quit/relaunch PTW and reload Structure to load the new server/UI together.
+Human VoiceOver, physical touch/Windows hardware and production WordPress/plugin
+acceptance remain pending; automated/headless results do not complete them.
+
+## One top approval action — local verification, 2026-10-12
+
+Reading order now uses one top Approve / Save & Approve action. Every review
+editor's input/change state participates: text, type, heading level, link labels,
+image alternatives/captions/decorative choice, displayed description fields and
+table accessibility. Reversion restores Approve; edits enable previously approved
+blocks. Combined authoring and link changes validate in memory, then approve and
+save once under the review-write lock with expected-token checking. Invalid or
+conflicting text/link changes never partially save. Draft suggestion editing and
+provider/context setup remain separate operations; they are not implicitly
+applied during approval. Lower duplicate combined buttons are removed. Ordinary
+save and a focus-return link remain available below the fields.
+
+Retain mounted review/source state, next-pending-block advancement, current filters,
+image/description approval scope, one revision/saved Undo, double-click guards,
+stale rejection and uncertain-result recovery. Newly entered edits in other cards
+remain visible without automatic advancement. Older server markup is checked
+before any combined-editor request; instruct relaunch rather than silently
+approving its old saved content.
+
+Baseline: **560 tests passed in 31.533 seconds**. Final documented suite:
+**568 tests passed in 32.567 seconds**. Focused combined approval/image/async/layout
+regressions: **68 passed in 5.601 seconds**. **13 separate headless browser check
+groups passed with zero JavaScript errors**: dirty/reverted fields, input/change,
+keyboard typing, multiple rich-link edits, image/text/table approval, one
+revision/double-click, saved Undo, next-block focus without replacing the mounted
+document, failed/native validation, server error, stale newer data, committed
+save with lost response, busy/other-card race, old-server capability and
+1440/390/320 layouts with the return link. Screenshots were inspected. Generated
+semantic/Gutenberg HTML retained final text, edited link label and its original
+destination. Syntax/compile and `git diff --check` passed. Local evidence remains
+ignored under `build/top-approval-oct12`.
+
+Checkout version: **0.7.1**, branch `main`, HEAD `6f35cbe`, with existing dirty
+work preserved. The user's listener on 127.0.0.1:8765 remained healthy; process
+75336 started 2026-10-10 00:17:44 local host time. Health exposes no build version,
+so it cannot establish that this running process has the October 12 Python
+changes. Save edits, quit/relaunch PTW and reload Structure to use the complete
+change. Shared Chrome and real projects were untouched; only disposable fixtures
+were mutated. No commit, push, merge or publication was performed. Human
+VoiceOver, Windows hardware and production WordPress/plugin acceptance remain
+pending. Multi-select paragraph/list merge is assessed in `FUTURE_FEATURES.md`
+only; its implementation is not authorized or included here.
+
+## Integrated reading-order repair and coordinated Structure tools — 2026-10-09
+
+The compact reading-order prototype is now integrated into Structure through
+**Repair reading order** for the displayed source page. Five-word cards retain
+full-text expansion and explicit Move to alongside pointer/touch/keyboard sorting.
+Changes are staged with Undo/Reset/Cancel; Apply uses one existing saved revision
+and Undo action. Shared-page boundaries stay fixed, excluded/other-page/nested/
+unlocated content is preserved, and no source geometry is invented. Identity,
+review-token, complete permutation and active-provider checks protect writes.
+Existing output reference reconciliation can invalidate page approvals after an
+order change; block content and review decisions remain intact. Dirty editors
+prevent opening; stale/uncertain requests retain drafts with truthful recovery.
+The shipped sortable UI is locally bundled, with pinned source/build/license files
+in `tools/reading-order` and `static/reading-order.*`. This supersedes the earlier
+prototype-only status without claiming external accessibility acceptance.
+
+Structure column headings now share typography and vertical baselines. Source
+navigation reads **Previous Page / Next Page** and matches block navigation's
+44px height. A smaller Repair button shares a row with reconstruction controls
+where space allows. Medium/narrow views stack columns and wrap safely. Help
+retains a visible info icon, keyboard/hover/touch access and Escape dismissal;
+active warnings and reserved source-note space remain intact during async saves.
+
+Final verification: **560 tests passed in 32.122 seconds** using
+`TMPDIR=/private/tmp .venv/bin/python -m unittest discover -s tests -v`.
+Focused reading-order, reconstruction and layout checks: **33 passed**.
+**20 headless browser check groups passed with zero JavaScript errors**, covering
+paired heading/nav baselines at 1440px; safe layouts at 1000, 900, 520, 390 and
+320px; 44px targets; pointer and keyboard Apply/saved Undo; full-text/direct moves;
+dirty/stale guards; repeated open/reload; reconstruction mark/reversal; hover,
+keyboard, touch and Escape help; 108 sampled frames across six async approvals
+with a stable source stage; image/metadata deadline recovery; positive-size tooltip
+at 200% visual zoom; and 200% equivalent browser-zoom reflow. Desktop/narrow
+screenshots were inspected. Generated semantic and arranged-page HTML both
+reflected the saved order and omitted excluded content. Earlier isolated long-list,
+touch-sort and uncertain-write recovery evidence remains under
+`build/reading-order-integration`; current evidence is under ignored
+`build/structure-toolbar-current`.
+
+All mutations were confined to disposable fixtures. Shared Chrome, the live app
+and real project data were untouched. Save edits, quit/relaunch PTW and reload
+Structure to load the Python-generated toolbar markup. No commit, push or release
+was performed. Human VoiceOver, physical Windows/touch hardware and production
+WordPress/plugin validation remain pending.
+
+## Unreleased drafting disclosure — 2026-10-09
+
+Successful image draft history now defaults preparation tools to collapsed on
+subsequent Structure visits, including existing projects and manual imports.
+Explicit open/closed preferences remain per project, with tab-storage fallback.
+Generating, failed, awaiting-response and ready-for-review status remains visible
+outside the tools; completion does not collapse live edits or move focus. Direct
+links still reveal tools for a visit. Review/approval rules are unchanged.
+
+**550 tests passed in 31.939 seconds** using the documented macOS
+`TMPDIR=/private/tmp` command. An initial run with the default temporary path had
+six failures and one error from /var versus /private/var alias expectations;
+no unrelated production fix was made. Seven disposable browser groups passed
+without JavaScript errors: first use, successful completion with retained active
+text/focus and collapsed next visit, explicit choices/revisits, project switching,
+closed-pane generation/failure status, unrelated in-place approval and unavailable
+local-storage fallback. Manual import and older retained history are also covered
+by functional tests. A narrow screenshot was inspected. The disposable server
+was stopped and its fixture removed. Actual project content and the running app
+were not changed; new server markup requires user-led relaunch/reload after
+preserving drafts. External acceptance remains pending.
+
+A separately authorized reading-order design demo lives only in ignored local
+evidence under `build/reading-order-prototype/`. It has copied source reference
+and paragraph excerpts, one sortable list, recorded highlights, direct position
+controls, keyboard/pointer/touch moves, Undo/Reset and demo-only Apply/Cancel.
+Pinned current `@dnd-kit/dom` 0.5.0 and `esbuild` 0.28.2 are installed only there
+with package scripts disabled; the bundled adapter has no runtime CDN dependency.
+Twelve headless browser groups passed without errors or project-write requests,
+including real pointer cancellation and 1417px long-list edge scrolling. Touch
+evidence is desktop Chrome emulation. Physical touch, VoiceOver and Windows are
+pending. This is a design-review artifact, not production reading-order integration.
+
+## Unreleased source-column clarity — 2026-10-09
+
+Source metadata and region status reserve stable space; same-page approvals keep
+the rendered image visible while checking the next region. Unmarked reconstruction
+status is hidden; active warnings remain. Help supports hover, keyboard, touch and
+Escape, with an ARIA description and viewport-clamped popover. Missing geometry
+does not claim a highlight. Image loading is bounded to 30 seconds and region
+metadata to 10 seconds, with explicit image error/Retry/Open PDF recovery.
+
+**547 tests passed in 32.056 seconds.** Eleven disposable browser groups passed
+without JavaScript errors, including six approvals across 111 intermediate frames
+with one source-stage position, reviewed type changes, missing geometry, marked
+page switching, touch and keyboard help, Move to start retaining source selection,
+and stalled image/metadata recovery. A separate tightened 200% zoom check verified
+positive tooltip bounds inside the visual viewport and Escape retaining focus;
+narrow and zoom screenshots were inspected. These checks establish local behavior;
+the reported live-tab spinner remains unobserved. No actual project write, Undo,
+app restart or existing-tab navigation was performed. User-led relaunch/reload is
+needed for new server markup after preserving drafts. Human VoiceOver, Windows
+hardware and production-authoritative WordPress acceptance remain pending.
+
+## Unreleased dirty-Approve guidance — 2026-10-09
+
+Heading-level-only edits correctly require Save and approve; top Approve validates
+saved content and rejects dirty fields without a write. New live guidance below
+the top actions explains this before activation and is associated with Approve
+for assistive technology. Reverting fields or saving clears it. Six disposable
+headless browser groups passed: H2-to-H1-only guard/retained edit/focus, reversion,
+combined async save, text/image dirty fields, clean approval and required-image
+validation. No JavaScript errors occurred; a narrow screenshot was inspected.
+Final verification: **547 tests passed in 30.186 seconds**; JavaScript syntax and
+diff checks passed. The disposable server was stopped and its fixture removed.
+The actual tab's state was unavailable: Chrome Apple-event inspection returned
+authorization error -1743, and no browser tool exposed console/DOM inspection.
+No browser permission was changed. New server markup requires a user-led relaunch
+followed by reload; the running process predates the changes.
+
+Read-only source/model inspection of a reported two-column jump found interleaving
+already present in normalized extraction and retained review order. The next
+pending rule follows that order; the remaining left-column paragraphs were still
+unreviewed. This does not justify a navigation-code change or an automatic
+project reorder. Actual content-order repair remains pending user authorization.
+The live filter could not be inspected. Detailed private block/geometry evidence
+is ignored under `build/runtime-triage/`; no project data or existing tab was changed.
+
+## Unreleased post-success recovery investigation — 2026-10-09
+
+The live tab could not be inspected with the available tools. Bounded read-only
+probes showed a listening, responsive app and a persisted last approval; this
+does not establish that the reported frontend stall is resolved. A disposable
+243-block fixture with a source-page hold advanced normally after approval.
+Six controlled browser groups verified normal advancement, form/action responses
+stalled after a successful write, malformed successful refreshes, and an older
+server response without review fragments. A seventh group verified that rejection
+of a pending description on an already-approved image leaves top Approve usable,
+then correcting via Save and approve completes it. No JavaScript errors occurred.
+
+Review saves now bound the response wait to 30 seconds. Browser abort exceptions
+are normalized to give actionable recovery text; busy/request state clears while
+the uncertain-write guard blocks retries and preserves fields. Confirmed saves
+with failed refresh explicitly report Saved and require reload. Timeout checks
+used a shortened test deadline; they made exactly one saved revision and no retry.
+Live-tab cause remains unknown. Preserve drafts before reload; new JavaScript
+loads on reload, while changed Python markup and top-image validation require a
+user-led relaunch followed by reload. The running app was not restarted or altered.
+Local evidence is ignored under `build/top-image-approve/`.
+Final follow-up verification: **547 tests passed in 31.039 seconds**, seven
+focused recovery browser groups passed, and JavaScript syntax/diff checks passed.
+
+## Unreleased image top approval — 2026-10-09
+
+Image cards again show Approve in the top review actions. Saved image content and
+exactly the displayed descriptions use the existing atomic image validator,
+snapshot guard and in-place advancement. Dirty fields are retained and direct
+the reviewer to Save and approve; both bottom save actions remain. Completed
+image/description approval disables the top action. **547 tests passed in 33.603
+seconds.** Six disposable headless check
+groups passed with no JavaScript errors: dirty draft protection/focus, valid
+image plus description/double-click/next item, desktop/narrow layout, missing alt
+and equivalent rejection without writes, decorative approval and last-image
+completion without reload. Four additional server tests cover atomic approval,
+Undo, missing alternatives/equivalents, decorative decisions, stale snapshots and
+displayed-description scope. Evidence is ignored under `build/top-image-approve/`.
+No actual project, existing tab, or running app was changed by these tests.
+
+## Unreleased in-place review and page-state follow-up — 2026-10-09
+
+Structure Save, Save and approve, and direct review actions now update bounded
+review fragments after a confirmed write, keeping the document and source pane
+mounted. Counts, filters, saved block Preview, completion and snapshot tokens
+update together. Dirty editors are preserved, including drafts entered while a
+request is active. Overlapping/double-click approvals are blocked. Validation and
+stale-snapshot failures retain fields; uncertain responses require reload before
+another mutation. A confirmed write with failed display refresh is reported as
+saved with recovery instructions. Undo retains the existing snapshot/navigation
+behavior. Structure responses use no-store: history navigation previously could
+combine the original cached form baselines with later browser-restored values.
+
+Reconstruction checkboxes are bound to the displayed source page and resynchronize
+after native form restoration. Delayed success/failure for page 3 retains the
+newer displayed page 4 without carrying its checked state or writing to page 4.
+Read-only inspection found no saved holds or excluded page-4 blocks in the reported
+project at that time; no actual user project was changed. The exact live-tab
+interaction could not be observed; the reproducible browser-restoration case was
+fixed and fresh/rapid/filter/history/response-race cases were tested separately.
+
+Scoped header/footer margins and wrapping legends remain inside block borders.
+Before/after measurement found an inherited header extending 3.75px outside each
+side; the override contains it. Desktop, 390px and 320px screenshots were checked,
+including a long legend. The supplied Library screenshot download returned 403,
+so its pixels were not inspected. Existing 320px source-control width remains.
+
+**543 tests passed in 37.552 seconds.** **25 headless Chrome check groups passed**:
+18 async editor/action/history/draft/failure/Undo/layout/completion groups on a
+224-block synthetic fixture, plus seven page-state and delayed-response groups.
+No JavaScript errors were reported. Twelve successive combined approvals retained
+document identity, made no main-document navigation requests and never visited
+page top; six direct approvals likewise advanced only after confirmation. Local
+click-to-confirmed-update medians were 458ms combined and 325ms direct approval;
+these fixture measurements are not a production performance guarantee. Narrow
+approval and the last pending item retained the document and correct focus/status.
+Evidence is ignored under `build/async-review/` and
+`build/reconstruction-page-switch/`. Shared Chrome, existing tabs and actual user
+projects were untouched. Loading the new server and markup requires a user-led
+save/quit/relaunch and reload. Production WordPress, human VoiceOver and physical
+Windows acceptance remain pending; no commit, push or release was performed.
+
+## Unreleased compact image review and reconstruction holds — 2026-10-09
+
+Image review has smaller readable authoring fields, full-width long descriptions,
+earlier decorative choice and save actions directly after the fields. Drafting
+tools are optional disclosures below authoring; existing requests remain open.
+Source provenance is collapsed at the bottom of each block. Save/approval restores
+the intended review destination before paint, with no delayed load callback or
+startup selection overriding completion focus. The normal saved-page reload remains.
+
+Needs manual reconstruction under Source Page reversibly excludes exclusively
+owned fragments and restores their exact prior decisions on unchecking. Shared
+page content is retained and reported. Holds, source-page selection, stale/dirty
+protection and Undo persist through review. Arrange Pages retains one stable,
+unfinished placeholder per hold through reorder/regrouping. Unchecking removes
+only that placeholder; existing arrangements are not automatically split. Holds
+remain unresolved and block publication despite excluded fragments. The feature
+does not perform OCR or author replacement content; restoration precedes editing.
+
+**540 tests passed in 34.916 seconds.** **21 headless Chrome check groups passed**:
+11 compact-editor/approval checks, eight reconstruction workflow checks and two
+independent narrow approval-position checks. Coverage includes long existing
+text, 390/320 layouts, keyboard order, disclosures, drafts, Save/approval/Undo,
+validation failure, filters, repeated and last-item approval, Back/Forward,
+source-page reversal/reopen, placeholder reorder and stale-tab rejection.
+Narrow first-frame samples selected the next pending block; completion retained
+focus and status feedback. Browser reports contain no JavaScript errors.
+Representative disposable UI screenshots were inspected. Existing Structure
+source controls still cause a 336px document width at 320px; no new editor overflow
+was introduced. Evidence remains ignored under `build/compact-image-review/`
+and `build/manual-reconstruction/`.
+
+The supplied Library screenshots could not be materialized on this Mac; no visual
+claim is based on those attachments. A fresh read-only render of an approved real
+source page confirmed visually present statistics absent from selectable PDF text
+and extracted blocks. No project was modified or re-extracted. The active app
+and shared Chrome were untouched. Save, quit and relaunch PTW to load new server
+markup. Changes remain uncommitted; external acceptance below remains pending.
+
+## Unreleased secondary helper typography — 2026-10-08
+
+Supporting notes now opt into one shared helper style across Structure, image
+drafting, Accessibility, Arrange Pages, Preview and Export, plus the secondary
+launcher explanation. The two requested Structure notes measured 16.67px before
+and 15px after at a 1440px desktop viewport; comparable paragraph notes changed
+from 20px to 15px. Sizing is `.75rem` with a 14px minimum and a 1.5 line height.
+Warnings, primary instructions, labels, content and review blockers retain their
+existing sizes. Live draft/save/stale merge blockers retain the prior status size.
+
+**530 tests passed in 29.782 seconds.** **39 disposable headless Chrome check
+groups passed:** 17 review/edit/Undo regressions and 22 typography checks across
+five workflow screens at 1440px, 390px, 320px and 200% equivalent reflow. The zoom
+check used a 720px CSS viewport at device scale 2, with a separate doubled-root-font
+check; actual browser-menu zoom and human VoiceOver remain unverified. Helpers
+wrapped without clipping, had at least 5.99:1 measured contrast, and retained
+keyboard focus. Representative screenshots were inspected. The existing 336px
+Structure document width at a 320px viewport remains; this pass adds no new
+horizontal overflow. No real project or active app was changed. Updated server
+markup requires saving edits, quitting/relaunching PTW and reloading the page.
+No commit, push or release was performed; external acceptance remains pending.
+
+## Unreleased saved block content preview — 2026-10-08
+
+Local implementation adds one accessible Edit / Preview area for paragraph/list
+cards. Edit opens first; saved-content Preview preserves drafts, makes no project
+writes, and keeps existing Save, Save-and-approve, nested-list controls and Undo.
+Styled-run footnote placement and local WordPress preview sanitization are corrected.
+Paragraph/list Gutenberg wrappers remain native. The existing separate Custom HTML
+endnotes section is unchanged; additional footnote ARIA and citation association
+are deferred pending native-block compatibility. Explicit reference sections receive
+one nonblocking manual-review reminder per Structure/Export screen.
+
+Saved line breaks, including blank lines, now pass through shared rendering to
+block/document previews and HTML/Gutenberg/WXR. Native block wrappers and raw
+footnote offsets remain intact. The borderless block preview follows its content's
+natural height, growing on narrow layouts and shrinking when widened.
+
+**530 tests passed in 31.324 seconds**, including 14 new rendering/route regressions.
+**20 disposable headless Chrome check groups passed**, covering mode/draft preservation,
+keyboard tabs, note navigation and return focus, hidden controls and hidden-draft
+Undo protection, nested-list approval/Undo, save/approval, stale rejection, reopening,
+help/filter cancellation and saved back navigation. Additional checks confirmed
+single/blank-line spacing, natural preview growth/shrinkage, no inner scrollbar,
+and exact Undo after saving breaks. Desktop/390/320 screenshots were inspected.
+The new area fits narrow viewports; pre-existing source controls still
+cause a 336px document width at a 320px viewport (339px before the grid adjustment).
+Generated HTML/Gutenberg/WXR and converted WordPress preview were inspected: WXR
+contains exact Gutenberg content and only the existing endnotes HTML block remains.
+Saved breaks also survived local WordPress preview conversion. A read-only render
+of a saved user paragraph preserved all eight stored breaks, including four blank
+lines; neither its model nor project files were changed by that check.
+These are local checks, not actual WordPress open/save/reopen or human VoiceOver
+acceptance. Production WSUWP/plugin compatibility, human listening and Windows
+hardware checks remain pending. No real project, active app or shared Chrome was
+changed, and no commit, publication or release was performed for this work.
 
 ## Version 0.7.1 branch handoff — 2026-10-05
 
@@ -552,6 +1223,25 @@ from this public summary and retained in ignored local evidence.
 | Source-backup verification, 2026-10-03 | 361 tests passed; syntax and diff checks |
 | Media refresh and result semantics, 2026-10-04 | 450 tests passed; actual-XML disposable-copy and synthetic regression checks |
 | Manual instructions clipboard, 2026-10-04 | 452 tests passed; primary and independent browser checks |
+
+## WordPress preview defaults — local verification, 2026-10-08
+
+Preview and Arrange Pages now initially display WordPress Preview with the
+project's saved WordPress profile. Semantic HTML remains selectable. Arrange
+Pages refreshes an active WordPress preview when its profile changes, without
+discarding unsaved page drafts. Local styling remains an approximation of the
+destination theme and plugins.
+
+Verification: **531 tests passed in 29.859 seconds**, including a test of both
+initial iframe responses and saved-profile selection. **Seven headless Chrome
+check groups passed** across desktop and 390px layouts, mode/profile switching,
+reloads, and draft preservation. There were no browser errors or POST requests;
+the disposable project's saved project and review files remained byte-identical.
+Evidence is retained locally under ignored `build/wordpress-default/`.
+
+The live app and real projects were untouched. Save work, quit and relaunch PTW
+to load the new Python-generated screen defaults. These edits remain local;
+external acceptance below is still pending.
 
 ## External acceptance — still pending
 

@@ -178,6 +178,29 @@ def source_regions_for_blocks(project_dir: Path, blocks: list[dict[str, Any]]) -
             if provenance.get('source_type') in recovered_types:
                 overlay[str(block['id'])] = {'regions': [], 'coverage': unavailable}
             continue
+        merge_record = provenance.get('reading_order_merge')
+        merge_origins = []
+        if merge_record:
+            from .publication import digest
+            if (not isinstance(merge_record, dict) or merge_record.get('version') != 1
+                    or not isinstance(merge_record.get('originals'), list)
+                    or any(not isinstance(original, dict) for original in merge_record['originals'])
+                    or digest(merge_record['originals']) != merge_record.get('originals_digest')):
+                overlay[str(block['id'])] = {'regions': [], 'coverage': 'Retained source data changed or is unsupported. Open the source PDF to review this content.'}
+                continue
+            merge_origins = merge_record['originals']
+        if merge_origins:
+            original_regions = source_regions_for_blocks(project_dir, merge_origins)
+            recorded = [region for original in merge_origins for region in original_regions.get(str(original['id']), {}).get('regions', [])]
+            for original in merge_origins:
+                if original.get('type') == 'list' and original.get('provenance', {}).get('source_page') == page_number:
+                    region = display_source_box(page, original['provenance'].get('bounding_box'))
+                    if region:
+                        recorded.append(region)
+            overlay[str(block['id'])] = {'regions': [list(box) for box in dict.fromkeys(tuple(r) for r in recorded)],
+                                         'coverage': 'Some original fragments have no reliable source outline. Compare every retained original with the source PDF.'
+                                         if any(not original_regions.get(str(original['id']), {}).get('regions') for original in merge_origins) else ''}
+            continue
         recovered = provenance.get('source_type') in recovered_types
         if recovered:
             if page_number not in text_regions:

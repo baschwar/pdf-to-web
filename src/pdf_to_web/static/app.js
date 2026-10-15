@@ -1,6 +1,160 @@
 const authoringForms = [...document.querySelectorAll('.block-form, .complex-visual-form')];
+let reviewWriteBusy = false;
+let reviewReloadRequired = false;
+let reviewClickLockUntil = 0;
+const boundBlockForms = new WeakSet();
+const boundPreviewAreas = new WeakSet();
 const authoringValue = form => JSON.stringify([...form.querySelectorAll('input:not([name="expected_review_token"]), textarea, select')].map(field => [field.name, field.type === 'checkbox' ? field.checked : field.value]));
 const authoringBaselines = new WeakMap(authoringForms.map(form => [form, authoringValue(form)]));
+
+function updateSourcePageReview(page) {
+  const pane = document.querySelector('.source-pane'), pill = document.getElementById('source-page-review-status');
+  if (!pane || !pill) return;
+  page = Number(page || document.getElementById('manual-reconstruction-control')?.dataset.sourcePage || document.getElementById('source-page-number')?.value || 1);
+  const raw = pane.dataset.pageReviews || '{}';
+  if (pane.reviewStatuses?.raw !== raw) {
+    try { pane.reviewStatuses = {raw, pages: JSON.parse(raw)}; }
+    catch { pane.reviewStatuses = {raw, pages: {}}; }
+  }
+  const saved = pane.reviewStatuses.pages[String(page)];
+  const status = reviewReloadRequired || !saved ? {state: 'needs', label: 'Needs review', detail: `Source page ${page}: review status cannot be confirmed. Reload to inspect saved decisions.`} : saved;
+  if (pill.textContent !== status.label) pill.textContent = status.label;
+  pill.dataset.state = status.state; pill.dataset.page = String(page);
+  pill.title = status.detail; pill.setAttribute('aria-label', status.detail); pill.hidden = false;
+  updateSourcePageVisualReviews(page);
+}
+
+function updateSourcePageVisualReviews(page) {
+  const pane = document.querySelector('.source-pane'), section = document.getElementById('source-page-visual-reviews');
+  if (!pane || !section) return;
+  const raw = pane.dataset.sourceVisuals || '{}', key = `${page}:${raw}`;
+  if (section.dataset.reviewKey === key) return;
+  section.dataset.reviewKey = key;
+  let items = [];
+  try { items = JSON.parse(raw)[String(page)] || []; } catch {}
+  section.hidden = !items.length;
+  section.querySelector('ul').replaceChildren();
+  section.querySelector('p').textContent = `${items.length} visual review check${items.length === 1 ? '' : 's'} still need a decision on source page ${page}. Block approval does not resolve these accessibility requirements.`;
+  for (const item of items) {
+    const li = document.createElement('li'), link = document.createElement('a');
+    link.href = '#' + encodeURIComponent(item.target); link.textContent = item.label + ' — Open description';
+    li.append(link); section.querySelector('ul').append(li);
+  }
+}
+
+function receiveSourcePageVisualReviews(reviews) {
+  const pane = document.querySelector('.source-pane');
+  if (pane && reviews) pane.dataset.sourceVisuals = JSON.stringify(reviews);
+  updateSourcePageVisualReviews(Number(document.getElementById('source-page-number')?.value || 1));
+}
+
+const boundVisualReferences = new WeakSet();
+function initializeVisualReference(figure) {
+  if (boundVisualReferences.has(figure)) return;
+  boundVisualReferences.add(figure);
+  const img = figure.querySelector('img'), error = figure.querySelector('.visual-reference-error'), retry = figure.querySelector('.visual-reference-retry');
+  const original = img.getAttribute('src');
+  const state = failed => { figure.setAttribute('aria-busy', 'false'); img.hidden = failed; error.hidden = !failed; retry.hidden = !failed; };
+  figure.setAttribute('aria-busy', 'true');
+  img.addEventListener('load', () => state(false)); img.addEventListener('error', () => state(true));
+  retry.addEventListener('click', () => { const url = new URL(original, location.href); url.searchParams.set('retry', Date.now()); img.hidden = false; error.hidden = true; retry.hidden = true; figure.setAttribute('aria-busy', 'true'); img.src = url.href; });
+  if (img.complete) state(img.naturalWidth === 0);
+}
+document.querySelectorAll('.visual-source-reference').forEach(initializeVisualReference);
+
+function receiveSourcePageReviews(reviews, page) {
+  const pane = document.querySelector('.source-pane');
+  if (pane && reviews) pane.dataset.pageReviews = JSON.stringify(reviews);
+  updateSourcePageReview(page);
+}
+
+function updateAuthoringFeedback() {
+  updateSourcePageReview();
+  const dirtyCards = new Set(authoringForms.filter(form => authoringBaselines.get(form) !== authoringValue(form)).map(form => form.closest('.block-card')));
+  document.querySelectorAll('.block-card').forEach(card => {
+    const help = card.querySelector('.block-review-dirty-help');
+    if (!help) return;
+    const dirty = dirtyCards.has(card);
+    const text = dirty ? 'Unsaved changes — Save & Approve saves all edited review fields in this block before approval.' : '';
+    if (help.textContent !== text) help.textContent = text;
+    help.hidden = !dirty;
+    const approve = card.querySelector('.block-review-actions [data-action="approve"]');
+    if (approve) {
+      if (!approve.dataset.saving) {
+        approve.textContent = dirty ? 'Save & Approve' : 'Approve';
+        approve.setAttribute('aria-label', `${dirty ? 'Save and approve' : 'Approve'} block ${card.dataset.blockIndex}`);
+      }
+      approve.disabled = reviewWriteBusy || reviewReloadRequired || (!dirty && approve.dataset.approvalComplete === 'true');
+      if (dirty) approve.setAttribute('aria-describedby', help.id);
+      else approve.removeAttribute('aria-describedby');
+    }
+  });
+}
+for (const event of ['input', 'change']) document.addEventListener(event, e => {
+  if (e.target.closest('.block-form, .complex-visual-form')) updateAuthoringFeedback();
+});
+updateAuthoringFeedback();
+function initializeBlockContentModes(area) {
+  if (boundPreviewAreas.has(area)) {
+    area.querySelector('[role="tablist"]').hidden = false;
+    return;
+  }
+  boundPreviewAreas.add(area);
+  const tabs = [...area.querySelectorAll('[role="tab"]')];
+  const card = area.closest('.block-card');
+  const status = area.querySelector('.block-preview-status');
+  const frame = area.querySelector('iframe');
+  let previewSizeObserver;
+  let resizePreview = () => {};
+  frame.addEventListener('load', () => {
+    previewSizeObserver?.disconnect();
+    const body = frame.contentDocument?.body;
+    if (!body) return;
+    const resize = () => {
+      if (!frame.offsetWidth) return;
+      // Use the content box, not viewport scrollHeight, so a narrow preview
+      // can both grow and shrink without introducing an inner scrolling field.
+      frame.style.height = `${Math.max(1, Math.ceil(body.getBoundingClientRect().height))}px`;
+    };
+    resizePreview = resize;
+    previewSizeObserver = new ResizeObserver(resize);
+    previewSizeObserver.observe(body);
+    resize();
+  });
+  const updateStatus = () => {
+    const dirty = [...card.querySelectorAll('.block-form')].some(form => authoringBaselines.get(form) !== authoringValue(form));
+    status.textContent = dirty ? 'Saved content. Unsaved changes are not shown.' : 'Saved content.';
+  };
+  const select = tab => {
+    tabs.forEach(item => {
+      const active = item === tab;
+      item.setAttribute('aria-selected', String(active));
+      item.tabIndex = active ? 0 : -1;
+      document.getElementById(item.getAttribute('aria-controls')).hidden = !active;
+    });
+    updateStatus();
+    if (tab === tabs[1]) {
+      if (!frame.hasAttribute('srcdoc')) frame.srcdoc = frame.dataset.savedPreview;
+      else resizePreview();
+    }
+  };
+  tabs.forEach((tab, index) => {
+    tab.addEventListener('click', () => select(tab));
+    tab.addEventListener('keydown', event => {
+      let target;
+      if (event.key === 'ArrowRight') target = tabs[(index + 1) % tabs.length];
+      if (event.key === 'ArrowLeft') target = tabs[(index + tabs.length - 1) % tabs.length];
+      if (event.key === 'Home') target = tabs[0];
+      if (event.key === 'End') target = tabs.at(-1);
+      if (!target) return;
+      event.preventDefault(); select(target); target.focus();
+    });
+  });
+  area.addEventListener('input', updateStatus);
+  area.addEventListener('change', updateStatus);
+  area.querySelector('[role="tablist"]').hidden = false;
+}
+document.querySelectorAll('.block-content-modes').forEach(initializeBlockContentModes);
 let mergeInProgress = false;
 let mergeSnapshotStale = false;
 function mergeDisabledReason(button) {
@@ -33,7 +187,11 @@ function updateMergeControls() {
     const reason = mergeDisabledReason(button);
     button.disabled = Boolean(reason);
     const help = document.getElementById(button.getAttribute('aria-describedby'));
-    if (help) { help.textContent = reason; help.hidden = !reason; }
+    if (help) {
+      help.textContent = reason; help.hidden = !reason;
+      // A live save/draft/stale-state blocker keeps the original status size.
+      help.classList.toggle('helper-text', reason === button.dataset.mergeReason);
+    }
   }
 }
 for (const eventName of ['input', 'change']) document.addEventListener(eventName, event => {
@@ -144,6 +302,11 @@ const csrfHeaders = () => ({
   'x-csrf-token': decodeURIComponent(cookie('pdf_to_web_csrf'))
 });
 
+// A write can finish while its response stalls. Bound the wait, preserve fields
+// and require reload through the uncertain-save guard; never retry the write.
+const reviewSaveSignal = () => AbortSignal.timeout(30000);
+const reviewRefreshRecovery = message => message.startsWith('Saved,') ? message : 'Saved, but the review display could not be refreshed. Your fields remain here. Reload Structure before making another change.';
+
 async function api(url, options = {}) {
   const lifecycleRequest = ['/api/lifecycle', '/api/quit'].includes(url);
   if (quitRequested && !lifecycleRequest) throw new Error('PDF to Web is quitting. New work is unavailable.');
@@ -151,8 +314,18 @@ async function api(url, options = {}) {
   try {
     const response = await fetch(url, options);
     const data = await response.json();
-    if (!response.ok || data.status === 'error') throw new Error(data.error || data.detail || 'Request failed');
+    if (!response.ok || data.status === 'error') {
+      const error = new Error(data.error || data.detail || 'Request failed');
+      error.status = response.status;
+      error.confirmedRejection = response.status < 500;
+      throw error;
+    }
     return data;
+  } catch (error) {
+    // Browser abort exceptions have read-only messages. Normalize them so save
+    // handlers can provide actionable uncertain-write recovery instructions.
+    if (error.name === 'AbortError' || error.name === 'TimeoutError') throw new Error('Request result could not be confirmed.');
+    throw error;
   } finally { if (!lifecycleRequest) appRequestsActive -= 1; }
 }
 
@@ -431,7 +604,7 @@ async function loadSourcePageImage(url) {
   sourceImageRequest?.controller.abort();
   const request = {url, controller: new AbortController()};
   sourceImageRequest = request;
-  request.promise = (async () => {
+  const work = (async () => {
     const response = await fetch(url, {cache: 'no-store', signal: request.controller.signal});
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
@@ -452,8 +625,19 @@ async function loadSourcePageImage(url) {
     if (request.controller.signal.aborted) throw new DOMException('Source page changed', 'AbortError');
     image.dataset.loadedSourceUrl = url;
   })();
+  let abortListener;
+  const aborted = new Promise((resolve, reject) => {
+    abortListener = () => reject(request.controller.signal.reason || new DOMException('Source page changed', 'AbortError'));
+    request.controller.signal.addEventListener('abort', abortListener, {once: true});
+  });
+  const deadline = setTimeout(() => request.controller.abort(new DOMException('Source page response timed out. Retry or open the source PDF.', 'TimeoutError')), 30000);
+  request.promise = Promise.race([work, aborted]);
   try { await request.promise; }
-  finally { if (sourceImageRequest === request) sourceImageRequest = null; }
+  finally {
+    clearTimeout(deadline);
+    request.controller.signal.removeEventListener('abort', abortListener);
+    if (sourceImageRequest === request) sourceImageRequest = null;
+  }
 }
 
 async function showSourcePage(page, card = selectedSourceCard) {
@@ -465,31 +649,44 @@ async function showSourcePage(page, card = selectedSourceCard) {
   const requestedPage = Math.max(1, Math.min(pageCount, Number(page) || 1));
   document.querySelectorAll('.block-card').forEach((item) => item.classList.toggle('source-selected', item === card));
   const sourceImage = document.getElementById('source-image');
+  const sourceUrl = `/source-page/${requestedPage}.png?v=${sourceKey}`;
+  const sameRenderedPage = sourceImage.dataset.loadedSourceUrl === sourceUrl && sourceImage.complete && sourceImage.naturalWidth && !sourceImage.hidden;
+  const previousSourceHeight = sourceImage.parentElement.getBoundingClientRect().height;
+  sourceImage.parentElement.style.minHeight = previousSourceHeight > 2 ? `${previousSourceHeight}px` : '';
   sourceImage.alt = `Rendered source PDF page ${requestedPage}`;
-  sourceImage.hidden = true;
+  if (!sameRenderedPage) sourceImage.hidden = true;
   const sourceLink = document.getElementById('open-source-page');
   sourceLink.href = `/source.pdf?v=${sourceKey}#page=${requestedPage}`;
   sourceLink.textContent = `Open source PDF page ${requestedPage}`;
   document.getElementById('source-page-number').value = requestedPage;
+  updateManualReconstruction(requestedPage);
+  updateSourcePageReview(requestedPage);
   document.getElementById('source-page-previous').disabled = requestedPage === 1;
   document.getElementById('source-page-next').disabled = requestedPage === pageCount;
   const label = document.getElementById('source-page-label');
+  const regionStatus = document.getElementById('source-region-status');
+  const selectedOnPage = card && Number(card.dataset.page) === requestedPage;
+  const blockType = selectedOnPage && card.dataset.filterType !== 'other' ? card.dataset.filterType : card?.dataset.sourceType;
+  const blockLabel = selectedOnPage ? `Block ${card.dataset.blockIndex} · ${String(blockType || 'block').replace(/^./, char => char.toUpperCase())} · Page ${requestedPage}` : `Page ${requestedPage}`;
+  const coverage = selectedOnPage && card.dataset.sourceCoverage ? ` ${card.dataset.sourceCoverage}` : '';
+  label.textContent = blockLabel + coverage;
+  regionStatus.textContent = selectedOnPage ? 'Checking its source region…' : 'Select a block to outline its source region.';
   const highlights = document.getElementById('source-highlights');
   const status = document.getElementById('source-page-render-status');
   const retry = document.getElementById('source-page-retry');
   const stage = document.querySelector('.source-image-stage');
   const retryFocused = document.activeElement === retry;
   highlights.replaceChildren();
-  status.hidden = false;
+  status.hidden = sameRenderedPage;
   status.textContent = `Loading source page ${requestedPage}…`;
   retry.hidden = !retryFocused;
   retry.disabled = true;
   stage.setAttribute('aria-busy', 'true');
-  label.textContent = `Source page ${requestedPage}. Waiting for its rendered image.`;
   try {
-    await loadSourcePageImage(`/source-page/${requestedPage}.png?v=${sourceKey}`);
+    await loadSourcePageImage(sourceUrl);
     if (selection !== sourceSelection) return;
     sourceImage.hidden = false;
+    stage.style.minHeight = '';
     stage.setAttribute('aria-busy', 'false');
     status.hidden = true;
     retry.disabled = false;
@@ -502,22 +699,20 @@ async function showSourcePage(page, card = selectedSourceCard) {
     retry.hidden = false;
     retry.disabled = false;
     if (retryFocused) retry.focus({preventScroll: true});
-    label.textContent = `Source page ${requestedPage}. Its source region is not outlined.`;
+    regionStatus.textContent = 'Its source region is not outlined.';
     return;
   }
   if (!card || Number(card.dataset.page) !== requestedPage) {
-    label.textContent = card
-      ? `Source page ${requestedPage}. The selected block is on page ${card.dataset.page}; no region is outlined.`
-      : `Source page ${requestedPage}. Select a block to outline its source region.`;
+    regionStatus.textContent = card
+      ? `The selected block is on page ${card.dataset.page}; no region is outlined.`
+      : 'Select a block to outline its source region.';
     return;
   }
-  const blockLabel = `Block ${card.dataset.blockIndex}, ${card.dataset.sourceType}, on source page ${requestedPage}.`;
-  const coverage = card.dataset.sourceCoverage ? ` ${card.dataset.sourceCoverage}` : '';
-  label.textContent = blockLabel + coverage;
-  if (!card.dataset.bboxes) return;
+  if (!card.dataset.bboxes) { regionStatus.textContent = 'No reliable source region is available for this block.'; return; }
   try {
     const regions = JSON.parse(card.dataset.bboxes);
-    const dimensions = await api(`/api/source-page/${requestedPage}`);
+    if (!regions.length) { regionStatus.textContent = 'No reliable source region is available for this block.'; return; }
+    const dimensions = await api(`/api/source-page/${requestedPage}`, {signal: AbortSignal.timeout(10000)});
     if (selection !== sourceSelection) return;
     regions.forEach((bbox) => {
       const [x0, y0, x1, y1] = bbox.map(Number);
@@ -529,10 +724,10 @@ async function showSourcePage(page, card = selectedSourceCard) {
       highlight.style.height = `${Math.abs(y1 - y0) / dimensions.height * 100}%`;
       highlights.append(highlight);
     });
-    label.textContent = `${blockLabel} ${regions.length === 1 ? 'The approximate source region is' : `${regions.length} source regions are`} outlined.${coverage}`;
+    regionStatus.textContent = regions.length === 1 ? 'Approximate outline' : `Approximate outlines (${regions.length})`;
     revealSourceRegions(pane, highlights);
   } catch (error) {
-    if (selection === sourceSelection) label.textContent = `${blockLabel} Its source region could not be outlined.`;
+    if (selection === sourceSelection) regionStatus.textContent = 'Its source region could not be outlined.';
   }
 }
 
@@ -730,7 +925,7 @@ function focusBlock(card) {
   if (!card) return;
   if (card.hidden) return;
   card.focus({ preventScroll: true });
-  card.scrollIntoView({ block: 'start' });
+  card.scrollIntoView({ block: 'start', behavior: 'instant' });
 }
 
 function navigateSourcePage(page) {
@@ -805,6 +1000,8 @@ function selectDescription(card) {
     const notice = visual.querySelector('.description-selection-notice');
     if (notice) notice.hidden = !selected;
   });
+  const page = Number(card?.dataset.sourcePage);
+  if (page && page !== Number(document.getElementById('source-page-number')?.value)) navigateSourcePage(page);
 }
 document.querySelectorAll('.complex-visual').forEach(card => {
   card.addEventListener('focusin', () => selectDescription(card));
@@ -865,14 +1062,24 @@ const draftingTools = document.getElementById('image-description-tools');
 if (draftingTools) {
   const projectId = document.getElementById('image-draft-toolbar').dataset.documentId;
   const preferenceKey = `pdf-to-web-drafting-tools-${projectId}`;
-  try {
-    const preferred = localStorage.getItem(preferenceKey);
-    if (preferred === 'open' || preferred === 'closed') draftingTools.open = preferred === 'open';
-  } catch { /* The useful default still works when browser storage is unavailable. */ }
+  const preferenceStores = () => {
+    const stores = [];
+    try { stores.push(localStorage); } catch {}
+    try { stores.push(sessionStorage); } catch {}
+    return stores;
+  };
+  for (const storage of preferenceStores()) {
+    try {
+      const preferred = storage.getItem(preferenceKey);
+      if (preferred === 'open' || preferred === 'closed') { draftingTools.open = preferred === 'open'; break; }
+    } catch { /* Fall back to this tab, then to the saved-request default. */ }
+  }
   draftingTools.querySelector(':scope > summary').addEventListener('click', () => {
     // Only a user's summary action persists. A direct help/hash link may reveal
     // tools for this visit without replacing their preferred default.
-    try { localStorage.setItem(preferenceKey, draftingTools.open ? 'closed' : 'open'); } catch {}
+    for (const storage of preferenceStores()) {
+      try { storage.setItem(preferenceKey, draftingTools.open ? 'closed' : 'open'); } catch {}
+    }
   });
 }
 document.addEventListener('click', event => {
@@ -909,7 +1116,9 @@ function focusAccessibilityFinding() {
 window.addEventListener('load', focusAccessibilityFinding, {once: true});
 let pendingReviewFocus = null;
 try { pendingReviewFocus = JSON.parse(sessionStorage.getItem(reviewAdvanceKey)); } catch { /* Ignore a superseded selection format. */ }
+const restoringReviewPosition = Boolean(pendingReviewFocus);
 window.addEventListener('load', () => {
+  if (restoringReviewPosition || accessibilityParams.has('source_page')) return;
   if (!pendingReviewFocus && focusEmptyBlockFilter()) return;
   if (pendingReviewFocus || location.hash.startsWith('#block-') || location.hash.startsWith('#visual-') || location.hash === '#image-description-tools') return;
   const card = document.getElementById(sessionStorage.getItem(blockSelectionKey));
@@ -921,14 +1130,17 @@ window.addEventListener('load', () => {
 if (pendingReviewFocus) {
   sessionStorage.removeItem(reviewAdvanceKey);
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
-  window.addEventListener('load', () => setTimeout(() => {
+  // Restore the review destination before the next paint, rather than showing
+  // the page top while images load and then jumping after a delayed load event.
+  (() => {
     try {
+    updateStickyHeaderOffset();
     if (location.hash === '#image-description-tools') return;
     // A reviewer who has entered provider setup keeps focus there.
     if (document.activeElement?.closest('#image-draft-toolbar')) return;
     if (focusEmptyBlockFilter()) return;
     const complete = document.getElementById('structure-review-complete');
-    if (pendingReviewFocus.advance && complete) { complete.focus({preventScroll: true}); complete.scrollIntoView({block: 'center'}); return; }
+    if (pendingReviewFocus.advance && complete) { complete.focus({preventScroll: true}); complete.scrollIntoView({block: 'center', behavior: 'instant'}); announce('Block saved and approved. Structure review complete.'); return; }
     const remembered = document.getElementById(pendingReviewFocus.blockId);
     const cards = Array.from(document.querySelectorAll('.block-card'));
     const index = cards.indexOf(remembered);
@@ -938,8 +1150,116 @@ if (pendingReviewFocus) {
         || (remembered && !remembered.hidden ? remembered : blockCards()[0]);
     if (!pendingCard) return;
     focusBlock(pendingCard);
+    announce(pendingReviewFocus.advance ? `Block saved and approved. Block ${pendingCard.dataset.blockIndex} selected for review.` : 'Saved review position restored.');
     } finally { pendingReviewFocus = null; }
-  }, 50), { once: true });
+  })();
+}
+
+function updateManualReconstruction(page) {
+  const control = document.getElementById('manual-reconstruction-control');
+  if (!control) return;
+  control.dataset.sourcePage = String(page);
+  const entry = JSON.parse(control.dataset.pages)[String(page)];
+  const toggle = document.getElementById('manual-reconstruction-toggle');
+  toggle.checked = Boolean(entry);
+  toggle.defaultChecked = Boolean(entry);
+  toggle.setAttribute('aria-label', `Needs manual reconstruction for source page ${page}`);
+  const status = document.getElementById('manual-reconstruction-status');
+  status.textContent = entry ? `Source page ${page} needs manual reconstruction. ${Object.keys(entry.blocks).length} blocks held; ${entry.shared_block_ids.length} shared blocks retained. Export is blocked.` : '';
+  status.hidden = !entry;
+}
+const manualPageToggle = document.getElementById('manual-reconstruction-toggle');
+const manualHelpLine = document.querySelector('.manual-reconstruction-line');
+const manualHelpButton = document.getElementById('manual-reconstruction-help-button');
+const manualHelpTip = document.getElementById('manual-reconstruction-help');
+if (manualHelpButton && manualHelpTip) {
+  let pinned = false;
+  const open = () => !manualHelpTip.hidden && (!manualHelpTip.showPopover || manualHelpTip.matches(':popover-open'));
+  const hide = () => {
+    if (manualHelpTip.showPopover && manualHelpTip.matches(':popover-open')) manualHelpTip.hidePopover();
+    manualHelpTip.hidden = true; pinned = false;
+    manualHelpButton.setAttribute('aria-expanded', 'false');
+  };
+  const place = () => {
+    if (!open()) return;
+    const viewport = window.visualViewport;
+    const left = viewport?.offsetLeft || 0, top = viewport?.offsetTop || 0;
+    const width = viewport?.width || innerWidth, height = viewport?.height || innerHeight;
+    manualHelpTip.style.maxWidth = `min(24rem, ${Math.max(1, width - 16)}px)`;
+    manualHelpTip.style.maxHeight = `${Math.max(1, height - 16)}px`;
+    manualHelpTip.style.overflowY = 'auto';
+    const anchor = manualHelpButton.getBoundingClientRect(), bounds = manualHelpTip.getBoundingClientRect();
+    manualHelpTip.style.left = `${Math.max(left + 8, Math.min(anchor.left, left + width - bounds.width - 8))}px`;
+    manualHelpTip.style.top = `${Math.max(top + 8, Math.min(top + height - bounds.height - 8, anchor.bottom + bounds.height + 8 > top + height ? anchor.top - bounds.height - 8 : anchor.bottom + 8))}px`;
+  };
+  const show = () => {
+    manualHelpTip.hidden = false;
+    if (manualHelpTip.showPopover && !manualHelpTip.matches(':popover-open')) manualHelpTip.showPopover();
+    manualHelpButton.setAttribute('aria-expanded', 'true'); place();
+  };
+  const leave = () => {
+    if (!pinned && !manualHelpLine.contains(document.activeElement) && !manualHelpTip.matches(':hover')) hide();
+  };
+  manualHelpLine.addEventListener('pointerenter', e => { if (e.pointerType === 'mouse') show(); });
+  manualHelpLine.addEventListener('pointerleave', leave);
+  manualHelpTip.addEventListener('pointerleave', leave);
+  manualHelpLine.addEventListener('focusin', show);
+  manualHelpLine.addEventListener('focusout', () => requestAnimationFrame(leave));
+  manualHelpButton.addEventListener('click', () => { if (pinned && open()) hide(); else { pinned = true; show(); } });
+  manualHelpTip.addEventListener('toggle', e => { if (e.newState === 'closed') { pinned = false; manualHelpButton.setAttribute('aria-expanded', 'false'); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && open()) { e.preventDefault(); hide(); } });
+  document.addEventListener('click', e => { if (open() && !manualHelpLine.contains(e.target) && !manualHelpTip.contains(e.target)) hide(); });
+  window.addEventListener('resize', place);
+  window.addEventListener('scroll', place, true);
+  window.visualViewport?.addEventListener('resize', place);
+  window.visualViewport?.addEventListener('scroll', place);
+}
+function displayedReconstructionPage() {
+  return Number(document.getElementById('manual-reconstruction-control')?.dataset.sourcePage || document.getElementById('source-page-number')?.value || 1);
+}
+window.addEventListener('pageshow', () => {
+  if (!manualPageToggle) return;
+  // Native form restoration can happen after initial scripts. Use the page
+  // actually displayed by source navigation, not a restored checkbox value.
+  const page = displayedReconstructionPage();
+  document.getElementById('source-page-number').value = page;
+  updateManualReconstruction(page);
+  updateSourcePageReview(page);
+});
+manualPageToggle?.addEventListener('change', async () => {
+  const page = displayedReconstructionPage();
+  const enabled = manualPageToggle.checked;
+  let sent = false;
+  try {
+    if (reviewWriteBusy || reviewReloadRequired) throw new Error('Finish or confirm the current review save before changing the reconstruction hold.');
+    if (authoringForms.some(form => authoringBaselines.get(form) !== authoringValue(form))) {
+      throw new Error('Save or revert unsaved authoring edits before changing the reconstruction hold.');
+    }
+    manualPageToggle.disabled = true;
+    sent = true;
+    const result = await api('/api/source-pages/manual-reconstruction', {method: 'POST', headers: csrfHeaders(), body: JSON.stringify({page, enabled, expected_review_token: document.getElementById('manual-reconstruction-control').dataset.reviewToken})});
+    if (result.source_page_reviews) document.querySelector('.source-pane').dataset.pageReviews = JSON.stringify(result.source_page_reviews);
+    updateSourcePageReview(displayedReconstructionPage());
+    sessionStorage.removeItem(reviewAdvanceKey);
+    history.replaceState(null, '', `/structure?source_page=${displayedReconstructionPage()}`);
+    location.reload();
+  } catch (error) {
+    if (sent && !error.confirmedRejection) reviewReloadRequired = true;
+    updateSourcePageReview(displayedReconstructionPage());
+    updateManualReconstruction(displayedReconstructionPage());
+    document.getElementById('manual-reconstruction-status').textContent = `Source page ${page}: ${error.message}`;
+    document.getElementById('manual-reconstruction-status').hidden = false;
+    announce(error.message);
+  } finally {manualPageToggle.disabled = false;}
+});
+const requestedSourcePage = new URLSearchParams(location.search).get('source_page');
+if (manualPageToggle && requestedSourcePage && /^\d+$/.test(requestedSourcePage)) {
+  requestAnimationFrame(() => {
+    navigateSourcePage(Number(requestedSourcePage));
+    if (location.hash.startsWith('#visual-') || location.hash.startsWith('#block-')) return;
+    manualPageToggle.focus({preventScroll: true});
+    document.getElementById('source-heading').scrollIntoView({block: 'start', behavior: 'instant'});
+  });
 }
 
 function rememberReviewResult(card, advance = false) {
@@ -948,14 +1268,130 @@ function rememberReviewResult(card, advance = false) {
   sessionStorage.setItem(blockSelectionKey, card.id);
   // An old hash can point to the now-hidden approved card and reveal All blocks
   // before reload restores the pending selection. Keep the active filter instead.
-  history.replaceState(null, '', location.pathname + location.search);
+  const destination = new URL(location.href);
+  destination.searchParams.delete('source_page');
+  history.replaceState(null, '', destination.pathname + destination.search);
   if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 }
 function rememberReviewAdvance(card) { rememberReviewResult(card, true); }
 
-document.querySelectorAll('.block-form').forEach((form) => form.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  if (form.dataset.saving === 'true') return;
+// Patch only review fragments. Matching controls keep their listeners and drafts;
+// the source pane, document and history are never replaced after a saved review.
+function reviewNodeKey(node) {
+  if (node.nodeType !== Node.ELEMENT_NODE) return '';
+  return node.id || (node.getAttribute('name') ? `${node.tagName}:${node.getAttribute('name')}` : '')
+    || (node.dataset.action ? `${node.tagName}:${node.dataset.action}` : '')
+    || (node.dataset.filter ? `filter:${node.dataset.filter}` : '')
+    || (node.dataset.typeFilter ? `type-filter:${node.dataset.typeFilter}` : '');
+}
+function morphReviewNode(current, fresh, preservedForms) {
+  if (preservedForms.has(current)) return;
+  if (current.nodeType !== Node.ELEMENT_NODE) { current.nodeValue = fresh.nodeValue; return; }
+  const open = current.tagName === 'DETAILS' ? current.open : null;
+  for (const attribute of [...current.attributes]) if (!fresh.hasAttribute(attribute.name)) current.removeAttribute(attribute.name);
+  for (const attribute of fresh.attributes) current.setAttribute(attribute.name, attribute.value);
+  const oldChildren = [...current.childNodes], used = new Set();
+  let cursor = current.firstChild;
+  for (const child of [...fresh.childNodes]) {
+    const key = reviewNodeKey(child);
+    let match = oldChildren.find(node => !used.has(node) && node.nodeType === child.nodeType && node.nodeName === child.nodeName && (key ? reviewNodeKey(node) === key : !reviewNodeKey(node)));
+    if (match) { used.add(match); morphReviewNode(match, child, preservedForms); }
+    else match = child.cloneNode(true);
+    if (match !== cursor) current.insertBefore(match, cursor);
+    cursor = match.nextSibling;
+  }
+  for (const child of oldChildren) if (!used.has(child) && child.parentNode === current) child.remove();
+  if (current.matches('input, textarea, select')) {
+    current.value = fresh.value;
+    if (current.type === 'checkbox') current.checked = fresh.checked;
+  }
+  if (open !== null) current.open = open;
+}
+function reviewFragment(markup) {
+  const template = document.createElement('template');
+  template.innerHTML = markup;
+  return template.content;
+}
+function advanceAfterReview(ownerId, advance, message) {
+  const owner = document.getElementById(ownerId);
+  sessionStorage.removeItem(reviewAdvanceKey);
+  const destination = new URL(location.href); destination.hash = ''; destination.searchParams.delete('source_page');
+  history.replaceState(null, '', destination.pathname + destination.search);
+  if (advance && document.getElementById('structure-review-complete')) {
+    const complete = document.getElementById('structure-review-complete');
+    complete.focus({preventScroll: true}); complete.scrollIntoView({block: 'center', behavior: 'instant'});
+    announce(`${message} Structure review complete.`); return;
+  }
+  if (focusEmptyBlockFilter()) { announce(message); return; }
+  const cards = [...document.querySelectorAll('.block-card')], index = cards.indexOf(owner);
+  const following = [...cards.slice(index + 1), ...cards.slice(0, Math.max(0, index))].filter(card => !card.hidden);
+  const target = !advance && owner && !owner.hidden ? owner : following.find(card => ['unreviewed', 'needs_review'].includes(card.dataset.reviewStatus)) || following[0] || (owner && !owner.hidden ? owner : blockCards()[0]);
+  if (target) { focusBlock(target); sessionStorage.setItem(blockSelectionKey, target.id); }
+  announce(`${message}${target ? ` Block ${target.dataset.blockIndex} selected.` : ''}`);
+}
+function applyReviewPatch(data, ownerId, advance, message, submittedForm = null) {
+  if (!data.review_patch) throw new Error(data.refresh_error || 'Saved, but this running app cannot refresh review in place. Reload after relaunching PTW before making another change.');
+  const patch = data.review_patch;
+  const sourcePane = document.querySelector('.source-pane');
+  if (sourcePane && patch.source_page_reviews) sourcePane.dataset.pageReviews = JSON.stringify(patch.source_page_reviews);
+  receiveSourcePageVisualReviews(patch.source_page_visual_reviews);
+  updateSourcePageReview();
+  const submitted = new Set(Array.isArray(submittedForm) ? submittedForm : [submittedForm]);
+  const preserved = new Set(authoringForms.filter(form => !submitted.has(form) && authoringBaselines.get(form) !== authoringValue(form)));
+  for (const markup of patch.cards) {
+    const fresh = reviewFragment(markup).firstElementChild, current = document.getElementById(fresh.id);
+    if (!current) throw new Error('Saved content changed the review structure. Reload before making another change.');
+    morphReviewNode(current, fresh, preserved);
+  }
+  const ids = new Set(patch.block_ids.map(id => `block-${id}`));
+  document.querySelectorAll('.block-card').forEach(card => { if (!ids.has(card.id)) card.remove(); });
+  for (const [selector, markup] of [['#review-summary', patch.summary], ['#structure-completion-region', `<div id="structure-completion-region">${patch.completion}</div>`]]) {
+    const current = document.querySelector(selector); if (current) morphReviewNode(current, reviewFragment(markup).firstElementChild, preserved);
+  }
+  const filters = reviewFragment(patch.filters);
+  for (const id of ['block-review-filter', 'block-type-filter']) morphReviewNode(document.getElementById(id), filters.querySelector(`#${id}`), preserved);
+  document.querySelectorAll('#undo-action, #reading-order-undo').forEach(button => { button.disabled = !patch.can_undo; });
+  if (patch.can_undo) document.querySelector('.undo-empty')?.remove();
+  const overall = document.querySelector('.review-overall-status'); if (overall) overall.hidden = patch.complete;
+  const control = document.getElementById('manual-reconstruction-control');
+  if (control) { control.dataset.reviewToken = patch.review_token; control.dataset.pages = JSON.stringify(patch.manual_pages); updateManualReconstruction(displayedReconstructionPage()); }
+  authoringForms.splice(0, authoringForms.length, ...document.querySelectorAll('.block-form, .complex-visual-form'));
+  for (const form of authoringForms) if (!preserved.has(form)) {
+    const token = form.elements.namedItem('expected_review_token'); if (token) token.value = patch.review_token;
+    authoringBaselines.set(form, authoringValue(form));
+    if (form.matches('.block-form')) initializeBlockForm(form);
+  }
+  document.querySelectorAll('.block-content-modes').forEach(initializeBlockContentModes);
+  updateAuthoringFeedback();
+  document.querySelectorAll('[data-merge-token]').forEach(button => { button.dataset.mergeToken = patch.review_token; });
+  mergeSnapshotStale = false;
+  applyBlockFilter();
+  if (preserved.size) { announce(`${message} Other unsaved edits remain in this tab.`); return; }
+  advanceAfterReview(ownerId, advance, message);
+}
+document.addEventListener('click', event => {
+  if (!event.target.closest('[data-save-and-approve], .block-action[data-action="approve"]')) return;
+  if (reviewWriteBusy || performance.now() < reviewClickLockUntil || event.detail > 1) { event.preventDefault(); event.stopImmediatePropagation(); }
+}, true);
+
+function showBlockActionMessage(card, text) {
+  if (!card) { announce(text); return; }
+  let message = card.querySelector('.block-action-message');
+  if (!message) {
+    message = document.createElement('p');
+    message.className = 'block-action-message';
+    message.setAttribute('role', 'status');
+    message.setAttribute('aria-live', 'polite');
+  }
+  // Earlier open pages put this feedback in the distant lower footer.
+  const actions = card.querySelector('.block-review-actions');
+  if (actions && actions.nextElementSibling !== message) actions.after(message);
+  message.textContent = text;
+  message.hidden = false;
+  message.scrollIntoView({block: 'nearest', behavior: 'instant'});
+  announce(text);
+}
+function blockFormValues(form) {
   const values = Object.fromEntries(new FormData(form));
   if (form.classList.contains('image-block-form')) {
     values.description_edits = [...form.querySelectorAll('.image-description-record')].map(record => ({id: record.dataset.visualId, ...Object.fromEntries([...record.querySelectorAll('[data-description-field]')].map(field => [field.dataset.descriptionField, field.value]))}));
@@ -970,42 +1406,102 @@ document.querySelectorAll('.block-form').forEach((form) => form.addEventListener
   });
   if (values.type === 'heading') values.level = Number(values.level);
   else delete values.level;
-  const saveAndApprove = event.submitter?.hasAttribute('data-save-and-approve');
+  return values;
+}
+function initializeBlockForm(form) {
+  if (boundBlockForms.has(form)) return;
+  boundBlockForms.add(form);
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    if (event.submitter?.hasAttribute('data-save-and-approve')) {
+      announce('Save your edits, then relaunch PTW and reload Structure to use the updated top approval action.'); return;
+    }
+    saveBlockAuthoring(form, event.submitter);
+  });
+}
+async function saveBlockAuthoring(form, submitter, saveAndApprove = false, submittedForms = [form]) {
+  if (reviewWriteBusy || performance.now() < reviewClickLockUntil || form.dataset.saving === 'true') return;
+  if (reviewReloadRequired) { showBlockActionMessage(form.closest('.block-card'), 'The previous save needs confirmation. Your edits remain here. Preserve them before reloading to inspect the saved result.'); return; }
+  if (form.dataset.saveUncertain === 'true') { showBlockActionMessage(form.closest('.block-card'), 'This save could not be confirmed. Your edits remain here. Preserve them before reloading; do not submit the same approval again.'); return; }
+  if (saveAndApprove && submitter?.dataset.saveEditors !== 'true') {
+    const text = 'Save your edits, then relaunch PTW and reload Structure to use Save & Approve. This running server has the earlier editor.';
+    showBlockActionMessage(form.closest('.block-card'), text); return;
+  }
+  let values = blockFormValues(form);
+  if (saveAndApprove) {
+    if (submittedForms.some(editor => {
+      if (editor.checkValidity()) return false;
+      showBlockActionMessage(form.closest('.block-card'), 'An edited field is invalid. Check the highlighted field; your changes have not been saved.');
+      editor.closest('.block-content-modes')?.querySelector('[role=tab][aria-controls^=content-edit-]')?.click();
+      editor.reportValidity(); return true;
+    })) return;
+    values = {expected_review_token: form.elements.namedItem('expected_review_token')?.value,
+      form_edits: submittedForms.map(editor => {
+        const edits = blockFormValues(editor);
+        delete edits.expected_review_token; delete edits.displayed_description_ids;
+        return edits;
+      })};
+    const image = form.closest('.block-card').querySelector('.image-block-form');
+    if (image) values.displayed_description_ids = [...image.querySelectorAll('.image-description-record')].map(record => record.dataset.visualId);
+  }
+  const ownerId = form.closest('.block-card').id;
+  const submitterText = submitter?.textContent;
+  let sent = false, confirmed = false;
+  const disabled = new Map([...submittedForms.flatMap(editor => [...editor.querySelectorAll('input, textarea, select, button')]), ...(submitter ? [submitter] : [])].map(field => [field, field.disabled]));
   try {
-    const otherDirty = authoringForms.find(other => other !== form && authoringBaselines.get(other) !== authoringValue(other));
-    if (otherDirty) throw new Error('Save or revert changes in the other editor before saving this block.');
+    const otherDirty = authoringForms.find(other => !submittedForms.includes(other) && authoringBaselines.get(other) !== authoringValue(other));
+    if (otherDirty) throw new Error(`Block ${otherDirty.closest('.block-card')?.dataset.blockIndex || 'in another editor'} also has unsaved changes. Save or revert those edits first; your changes in this block remain here.`);
     if (saveAndApprove) {
       delete values.review_status;
     }
     form.dataset.saving = 'true';
+    reviewWriteBusy = true;
+    values.review_refresh = true;
+    disabled.forEach((state, field) => { field.disabled = true; });
+    if (submitter) { submitter.dataset.saving = 'true'; submitter.textContent = 'Saving…'; }
+    announce('Saving…');
     updateMergeControls();
-    const saved = await api(`/api/blocks/${encodeURIComponent(form.dataset.blockId)}${saveAndApprove ? '/save-and-approve' : ''}`, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(values) });
+    sent = true;
+    const saved = await api(`/api/blocks/${encodeURIComponent(form.dataset.blockId)}${saveAndApprove ? '/save-and-approve' : ''}`, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(values), signal: reviewSaveSignal() });
+    confirmed = true;
     if (returnToAccessibility(form.closest('.block-card'))) return;
-    const owner = form.closest('.block-card');
-    rememberReviewResult(owner, Boolean(saveAndApprove));
-    announce(saveAndApprove ? 'Block saved and approved.' : saved.block_status === 'needs_review' ? 'Changes saved. Review the saved content, then approve it.' : 'Block saved.');
-    window.location.reload();
+    applyReviewPatch(saved, ownerId, Boolean(saveAndApprove), saveAndApprove ? 'Block saved and approved.' : saved.block_status === 'needs_review' ? 'Changes saved. Review the saved content, then approve it.' : 'Block saved.', submittedForms);
+    reviewClickLockUntil = performance.now() + 250;
   } catch (error) {
-    const message = form.closest('.block-card')?.querySelector('.block-action-message');
-    if (message) { message.textContent = error.message; message.hidden = false; }
-    announce(error.message);
+    if (saveAndApprove && [404, 405].includes(error.status)) error.message = 'Save & Approve is unavailable in this running server. Your edits remain here. Preserve them, then relaunch PTW and reload Structure.';
+    if (sent && (confirmed || !error.confirmedRejection)) {
+      form.dataset.saveUncertain = 'true';
+      reviewReloadRequired = true;
+      if (!confirmed) error.message = 'The save result could not be confirmed. Your fields remain here. Reload before retrying; do not submit the same approval again.';
+      else error.message = reviewRefreshRecovery(error.message);
+    }
+    showBlockActionMessage(form.closest('.block-card'), error.message);
   } finally {
     delete form.dataset.saving;
+    reviewWriteBusy = false;
+    disabled.forEach((state, field) => { if (field.isConnected) field.disabled = state; });
+    if (submitter?.isConnected) { delete submitter.dataset.saving; if (submitterText) submitter.textContent = submitterText; }
+    updateAuthoringFeedback();
     updateMergeControls();
   }
-}));
+}
+document.querySelectorAll('.block-form').forEach(initializeBlockForm);
 
-document.querySelectorAll('.image-block-form input[name="decorative"]').forEach((checkbox) => checkbox.addEventListener('change', () => {
+document.addEventListener('change', event => {
+  const checkbox = event.target;
+  if (!checkbox.matches('.image-block-form input[name="decorative"]')) return;
   const alt = checkbox.closest('form').querySelector('textarea[name="alt"]');
   alt.disabled = checkbox.checked;
   if (checkbox.checked) alt.value = '';
-}));
+});
 
-document.querySelectorAll('.block-form select[name="type"]').forEach((select) => select.addEventListener('change', () => {
+document.addEventListener('change', event => {
+  const select = event.target;
+  if (!select.matches('.block-form select[name="type"]')) return;
   const level = select.closest('form').querySelector('.heading-level');
   level.hidden = select.value !== 'heading';
   level.querySelector('select').disabled = select.value !== 'heading';
-}));
+});
 
 document.querySelectorAll('.complex-visual-form').forEach((form) => form.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -1017,6 +1513,8 @@ document.querySelectorAll('.complex-visual-form').forEach((form) => form.addEven
   try {
     const values = Object.fromEntries(new FormData(form));
     const data = await api(`/api/complex-visuals/${encodeURIComponent(form.dataset.visualId)}`, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(values) });
+    receiveSourcePageReviews(data.source_page_reviews);
+    receiveSourcePageVisualReviews(data.source_page_visual_reviews);
     if (data.reload_required) { location.hash = 'visual-' + encodeURIComponent(form.dataset.visualId); window.location.reload(); return; }
     message.textContent = `Saved.${data.block_status === 'needs_review' ? ' The linked image block needs approval.' : ''}`;
     const card = form.closest('.complex-visual');
@@ -1102,8 +1600,13 @@ document.querySelectorAll('.accessibility-decision-form').forEach((form) => form
 }));
 
 document.querySelectorAll('.block-action').forEach((button) => button.addEventListener('click', async () => {
+  if (reviewWriteBusy || reviewReloadRequired || button.dataset.saveUncertain === 'true') { showBlockActionMessage(button.closest('.block-card'), 'Finish or confirm the current save before another review action. Your edited fields remain here.'); return; }
   let action = button.dataset.action;
   const blockId = button.dataset.blockId;
+  if (action === 'approve') {
+    const edited = [...button.closest('.block-card').querySelectorAll('.block-form')].filter(form => authoringBaselines.get(form) !== authoringValue(form));
+    if (edited.length) { await saveBlockAuthoring(edited[0], button, true, edited); return; }
+  }
   const body = {};
   if (action === 'toggle-excluded') action = button.dataset.currentStatus === 'excluded' ? 'include' : 'exclude';
   if (action === 'merge') {
@@ -1124,50 +1627,91 @@ document.querySelectorAll('.block-action').forEach((button) => button.addEventLi
     body.offset = textarea?.selectionStart || 0;
     if (!body.offset) { announce('Place the text cursor where the block should split.'); textarea?.focus(); return; }
   }
+  const refresh = ['approve', 'flag', 'exclude', 'include'].includes(action);
+  const originalText = button.textContent;
+  const originalDisabled = button.disabled;
+  let sent = false, confirmed = false;
   try {
     if (action !== 'merge') {
       const dirty = authoringForms.find(form => authoringBaselines.get(form) !== authoringValue(form));
       if (dirty) {
-        dirty.closest('.block-card')?.querySelector('[data-save-and-approve]')?.focus();
-        throw new Error('There are unsaved edits. Save or revert them before changing the saved blocks.');
+        dirty.closest('.block-card')?.querySelector('.block-review-actions [data-action=approve]')?.focus();
+        throw new Error(action === 'approve' ? 'There are unsaved edits. Use Save & Approve in the edited block, or revert those edits before approving saved content.' : 'There are unsaved edits. Save or revert them before changing the saved blocks.');
       }
     }
-    await api(`/api/blocks/${encodeURIComponent(blockId)}/${action}`, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(body) });
+    if (refresh) {
+      body.review_refresh = true;
+      body.expected_review_token = button.closest('.block-card').querySelector('[name="expected_review_token"]')?.value || button.closest('.block-card').querySelector('[data-merge-token]')?.dataset.mergeToken;
+      if (action === 'approve' && button.closest('.block-card').querySelector('.image-block-form')) {
+        body.displayed_description_ids = [...button.closest('.block-card').querySelectorAll('.image-description-record')].map(record => record.dataset.visualId);
+      }
+      reviewWriteBusy = true;
+      button.disabled = true;
+      button.textContent = 'Saving…';
+      announce('Saving review…');
+    }
+    sent = true;
+    const saved = await api(`/api/blocks/${encodeURIComponent(blockId)}/${action}`, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(body), ...(refresh ? {signal: reviewSaveSignal()} : {}) });
+    confirmed = true;
+    if (!refresh) receiveSourcePageReviews(saved.source_page_reviews);
     if (returnToAccessibility(button.closest('.block-card'))) return;
-    if (['approve', 'flag', 'exclude', 'include'].includes(action)) {
-      const currentCard = button.closest('.block-card');
-      rememberReviewAdvance(currentCard);
-    } else rememberReviewResult(button.closest('.block-card'));
+    if (refresh) {
+      applyReviewPatch(saved, button.closest('.block-card').id, true, action === 'approve' ? 'Block approved.' : 'Review action saved.');
+      reviewClickLockUntil = performance.now() + 250;
+      return;
+    }
+    rememberReviewResult(button.closest('.block-card'));
     announce('Review action saved.');
     window.location.reload();
   } catch (error) {
-    announce(error.message);
-    const message = button.closest('.block-card')?.querySelector('.block-action-message');
-    if (message) { message.textContent = error.message; message.hidden = false; }
+    if (refresh && sent && (confirmed || !error.confirmedRejection)) {
+      button.dataset.saveUncertain = 'true';
+      reviewReloadRequired = true;
+      if (!confirmed) error.message = 'The review save result could not be confirmed. Reload before retrying; no automatic retry was made.';
+      else error.message = reviewRefreshRecovery(error.message);
+    }
+    showBlockActionMessage(button.closest('.block-card'), error.message);
     if (action === 'merge' && /^(The document changed|The next block changed)\./.test(error.message)) mergeSnapshotStale = true;
   } finally {
+    if (refresh) {
+      reviewWriteBusy = false;
+      if (button.isConnected) button.textContent = originalText;
+      const card = button.closest('.block-card');
+      // A saved image may still have pending descriptions. Keep the server's
+      // refreshed disabled state after success; restore the old state on rejection.
+      if (card) button.disabled = button.dataset.saveUncertain === 'true' || (confirmed ? button.disabled : originalDisabled);
+    }
     if (action === 'merge') { mergeInProgress = false; updateMergeControls(); }
+    updateAuthoringFeedback();
   }
 }));
 
 let undoInProgress = false;
 document.querySelectorAll('#undo-action, #reading-order-undo').forEach(button => button.addEventListener('click', async () => {
+  if (reviewWriteBusy || reviewReloadRequired) { announce('Finish or confirm the current save before Undo. Reload if its result is uncertain.'); return; }
   if (undoInProgress) return;
   undoInProgress = true;
   const controls = Array.from(document.querySelectorAll('#undo-action, #reading-order-undo'));
   const disabledStates = controls.map(control => control.disabled);
   controls.forEach(control => { control.disabled = true; });
+  let sent = false;
   try {
     const dirty = authoringForms.find(form => authoringBaselines.get(form) !== authoringValue(form));
     if (dirty) {
       dirty.closest('.block-card')?.querySelector('button[type="submit"]')?.focus();
       throw new Error('Save or revert unsaved edits before Undo so they remain recoverable.');
     }
-    await api('/api/review/undo', { method: 'POST', headers: csrfHeaders(), body: '{}' });
-    rememberReviewResult(selectedSourceCard || document.getElementById(sessionStorage.getItem(blockSelectionKey)));
+    sent = true;
+    const result = await api('/api/review/undo', { method: 'POST', headers: csrfHeaders(), body: '{}' });
+    receiveSourcePageReviews(result.source_page_reviews);
+    if (manualPageToggle && new URLSearchParams(location.search).has('source_page')) {
+      sessionStorage.removeItem(reviewAdvanceKey);
+    } else rememberReviewResult(selectedSourceCard || document.getElementById(sessionStorage.getItem(blockSelectionKey)));
     announce('Last action undone.');
     window.location.reload();
   } catch (error) {
+    if (sent && !error.confirmedRejection) { reviewReloadRequired = true; error.message = 'Undo result could not be confirmed. Reload before another review change.'; }
+    updateSourcePageReview();
     undoInProgress = false;
     controls.forEach((control, index) => { control.disabled = disabledStates[index]; });
     announce(error.message); alert(error.message);
@@ -1177,14 +1721,102 @@ document.querySelectorAll('#undo-action, #reading-order-undo').forEach(button =>
 document.querySelectorAll('.preview-width').forEach((button) => button.addEventListener('click', () => {
   const shell = document.getElementById('preview-shell');
   shell.classList.toggle('narrow', button.dataset.width === 'mobile');
-  document.querySelectorAll('.preview-width').forEach((item) => item.classList.toggle('secondary', item !== button));
+  document.querySelectorAll('.preview-width').forEach((item) => { item.classList.toggle('secondary', item !== button); item.setAttribute('aria-pressed', String(item === button)); });
   announce(`${button.textContent} preview selected.`);
 }));
 
 const previewFrame = document.querySelector('#preview-shell iframe');
 const previewProfile = document.getElementById('preview-profile');
+const previewPage = document.getElementById('preview-page');
+const previewWorkspace = document.getElementById('preview-workspace');
+let activePreviewMode = previewWorkspace?.dataset.mode || 'wordpress';
+function updatePreviewPage() {
+  if (!previewPage) return;
+  const index = previewPage.selectedIndex, count = previewPage.options.length - 1;
+  document.getElementById('preview-previous').disabled = index <= 1;
+  document.getElementById('preview-next').disabled = index >= count || !count;
+  document.getElementById('preview-page-status').textContent = index ? `Page ${index} of ${count}${previewPage.selectedOptions[0].dataset.state ? " · " + previewPage.selectedOptions[0].dataset.state : ""}` : `Whole document · ${count} output page${count === 1 ? '' : 's'}`;
+  document.getElementById('preview-arrange').href = `/output-pages?${new URLSearchParams({page_id: previewPage.value, mode: activePreviewMode, profile: previewProfile.value})}`;
+  const params = new URLSearchParams({page_id: previewPage.value, mode: activePreviewMode, profile: previewProfile.value});
+  history.replaceState(null, '', `/preview?${params}`);
+  document.querySelectorAll('[data-preview-export]').forEach(link => { link.href = `/export?${params}`; });
+}
+let previewExportPending = false;
+let previewExportRecoveryTimer = null;
+const previewExportStatus = document.getElementById('preview-export-status');
+function previewExportFeedback(message, pending) {
+  previewExportPending = pending;
+  previewExportStatus.hidden = false;
+  previewExportStatus.textContent = message;
+  previewPage.disabled = pending;
+  previewProfile.disabled = pending;
+  document.querySelectorAll('.preview-mode, #preview-previous, #preview-next').forEach(control => { control.disabled = pending; });
+  if (!pending) updatePreviewPage();
+  document.querySelectorAll('[data-preview-export]').forEach(link => {
+    link.setAttribute('aria-disabled', String(pending));
+    link.setAttribute('aria-busy', String(pending));
+  });
+}
+document.querySelectorAll('[data-preview-export]').forEach(link => link.addEventListener('click', async event => {
+  if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  if (previewExportPending) return;
+  clearTimeout(previewExportRecoveryTimer);
+  const destination = link.href;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  previewExportFeedback('Opening Export… This does not generate files.', true);
+  try {
+    const response = await fetch(destination, {signal: controller.signal, cache: 'no-store'});
+    if (!response.ok) throw new Error(`Export screen returned HTTP ${response.status}.`);
+    window.location.assign(destination);
+    // A cancelled or failed browser navigation must not leave a permanently busy link.
+    previewExportRecoveryTimer = setTimeout(() => previewExportFeedback('Export has not opened. Try Continue to Export again, or Restore preview to use the main navigation. No files were generated by this action.', false), 10000);
+  } catch (error) {
+    previewExportFeedback(`Could not open Export. ${error.name === 'AbortError' ? 'The request timed out.' : error.message} Try again, or Restore preview to use the main navigation. Your selected page remains here.`, false);
+  } finally { clearTimeout(timeout); }
+}));
+window.addEventListener('pageshow', () => {
+  if (previewExportStatus) {
+    clearTimeout(previewExportRecoveryTimer);
+    previewExportFeedback('', false);
+    document.querySelectorAll('[data-preview-export]').forEach(link => { link.setAttribute('aria-disabled', 'false'); link.setAttribute('aria-busy', 'false'); });
+    previewExportStatus.hidden = true;
+  }
+});
+previewPage?.addEventListener('change', () => selectPreviewMode(activePreviewMode));
+for (const [id, direction] of [['preview-previous', -1], ['preview-next', 1]]) {
+  document.getElementById(id)?.addEventListener('click', () => {
+    previewPage.selectedIndex += direction;
+    selectPreviewMode(activePreviewMode);
+    // At a boundary the activated button becomes disabled; retain a usable focus target.
+    if (document.getElementById(id).disabled) previewPage.focus();
+  });
+}
+document.getElementById('preview-expand')?.addEventListener('click', event => {
+  const expanded = previewWorkspace.classList.toggle('expanded');
+  event.currentTarget.setAttribute('aria-expanded', String(expanded));
+  event.currentTarget.textContent = expanded ? 'Restore preview' : 'Expand preview';
+  // Keep keyboard focus within the visible viewport without creating another dialog.
+  for (const element of [...document.querySelector('main').children, ...document.body.children]) {
+    if (element === previewWorkspace || element.contains(previewWorkspace) || element.tagName === 'SCRIPT') continue;
+    if (expanded) { element.dataset.previewWasInert = String(element.inert); element.inert = true; }
+    else if (element.dataset.previewWasInert !== undefined) { element.inert = element.dataset.previewWasInert === 'true'; delete element.dataset.previewWasInert; }
+  }
+});
+function exitExpandedPreview(event) {
+  if (event.key === 'Escape' && previewWorkspace.classList.contains('expanded')) {
+    document.getElementById('preview-expand').click();
+    document.getElementById('preview-expand').focus();
+  }
+}
+previewWorkspace?.addEventListener('keydown', exitExpandedPreview);
+previewFrame?.addEventListener('load', () => {
+  try { previewFrame.contentDocument?.addEventListener('keydown', exitExpandedPreview); } catch (_) { /* Confined preview may be unavailable. */ }
+});
 function selectPreviewMode(mode) {
   if (!previewFrame) return;
+  activePreviewMode = mode;
   const wordpress = mode === 'wordpress';
   document.querySelectorAll('.preview-mode').forEach((button) => {
     const selected = button.dataset.mode === mode;
@@ -1193,17 +1825,26 @@ function selectPreviewMode(mode) {
   });
   previewProfile?.closest('label').toggleAttribute('hidden', !wordpress);
   previewFrame.title = wordpress ? 'WordPress Gutenberg preview' : 'Semantic HTML preview';
-  previewFrame.src = wordpress
+  const option = previewPage?.selectedOptions[0];
+  if (option?.value) previewFrame.title += ` — ${option.textContent}`;
+  previewFrame.src = option?.value
+    ? `/output-preview/${encodeURIComponent(option.dataset.slug)}.html?mode=${mode}&profile=${encodeURIComponent(previewProfile.value)}`
+    : wordpress
     ? `/api/preview/wordpress?profile=${encodeURIComponent(previewProfile?.value || 'generic')}`
     : '/api/preview/html';
   const description = document.getElementById('preview-description');
   if (description) description.textContent = wordpress
     ? 'Approximate content and structure preview using local minimal CSS. Production WSU theme and plugins determine the final design.'
     : 'Semantic Preview shows the reviewed document independently of WordPress.';
+  updatePreviewPage();
   announce(`${wordpress ? 'WordPress' : 'Semantic HTML'} preview selected.`);
 }
 document.querySelectorAll('.preview-mode').forEach((button) => button.addEventListener('click', () => selectPreviewMode(button.dataset.mode)));
 previewProfile?.addEventListener('change', () => selectPreviewMode('wordpress'));
+if (previewWorkspace) {
+  previewProfile.value = previewWorkspace.dataset.profile;
+  selectPreviewMode(activePreviewMode);
+}
 
 const exportForm = document.getElementById('export-form');
 let exportMutationPending = false;
@@ -1415,7 +2056,7 @@ function savedOutputControls(data) {
 function browserCopy(file, label) {
   const details = document.createElement('details'); details.className = 'browser-copy-option';
   const summary = document.createElement('summary'); summary.textContent = 'Optional browser copy';
-  const note = document.createElement('p'); note.textContent = 'This makes an extra copy wherever your browser saves downloads. The project file is already saved.';
+  const note = document.createElement('p'); note.className = 'helper-text'; note.textContent = 'This makes an extra copy wherever your browser saves downloads. The project file is already saved.';
   const link = document.createElement('a'); link.href = file.url; link.download = file.filename || '';
   link.textContent = label || `Save browser copy of ${file.path.split('/').pop()}`;
   details.append(summary, note, link);
@@ -1741,8 +2382,59 @@ document.documentElement.dataset.appReady = 'true';
 const pageEditor = document.getElementById('page-editor');
 const pageMessage = document.getElementById('output-page-message');
 const selectedPageId = () => pageEditor?.dataset.pageId;
+const pageMetadata = document.getElementById('output-page-metadata');
+const pageMetadataValue = () => pageMetadata ? JSON.stringify([...new FormData(pageMetadata)]) : '';
+const initialPageMetadata = pageMetadataValue();
+const pageApprovalForm = document.getElementById('output-page-approval');
+const pageApprovalValue = () => pageApprovalForm ? JSON.stringify([...new FormData(pageApprovalForm)]) : '';
+const initialPageApproval = pageApprovalValue();
+function outputPreviewLink() {
+  const requested = new URLSearchParams(location.search);
+  const mode = document.getElementById('output-page-preview') ? (document.getElementById('output-page-preview').getAttribute('aria-pressed') === 'true' ? 'semantic' : 'wordpress') : (requested.get('mode') === 'semantic' ? 'semantic' : 'wordpress');
+  return `/preview?${new URLSearchParams({page_id: selectedPageId() || '', mode, profile: document.getElementById('output-page-profile')?.value || (requested.get('profile') === 'wsuwp' ? 'wsuwp' : 'generic')})}`;
+}
+if (pageEditor) {
+  document.querySelectorAll('a[href="/preview"]').forEach(link => link.href = outputPreviewLink());
+  document.addEventListener('click', event => {
+    const link = event.target.closest('a[href]');
+    if (!link || link.target === '_blank' || link.origin !== location.origin) return;
+    try {
+      requireSavedPageMetadata();
+      if (pageActionPending) throw new Error('Wait for the page save to finish.');
+      if (link.pathname === '/preview') link.href = outputPreviewLink();
+    } catch (error) { event.preventDefault(); pageMessage.textContent = error.message; pageMessage.scrollIntoView({block: 'nearest'}); }
+  });
+  window.addEventListener('beforeunload', event => {
+    if (!pageActionPending && (pageMetadataValue() !== initialPageMetadata || pageApprovalValue() !== initialPageApproval)) {
+      event.preventDefault(); event.returnValue = '';
+    }
+  });
+}
+
+let pageActionPending = false;
+let pageReloadRequired = false;
+function lockPageMetadata() {
+  const fields = [...(pageEditor?.querySelectorAll('input, select, textarea, button') || [])];
+  const states = fields.map(e => e.disabled);
+  fields.forEach(e => {e.disabled = true;});
+  return () => fields.forEach((e, i) => {e.disabled = states[i];});
+}
+function requireSavedPageMetadata(allowApprovalDraft = false) {
+  if (pageReloadRequired) throw new Error('The last save could not be confirmed. Reload before changing this arrangement.');
+  if (pageMetadataValue() !== initialPageMetadata) throw new Error('Save or revert the unsaved page title, slug and metadata before changing the arrangement. Your draft remains here.');
+  if (!allowApprovalDraft && pageApprovalValue() !== initialPageApproval) throw new Error('Save or revert the unsaved page reviewer note before changing the arrangement. Your draft remains here.');
+}
 async function pageAction(action, values = {}) {
+  if (pageActionPending) return;
+  let sent = false;
+  let unlockMetadata = () => {};
   try {
+    if (action !== 'metadata') requireSavedPageMetadata(action === 'approve');
+    else if (pageApprovalValue() !== initialPageApproval) throw new Error('Save or revert the unsaved page reviewer note first. Your drafts remain here.');
+    if (pageReloadRequired) throw new Error('Reload before another arrangement save.');
+    pageActionPending = true;
+    unlockMetadata = lockPageMetadata();
+    sent = true;
     const result = await api(`/api/output-pages/${action}`, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify({ page_id: selectedPageId(), ...values }) });
     sessionStorage.setItem('output-page-announcement', 'Changes saved.');
     const destination = `/output-pages?page_id=${encodeURIComponent(result.page_id || '')}`;
@@ -1750,8 +2442,178 @@ async function pageAction(action, values = {}) {
       location.hash = 'page-editor';
       location.reload();
     } else window.location.assign(destination + '#page-editor');
-  } catch (error) { pageMessage.textContent = error.message; }
+  } catch (error) {
+    if (sent && !error.confirmedRejection) { pageReloadRequired = true; error.message = 'Save result could not be confirmed. Your draft remains here. Reload before another arrangement change.'; }
+    pageMessage.textContent = error.message;
+  } finally { unlockMetadata(); pageActionPending = false; }
 }
+function automaticPageSlug(title, used = []) {
+  let base = String(title).normalize('NFKD').replace(/[^\x00-\x7f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'page';
+  base = base.slice(0, 100).replace(/-+$/g, '');
+  let slug = base, suffix = 2;
+  while (used.includes(slug) || ['contents', 'publications'].includes(slug)) {
+    const ending = `-${suffix++}`;
+    slug = base.slice(0, 100 - ending.length).replace(/-+$/g, '') + ending;
+  }
+  return slug;
+}
+function syncAutomaticPageSlug() {
+  if (!pageMetadata || pageMetadata.elements.slug_mode.value !== 'auto') return;
+  pageMetadata.elements.slug.value = automaticPageSlug(pageMetadata.elements.title.value, JSON.parse(pageMetadata.dataset.otherSlugs || '[]'));
+  document.getElementById('page-slug-status').textContent = 'Automatic from title';
+}
+pageMetadata?.elements.title.addEventListener('input', syncAutomaticPageSlug);
+pageMetadata?.elements.slug.addEventListener('input', () => {
+  pageMetadata.elements.slug_mode.value = 'custom';
+  document.getElementById('page-slug-status').textContent = 'Custom slug — title edits keep this value';
+});
+document.getElementById('page-slug-auto')?.addEventListener('click', () => {
+  pageMetadata.elements.slug_mode.value = 'auto'; syncAutomaticPageSlug();
+});
+document.getElementById('output-page-add-content')?.addEventListener('click', () => {
+  const outline = document.getElementById('content-outline'); outline.open = true;
+  const summary = outline.querySelector('summary'); summary.focus(); summary.scrollIntoView({block: 'center'});
+});
+
+const groupingRoot = document.getElementById('grouping-suggestions');
+const groupingProposal = document.getElementById('grouping-proposal');
+const groupingStatus = document.getElementById('grouping-status');
+let groupingSnapshot = null;
+let groupingRequest = 0;
+let groupingBusy = false;
+let groupingChoices = {};
+function groupingValues() {
+  return {method: groupingRoot.querySelector('[name=grouping_method]:checked').value,
+    selected: [...groupingRoot.querySelectorAll('[name=suggestion]:checked')].map(e => Number(e.value)), choices: {...groupingChoices}};
+}
+function invalidateGrouping() {
+  groupingSnapshot = null;
+  groupingRequest++;
+  document.getElementById('grouping-apply').disabled = true;
+  if (!groupingProposal.hidden) groupingStatus.textContent = 'Selection changed. Preview this arrangement again before applying.';
+}
+function groupingText(parent, tag, value) {
+  const node = document.createElement(tag); node.textContent = value; parent.append(node); return node;
+}
+function renderGroupingProposal(proposal) {
+  groupingProposal.replaceChildren(); groupingProposal.hidden = false;
+  groupingText(groupingProposal, 'h3', proposal.method === 'titles' ? `${proposal.pages.length} existing output pages — title refresh` : `${proposal.pages.length} proposed output pages`);
+  groupingText(groupingProposal, 'p', proposal.method === 'titles' ? 'Apply updates only recognized generated titles and their automatic slugs. Content assignments, custom titles, manual slugs and reconstruction labels stay unchanged. Review the before-and-after fields below. This is one saved change with Undo; changed page metadata still requires normal review.' : 'This is a proposal. Apply saves one arrangement with Undo. Existing block content, review decisions and reconstruction holds are retained. Publication still requires complete assignments and review.');
+  for (const note of proposal.notes || []) groupingText(groupingProposal, 'p', note);
+  for (const error of proposal.errors || []) groupingText(groupingProposal, 'p', `Needs a decision: ${error}`);
+  if (proposal.publication_findings?.length) {
+    const findings = groupingText(groupingProposal, 'details', '');
+    groupingText(findings, 'summary', `${proposal.publication_findings.length} arrangement requirements before publication`);
+    const items = groupingText(findings, 'ul', '');
+    for (const finding of proposal.publication_findings) groupingText(items, 'li', finding);
+  }
+  const list = groupingText(groupingProposal, 'ol', '');
+  for (const item of proposal.pages) {
+    const row = groupingText(list, 'li', '');
+    groupingText(row, 'strong', item.title);
+    groupingText(row, 'small', ` · ${item.block_ids.length} blocks${item.manual_reconstruction_source_page ? ' · Needs reconstruction' : item.block_ids.length === 0 ? ' · Needs content' : ''}`);
+    const sourcePage = item.manual_reconstruction_source_page || item.source_page_group;
+    if (sourcePage) {
+      const link = groupingText(row, 'a', ` · Open source page ${sourcePage} in Structure`);
+      link.href = `/structure?source_page=${sourcePage}`; link.target = '_blank'; link.rel = 'noopener';
+    }
+    const details = groupingText(row, 'details', ''); groupingText(details, 'summary', 'Content in Structure order');
+    const blocks = groupingText(details, 'ul', '');
+    for (const b of item.preview_blocks || []) groupingText(blocks, 'li', `Block ${b.number}: ${b.snippet}${b.excluded ? ' (excluded, retained)' : ''}`);
+  }
+  const effects = groupingText(groupingProposal, 'details', ''); groupingText(effects, 'summary', 'Existing pages and metadata');
+  const effectList = groupingText(effects, 'ul', '');
+  const effectNames = {source_order: 'Move to source-page order', reset_parent: 'Use no parent because the former parent is replaced', replace: 'Replace this page; Undo restores its metadata', assignments_changed: 'Move selected content; retain page metadata', refresh_title: 'Update generated title; keep content assignments'};
+  for (const effect of proposal.effects || []) {
+    const row = groupingText(effectList, 'li', `${effect.title}: ${effectNames[effect.action] || 'Update page'}`);
+    const fields = groupingText(row, 'ul', '');
+    for (const field of effect.display_fields || []) groupingText(fields, 'li', `${field.label}: ${field.before} → ${effect.action === 'replace' ? 'Replaced; recoverable with Undo' : field.after}`);
+  }
+  const moves = groupingText(groupingProposal, 'details', ''); groupingText(moves, 'summary', `${proposal.moves.length} selected block moves`);
+  const moveList = groupingText(moves, 'ul', '');
+  for (const move of proposal.moves) groupingText(moveList, 'li', `Block ${move.block_number || move.block_id}: ${move.from_title || 'Unassigned'} → ${move.to_title}`);
+  for (const exception of proposal.exceptions || []) {
+    if (exception.held_source_pages?.length) {
+      groupingText(groupingProposal, 'p', `${exception.label}: restore the held source page before moving this semantic bundle.`);
+      for (const number of exception.held_source_pages) {
+        const link = groupingText(groupingProposal, 'a', `Open source page ${number} in Structure`);
+        link.href = `/structure?source_page=${number}`; link.target = '_blank'; link.rel = 'noopener';
+      }
+      continue;
+    }
+    const label = groupingText(groupingProposal, 'label', `${exception.label || exception.reason}: choose its destination`);
+    const select = groupingText(label, 'select', '');
+    const empty = groupingText(select, 'option', 'Choose source page'); empty.value = '';
+    for (const item of proposal.groups || []) {
+      const number = item.source_pages?.length === 1 ? item.source_pages[0] : null;
+      const page = proposal.pages.find(p => p.id === item.page_id);
+      if (!number || page?.manual_reconstruction_source_page) continue;
+      const option = groupingText(select, 'option', `Source page ${number}`); option.value = String(number);
+    }
+    select.value = String(groupingChoices[exception.key] || '');
+    select.addEventListener('change', () => {if (select.value) groupingChoices[exception.key] = Number(select.value); else delete groupingChoices[exception.key]; invalidateGrouping();});
+  }
+  document.getElementById('grouping-apply-actions').hidden = false;
+}
+groupingRoot?.querySelectorAll('[name=grouping_method]').forEach(input => input.addEventListener('change', () => {
+  const source = groupingValues().method === 'source';
+  document.getElementById('source-grouping-options').hidden = !source;
+  document.getElementById('heading-grouping-options').hidden = source;
+  document.getElementById('grouping-preview').textContent = source ? 'Preview source-page arrangement' : 'Preview selected suggestions';
+  document.getElementById('grouping-apply').textContent = source ? 'Apply source-page arrangement' : 'Apply selected suggestions';
+  groupingChoices = {}; invalidateGrouping();
+}));
+groupingRoot?.querySelectorAll('[name=suggestion]').forEach(input => input.addEventListener('change', invalidateGrouping));
+for (const [id, checked] of [['grouping-select-all', true], ['grouping-clear-all', false]]) document.getElementById(id)?.addEventListener('click', () => {
+  groupingRoot.querySelectorAll('[name=suggestion]').forEach(input => {input.checked = checked;}); invalidateGrouping();
+});
+async function previewGrouping(method = null) {
+  if (groupingBusy || pageActionPending) return;
+  groupingBusy = true;
+  const request = ++groupingRequest, values = groupingValues();
+  if (method) values.method = method;
+  groupingStatus.textContent = 'Preparing arrangement preview…';
+  try {
+    const result = await api('/api/page-grouping/preview', {method: 'POST', headers: csrfHeaders(), body: JSON.stringify(values)});
+    if (request !== groupingRequest) return;
+    renderGroupingProposal(result.proposal);
+    groupingSnapshot = {values, expected_review_token: result.expected_review_token, proposal_digest: result.proposal_digest};
+    document.getElementById('grouping-apply').disabled = !result.proposal.can_apply;
+    document.getElementById('grouping-apply').textContent = values.method === 'titles' ? 'Apply generated page titles' : values.method === 'source' ? 'Apply source-page arrangement' : 'Apply selected suggestions';
+    groupingStatus.textContent = result.proposal.can_apply ? 'Proposal ready. Review the pages and selected moves before Apply.' : result.proposal.errors.length ? 'Resolve the assignment questions, then preview again.' : values.method === 'titles' ? 'No recognized generated titles need updating. Custom titles and slugs remain unchanged.' : 'Select at least one heading suggestion, then preview again.';
+    groupingProposal.focus();
+  } catch (error) {groupingStatus.textContent = error.message;}
+  finally {groupingBusy = false;}
+}
+document.getElementById('grouping-preview')?.addEventListener('click', () => previewGrouping());
+document.getElementById('grouping-title-preview')?.addEventListener('click', () => previewGrouping('titles'));
+document.getElementById('grouping-apply')?.addEventListener('click', async () => {
+  if (!groupingSnapshot || groupingBusy || pageActionPending) return;
+  let sent = false;
+  let unlockMetadata = () => {};
+  try {
+    requireSavedPageMetadata();
+    groupingBusy = true; pageActionPending = true;
+    unlockMetadata = lockPageMetadata();
+    document.getElementById('grouping-apply').disabled = true;
+    sent = true;
+    const {values, ...verification} = groupingSnapshot;
+    const result = await api('/api/page-grouping/apply', {method: 'POST', headers: csrfHeaders(), body: JSON.stringify({...values, ...verification})});
+    sessionStorage.setItem('output-page-announcement', 'Arrangement saved. Undo last action restores the previous pages and metadata.');
+    window.location.assign(`/output-pages?page_id=${encodeURIComponent(result.page_id || '')}#page-editor`);
+  } catch (error) {
+    if (sent && !error.confirmedRejection) {pageReloadRequired = true; error.message = 'Apply result could not be confirmed. Your draft remains here. Reload before another arrangement change.';}
+    invalidateGrouping();
+    groupingStatus.textContent = error.message;
+  } finally {unlockMetadata(); groupingBusy = false; pageActionPending = false;}
+});
+document.getElementById('grouping-cancel')?.addEventListener('click', () => {
+  if (groupingBusy) return;
+  invalidateGrouping(); groupingProposal.hidden = true;
+  document.getElementById('grouping-apply-actions').hidden = true;
+  groupingStatus.textContent = 'Proposal cancelled. Saved arrangement unchanged.';
+  document.getElementById('grouping-preview').focus();
+});
 document.querySelectorAll('[data-page-action]').forEach(button => button.addEventListener('click', () => pageAction(button.dataset.pageAction, { block_id: button.dataset.blockId, direction: button.dataset.direction })));
 for (const [id, action] of [['output-page-metadata', 'metadata'], ['output-page-merge', 'merge'], ['output-page-approval', 'approve']]) {
   document.getElementById(id)?.addEventListener('submit', event => {
@@ -1766,12 +2628,28 @@ if (pageMessage) {
   if (location.hash === '#page-editor') pageEditor?.focus();
 }
 function previewOutputPage(mode) {
-  const slug = document.querySelector('#output-page-metadata [name="slug"]').value;
+  const slug = pageEditor.dataset.pageSlug;
   const profile = document.getElementById('output-page-profile').value;
-  document.getElementById('output-page-frame').src = `/output-preview/${encodeURIComponent(slug)}.html?mode=${mode}&profile=${profile}`;
+  const wordpress = mode === 'wordpress';
+  const frame = document.getElementById('output-page-frame');
+  frame.title = wordpress ? 'WordPress page preview' : 'Semantic HTML page preview';
+  frame.src = `/output-preview/${encodeURIComponent(slug)}.html?mode=${mode}&profile=${encodeURIComponent(profile)}`;
+  for (const [id, active] of [['output-page-preview', !wordpress], ['output-page-wordpress-preview', wordpress]]) {
+    const button = document.getElementById(id);
+    button.setAttribute('aria-pressed', String(active));
+    button.classList.toggle('secondary', !active);
+  }
 }
 document.getElementById('output-page-preview')?.addEventListener('click', () => previewOutputPage('semantic'));
 document.getElementById('output-page-wordpress-preview')?.addEventListener('click', () => previewOutputPage('wordpress'));
+if (document.getElementById('output-page-frame')) {
+  const requested = new URLSearchParams(location.search);
+  if (['generic', 'wsuwp'].includes(requested.get('profile'))) document.getElementById('output-page-profile').value = requested.get('profile');
+  if (['semantic', 'wordpress'].includes(requested.get('mode'))) previewOutputPage(requested.get('mode'));
+}
+document.getElementById('output-page-profile')?.addEventListener('change', () => {
+  if (document.getElementById('output-page-wordpress-preview').getAttribute('aria-pressed') === 'true') previewOutputPage('wordpress');
+});
 document.querySelectorAll('[data-page-export]').forEach(button => button.addEventListener('click', async () => {
   try {
     const result = await api('/api/output-pages/export', { method: 'POST', headers: csrfHeaders(), body: JSON.stringify({ page_id: button.dataset.pageExport === 'individual' ? selectedPageId() : null, profile: document.getElementById('output-page-profile').value }) });
@@ -1788,6 +2666,18 @@ document.querySelectorAll('[data-page-export]').forEach(button => button.addEven
 const draftToolbar = document.getElementById('image-draft-toolbar');
 if (draftToolbar) {
   const message = document.getElementById('draft-message');
+  const workflowStatus = document.getElementById('draft-workflow-status');
+  const updateWorkflowStatus = entries => {
+    const notes = [];
+    for (const [status, label] of [['generating', 'generating'], ['failed', 'failed — retry or inspect the error'], ['stale', 'context changed — inspect drafting tools'], ['requested', 'awaiting response'], ['ready', 'drafts ready — review image blocks']]) {
+      const count = entries.filter(entry => entry.status === status).length;
+      if (count) notes.push(`${count} ${label}`);
+    }
+    if (workflowStatus) workflowStatus.textContent = notes.length ? `${notes.join('; ')}. Images still require review.` : 'Drafting is optional. Images still require review.';
+    // Completion changes the next-visit default through saved request history.
+    // Never collapse a live editor, replace a preference or move focus here.
+  };
+  const reportDraftError = error => { message.textContent = error.message; if (workflowStatus) workflowStatus.textContent = `Drafting needs attention: ${error.message}`; };
   const docId = draftToolbar.dataset.documentId;
   const postDraft = (action, data) => { if (['populate', 'associate', 'edit', 'apply', 'reject', 'cancel'].includes(action) || action === 'import' && data.commit) requireSavedAuthoring(); return api(`/api/image-drafts/${action}`, {method: 'POST', headers: csrfHeaders(), body: JSON.stringify({document_id: docId, ...data})}); };
   const panelFor = id => [...document.querySelectorAll('.image-draft-panel')].find(p => p.dataset.blockId === id);
@@ -1909,7 +2799,7 @@ if (draftToolbar) {
       const result = await postDraft('generate', {...cloudRequest, authorize_cloud: true});
       cloudRequest = null; document.getElementById('draft-transmission').hidden = true;
       message.textContent = `${result.queued} requests queued with OpenAI for the authorized selection; ${result.preserved} existing drafts preserved.`;
-    } catch (error) { message.textContent = error.message; }
+    } catch (error) { reportDraftError(error); }
   });
   document.getElementById('draft-transmission-cancel').addEventListener('click', () => { cloudRequest = null; document.getElementById('draft-transmission').hidden = true; message.textContent = 'Cloud request cancelled.'; });
   document.querySelectorAll('[data-draft-batch]').forEach(button => button.addEventListener('click', async () => {
@@ -1935,12 +2825,12 @@ if (draftToolbar) {
   document.querySelectorAll('.draft-association-form').forEach(form => form.addEventListener('submit', async event => {
     event.preventDefault();
     try { await postDraft('associate', {...Object.fromEntries(new FormData(form)), block_id: form.dataset.blockId}); reloadDraft(form.dataset.blockId); }
-    catch (error) { message.textContent = error.message; announce(error.message); }
+    catch (error) { reportDraftError(error); announce(error.message); }
   }));
   document.querySelectorAll('.draft-edit-form').forEach(form => form.addEventListener('submit', async event => {
     event.preventDefault();
     try { await postDraft('edit', {block_id: form.dataset.blockId, request_id: form.dataset.requestId, draft: draftValues(form)}); reloadDraft(form.dataset.blockId); }
-    catch (error) { message.textContent = error.message; announce(error.message); }
+    catch (error) { reportDraftError(error); announce(error.message); }
   }));
   document.querySelectorAll('[data-draft-action]').forEach(button => button.addEventListener('click', async () => {
     const panel = button.closest('.image-draft-panel');
@@ -1962,7 +2852,7 @@ if (draftToolbar) {
         }
         await postDraft(action, {block_id: id, request_id: entry.request_id, fields: [button.dataset.field]}); reloadDraft(id);
       }
-    } catch (error) { message.textContent = error.message; announce(error.message); }
+    } catch (error) { reportDraftError(error); announce(error.message); }
   }));
   document.getElementById('draft-import-preview').addEventListener('click', async () => {
     importPayload = null; document.getElementById('draft-import-confirm').disabled = true;
@@ -1983,23 +2873,24 @@ if (draftToolbar) {
         findings.textContent = `${result.valid_count} valid drafts. ${[...groups].map(([error, count]) => `${count} ${count === 1 ? 'entry' : 'entries'}: ${error}`).join(' ')}`;
       }
       importPayload = payload; document.getElementById('draft-import-confirm').disabled = !result.valid_count;
-    } catch (error) { document.getElementById('draft-import-findings').textContent = error.message; }
+    } catch (error) { document.getElementById('draft-import-findings').textContent = error.message; reportDraftError(error); }
   });
   document.getElementById('draft-import-confirm').addEventListener('click', async () => {
     try { requireSavedAuthoring(); const result = await postDraft('import', {response: importPayload, commit: true});
       if (!result.valid_count) throw new Error(result.findings.map(f => f.error).join(' '));
       reloadDraft();
-    } catch (error) { document.getElementById('draft-import-findings').textContent = error.message; }
+    } catch (error) { document.getElementById('draft-import-findings').textContent = error.message; reportDraftError(error); }
   });
   document.getElementById('draft-populate').addEventListener('click', async () => {
-    try { requireSavedAuthoring(); await postDraft('populate', {}); reloadDraft(); } catch (error) { message.textContent = error.message; }
+    try { requireSavedAuthoring(); await postDraft('populate', {}); reloadDraft(); } catch (error) { reportDraftError(error); }
   });
-  document.getElementById('draft-refresh').addEventListener('click', () => { try { reloadDraft(); } catch (error) { message.textContent = error.message; announce(error.message); } });
+  document.getElementById('draft-refresh').addEventListener('click', () => { try { reloadDraft(); } catch (error) { reportDraftError(error); announce(error.message); } });
   // Update status only; polling must not discard unsaved reviewer edits or move focus.
   const pollDrafts = async () => {
     try {
       const result = await api('/api/image-drafts');
-      if (result.document_id !== docId) { message.textContent = 'Project changed; reload this screen.'; return; }
+      if (result.document_id !== docId) { message.textContent = 'Project changed; reload this screen.'; if (workflowStatus) workflowStatus.textContent = message.textContent; return; }
+      updateWorkflowStatus(result.entries);
       for (const entry of result.entries) {
         const panel = panelFor(entry.block_id); if (!panel) continue;
         panel.dataset.requestStatus = entry.status;
@@ -2019,7 +2910,42 @@ if (draftToolbar) {
         if (entry.error) panel.querySelector('.draft-error')?.replaceChildren(document.createTextNode(entry.error));
       }
       updateBatchControls();
-    } catch (error) { message.textContent = error.message; }
+    } catch (error) { reportDraftError(error); if (workflowStatus) workflowStatus.textContent = `Draft status could not be refreshed: ${error.message}`; }
   };
   setInterval(pollDrafts, 2500);
 }
+
+// Page-order drafts are isolated from block authoring until one confirmed Apply.
+window.addEventListener('reading-order-ready', () => {
+  window.initializeReadingOrder({
+    api, headers: csrfHeaders, announce,
+    guard() {
+      if (reviewWriteBusy) throw new Error('Wait for the current save before repairing reading order.');
+      if (reviewReloadRequired) throw new Error('Reload to confirm the previous save before repairing reading order.');
+      const dirty = authoringForms.find(form => authoringBaselines.get(form) !== authoringValue(form));
+      const otherDraft = [...document.querySelectorAll('.draft-edit-form, .draft-association-form, #draft-provider-form')].find(form => [...form.elements].some(field =>
+        !field.disabled && (field.tagName === 'TEXTAREA' || field.tagName === 'INPUT' && field.type !== 'hidden' || field.tagName === 'SELECT') &&
+        (['checkbox', 'radio'].includes(field.type) ? field.checked !== field.defaultChecked : field.tagName === 'SELECT' ? field.value !== ([...field.options].find(option => option.defaultSelected) || field.options[0])?.value : field.value !== field.defaultValue)));
+      if (dirty || otherDraft) throw new Error('Save or revert unsaved block or drafting edits before repairing reading order. Your fields remain here.');
+    },
+    busy(value) { reviewWriteBusy = value; },
+    uncertain() { reviewReloadRequired = true; },
+    saved(page, id, reviews) {
+      receiveSourcePageReviews(reviews, page);
+      const destination = new URL(location.href);
+      destination.searchParams.set('source_page', String(page));
+      destination.hash = id ? `block-${id}` : '';
+      history.replaceState(null, '', destination.pathname + destination.search + destination.hash);
+      location.reload();
+    }
+  });
+}, {once: true});
+
+document.addEventListener('click', event => {
+  const link = event.target.closest('[data-review-actions-return]');
+  if (!link) return;
+  event.preventDefault();
+  const approve = link.closest('.block-card').querySelector('.block-review-actions [data-action=approve]');
+  approve.scrollIntoView({block: 'center', behavior: 'instant'});
+  (approve.disabled ? approve.closest('.block-card') : approve).focus({preventScroll: true});
+});

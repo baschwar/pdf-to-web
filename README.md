@@ -53,9 +53,30 @@ for a project-only workflow. CLI commands retain their documented output behavio
 
 Documents without included images skip drafting and WordPress media mapping;
 review the text, then export and copy content directly. Link-label editors offer
-**Save and approve** to save the label and approve the displayed containing block
+the top **Save & Approve** action to save the label and approve the displayed containing block
 in one Undoable change. Other unresolved link findings still require correction.
 Ordinary **Save link text** and later material edits require fresh review.
+
+Paragraph and list blocks in Structure use one **Edit / Preview** area. Edit
+opens first; Preview shows saved HTML formatting without saving or approving.
+Switching retains drafts and identifies unsaved changes that are not shown.
+Return to Edit to save; nested lists keep their existing review controls and
+whole-list editing safeguard. Saved line breaks, including blank lines, appear in
+the previews and HTML, Gutenberg and WXR exports. Preview flows at its content's
+natural height. The simple-list editor still uses one line per list item.
+Theme styles may differ. Destination links are
+inactive in block previews; recognized footnote and return links work locally.
+
+Secondary helper notes use smaller, consistent text across Structure, image
+drafting, Accessibility, Arrange Pages, Preview and Export. Warnings, review
+blockers, labels and editing content retain their existing emphasis.
+
+Citation/reference authoring remains manual. An explicit References/Bibliography
+section followed by a list produces a nonblocking reminder to check numbering
+and correspondence. Plain extracted numbers are not automatically superscripted
+or linked. Paragraph/list Gutenberg blocks stay native; recognized footnote bodies
+retain their existing separate Custom HTML endnotes block. Additional footnote
+ARIA authoring is deferred pending native WordPress compatibility and human review.
 
 ## Development setup
 
@@ -365,6 +386,19 @@ Arrange Pages keeps **Continue to Preview** separate from the
 four arrangement actions, aligned to the right. Preview's top and bottom
 **Continue to Export** buttons also align to the right, with space between the
 Semantic HTML and WordPress Preview mode buttons.
+Preview and the embedded Arrange Pages preview open in WordPress Preview using
+the project's saved WordPress profile. Semantic HTML remains available as an
+explicit mode. WordPress Preview uses local minimal styles; the production theme
+determines the final appearance.
+
+Image Description Drafts opens for first-time preparation when useful. After a
+successful generation or manual response import, it defaults to collapsed on
+later Structure visits. Explicit open/closed choices are remembered per project
+in this browser, with tab storage as a fallback when local storage is unavailable.
+Active generation, failures and drafts needing review remain visible above the
+tools. Completion never collapses an editor you are using; unrelated saves leave
+the tools alone. Direct drafting links reveal them for that visit. Drafts still
+require image review and never approve content automatically.
 
 Final workflow actions align to the right throughout Document, Structure,
 Accessibility, Arrange Pages, Preview and Export, including the green completion
@@ -401,21 +435,42 @@ Without that proof, the list appears as needing review with an explanation that
 the earlier approval cannot be verified. Review it and approve the saved content;
 Undo restores the preceding decision and its evidence.
 
-Each primary block editor offers **Save and approve** beside its ordinary save
-button. It saves the displayed fields and explicitly approves the resulting block
-in one operation, with one Undo step. This includes recovering retained list text
-as one item; it does not infer nested steps. Invalid list structure or an image
-without alt text or a decorative decision prevents the operation and shows an
-inline explanation while retaining your entered fields. Ordinary Save still
-requires fresh review after content changes. Approve uses saved content; when
-there are unsaved fields it directs you to Save and approve. Save or undo edits
-in other editors first so approval cannot discard them. Image editors display alt,
-caption, every explicitly associated long/adjacent description and current review
-state together. Their **Save and approve** action approves exactly that image and
-its displayed descriptions in one Undo revision. Missing text, ambiguous/missing
-associations or a stale project snapshot reject the entire action. Existing pending
-descriptions are never bulk-approved merely by opening or saving a project.
-Successful image Save and approve advances like solo Approve to the next block
+Reading order has one approval action at the top of each block. It reads
+**Approve** for saved content and switches to **Save & Approve** when any review
+field changes: text/type/heading level, link labels, image alt/caption/decorative
+choice, displayed description fields or table accessibility. Reverting all edits
+restores Approve; editing an already approved block enables Save & Approve.
+It saves all edited authoring forms in that block and approves their final content
+in one validated revision and saved Undo action. Required image descriptions and
+current description membership are validated together. Conflicting text and link
+label edits are rejected without partial saves; reconcile the two fields first.
+Save or revert unsaved edits in another block before approving this one.
+
+Save/approval errors appear beside the top review actions, including another
+unsaved block, a stale saved snapshot, invalid fields or an earlier running
+server. Your edited fields remain intact. An uncertain response requires
+checking the saved result before retrying; preserve drafts before reloading.
+Ordinary save buttons remain below the fields for saving without approval.
+The duplicate lower combined approval buttons are removed. **Back to review
+actions** returns keyboard focus to the top action without discarding edits.
+Draft alt text and other optional drafting controls edit suggestions separately;
+apply those suggestions to image authoring before approving. Approval does not
+implicitly generate, import or apply a draft, or save provider/association setup.
+Old server markup cannot accept the new combined operation: save edits, relaunch
+PTW and reload Structure when the running app asks you to do so.
+
+Save, Save & Approve, and direct approval update review in place after the app
+confirms the write. **Saving…** indicates the active request; another approval
+cannot overlap it or follow an accidental double-click into the next block.
+Review save requests stop waiting after 30 seconds. A timeout clears Saving but
+requires reload before another change because the write may already have succeeded.
+Drafts entered in another editor during a request remain intact and prevent
+automatic advancement. If the result cannot be confirmed, retain your fields and
+reload before retrying: the write may already have succeeded. If the running app
+cannot refresh a confirmed save, save other drafts, relaunch PTW and reload before
+making another review change. Undo and structural operations retain their existing
+navigation behavior.
+Successful image Save & Approve advances like solo Approve to the next block
 needing review in the current filter and reading order, wrapping to earlier pending
 work when necessary. The active filter stays selected; after its last item, the
 empty state offers Show all blocks with usable navigation. Failed validation/save
@@ -428,7 +483,7 @@ block. Linked descriptions have one editor inside their Reading order image;
 there is no extra description approval stage. An image with a pending description
 appears in **Needing review**, even when an older image-only approval is saved.
 **Description use** allows an explicit **No separate description needed** or
-exclusion decision in the same Save and approve action. Optional classification,
+exclusion decision in the same Save & Approve action. Optional classification,
 recovered source text and reviewer notes remain editable there. Standalone or
 ambiguous visual records retain their separate editor. Affected output-page review
 remains separate.
@@ -510,6 +565,87 @@ the sticky Reading order toolbar while editing blocks. Both restore the most
 recent saved project change and are disabled when no revision snapshots remain.
 Undo keeps the selected block in view when that block remains in the restored
 document. Unsaved typing is not a saved revision.
+
+Use **Repair reading order** beside the source page controls to stage changes
+for that source page. Compact cards show the current block number and first five
+words; expand Full text for context. Drag, use sortable keyboard controls, or
+choose a position in Move to. Draft Undo and Reset affect the staged order;
+**Apply** saves it as one action, and **Cancel** leaves the saved order unchanged.
+**Undo last saved change** restores an applied order through existing history.
+Shared-page blocks stay fixed boundaries. Excluded content, nested children,
+other pages and blocks without a known source page retain their positions.
+Missing geometry does not prevent ordering but has no invented source outline.
+Save unsaved block edits before opening the tool. Stale project/review versions
+are rejected; uncertain responses require reload before another write.
+Reordering retains block IDs, content, provenance and block review decisions. Arrange
+Pages references follow the existing reconciliation rules; page approvals may
+need review after order changes. Per-block **Move to document start/end** acts
+on the whole document separately from this page-scoped tool.
+
+Inside Repair, check **adjacent paragraphs** or **compatible list blocks**, then
+choose **Merge selected** beside Cancel/Apply. Review the exact result and choose
+**Stage merge**. One compact row shows how many originals it contains; Full text
+shows the result and retained originals. Drag the merged row or use **Move to**.
+**Undo draft**, Reset and Cancel leave saved content untouched; **Apply changes**
+commits reorder/merge/unmerge together as one saved Undo action.
+The confirmation stacks its heading, explanation and exact preview vertically,
+with a scrolling preview and always-visible action buttons. Labels use the app's
+Block numbers for the current draft and the result after Apply. Retained originals
+use original positions rather than inventing current numbers for absorbed blocks.
+
+Paragraph fragments use one joining space; existing hyphens and internal line
+breaks are preserved. List joining retains separate item IDs and nested lists.
+Ordered lists must continue their recorded start/numbering and share marker style;
+unordered and ordered lists cannot mix. Selections cannot skip excluded,
+other-page or unselected content, cross fixed boundaries, or combine different
+Arrange Pages assignments. This version refuses images, headings, mixed types,
+rich links/formatting, footnotes and associated content it cannot preserve safely.
+Each draft row uses a small type icon. Hover or focus it for the full saved type;
+screen readers receive the type label. Escape dismisses an open tooltip before
+closing Repair. If selected types differ, the disabled
+Merge selected button has an explanation naming the current Block numbers and
+types. Check classification against the source; selection never converts a list
+into a paragraph or discards its items/formatting.
+Incoming links to an absorbed ID also prevent merging. The merged result needs
+review and is never approved automatically. Ordinary per-block up/down buttons
+are removed; page-editor Move to and whole-document start/end remain.
+
+**Unmerge** remains available in Repair after saving and reopening. It restores
+original IDs, content, nesting, source boxes and review decisions at the merged
+row's current position and current page assignment. If merged content, exclusions,
+custom review metadata or source data changed, Unmerge is disabled with a reason
+rather than discarding those changes. Saved Undo can step back through edits;
+manual Split is a separate authoring action, not exact restoration of origins.
+Approving unchanged merged content does not prevent Unmerge. Old projects need
+no re-extraction; the optional versioned origins record uses existing provenance
+and persistence. Historical Merge next results have no new retained-origin record.
+Short mobile windows scroll the source/order area while keeping Cancel/Apply
+reachable; Keyboard help explains sortable controls and scroll regions have labels.
+
+The Source page heading includes a saved review-status pill: green **Reviewed**,
+yellow **Partially Reviewed**, or red **Needs review**. It counts the whole recorded
+page regardless of filters, selected block or local unsaved fields. Required image
+alternatives and descriptions participate; an image plus its descriptions counts
+as one task, and standalone descriptions also participate. Shared blocks contribute
+their whole-block decision to each recorded source page. Absorbed merge originals
+are retained history, not extra live review tasks.
+
+Intentional exclusions are resolved decisions. An all-excluded page can show
+Reviewed with an explanation in the pill's hover/accessibility text; it has no
+included content to export. Empty pages, reconstruction holds and blocked
+conversion stay Needs review. An uncertain write/refresh shows Needs review until
+reload confirms saved decisions. Approval/save, exclusion, page navigation,
+merge/unmerge, reconstruction and Undo refresh it from the current saved snapshot.
+The pill's text and accessible detail explain review status; export still uses its
+separate readiness checks.
+
+Source page and Reading order use coordinated headings, compact 44px navigation,
+and readable metadata. **Previous Page / Next Page** flank the page selector.
+Repair and **Needs manual reconstruction** share a compact row when space
+allows; smaller screens stack columns and wrap tools without overlap. The info
+control retains keyboard, hover and touch help, and active reconstruction
+warnings remain visible. The reading-order UI uses local bundled assets; its
+pinned development build instructions are in [tools/reading-order](tools/reading-order/README.md).
 
 Historical extraction block-review notes collapse under **Resolved extraction
 note** after their referenced blocks are approved or excluded. Other Accessibility
@@ -614,6 +750,15 @@ paragraphs. If an element has no recorded region, the source status explains
 that coverage is partial; unoutlined text may still be present in the block.
 No source coordinates are invented.
 
+Source metadata and outline notes use smaller readable text and reserved space
+so in-place approvals keep the source image steady. An already rendered page
+stays visible while its next outline is checked. Missing geometry is explained
+without claiming an outline. Source-image requests time out after 30 seconds;
+region metadata after 10 seconds. Image errors offer Retry and Open source PDF.
+The reconstruction explanation is available from its question-mark help button
+by hover, keyboard focus or touch; Escape dismisses it. Unmarked pages omit the
+reconstruction status line; marked pages retain their active warning.
+
 Source outlines use the PDF's actual MediaBox origin and rotation, including
 nonstandard page sizes. The highlight layer follows the visible page image as
 the window resizes, without including margins around a tall page. Recovered
@@ -655,6 +800,33 @@ or a new pending review decision removes it. This completes block review, while
 Accessibility remains a separate step.
 
 Structure also offers optional **Image description drafts** before Reading order.
+Image cards keep alt text and caption compact, with full-width long descriptions
+and save actions directly after the fields. Decorative image appears before the
+text fields. **Image drafting (optional)** below the editor holds its drafting
+shortcut, selection, context and request actions; existing requests open for
+inspection. Export drafting request packages the image, context and response
+template for an external/manual drafting exchange. It does not draft text or
+approve content by itself. **Source details** at the bottom of each block keeps
+OpenDataLoader provenance available without crowding the editor.
+
+Under **Source page**, **Needs manual reconstruction** temporarily excludes blocks
+owned exclusively by the selected source page. It preserves their content and
+prior review states, including previous exclusions and approvals. Shared or merged
+blocks spanning pages remain included and are reported. Unchecking restores the
+saved states; both directions support Undo. Save unsaved editors first; stale or
+conflicting restoration is rejected without partial changes. Held blocks remain
+read-only until restored. This is a reversible hold, not an automatic repair.
+
+Every held source page has one unfinished placeholder in **Arrange Pages**, with a
+source-page link. It survives reopening, reordering and replacement grouping;
+unchecking removes only that placeholder. Existing pages are not automatically
+split: a placeholder is inserted beside the arrangement retaining its fragments,
+or before the next later source range. Manual holds remain unresolved in Structure,
+Accessibility and Export and block publication even when every fragment is excluded.
+To author replacement content, restore the page, edit and review its retained
+content, then deliberately exclude duplicates. The toggle does not create completed
+replacement content or perform OCR.
+
 Tools initially open when images need review or draft requests/results exist;
 completed images with no drafts stay compact. Your summary toggle remembers open
 or closed for this project in this browser, including later visits. A direct
@@ -783,6 +955,8 @@ identities and recorded content are checked;
 history does not independently establish earlier image-file bytes.
 
 **Help** is available from every screen, including before project selection.
+The footer also links to the project's **README** and **Changelog** on GitHub.
+These open in a new tab, keeping the current app screen and unsaved edits open.
 Contextual links open the exact explanation in a separate tab so unsaved fields
 stay open. Background details about project files, review counts, image descriptions,
 bulk review, HTML checks, media, preview appearance, title exports and acceptance
@@ -805,14 +979,37 @@ files when review is incomplete.
 
 **Arrange Pages** (previously Output Pages) is optional: a long document can stay on one web page using
 **Preview** and **Export** directly. The workspace builds independently previewable Pages or
-Articles from one reviewed document. Inspect heading-based grouping suggestions,
-apply an arrangement, move whole content blocks, split or merge pages, edit
+Articles from one reviewed document. **Grouping suggestions** separates **PDF /
+source pages** (one output page per physical PDF page) from optional **Heading
+sections**. The counts describe different starting methods, not required output
+pages. Preview the source-page arrangement, or use checkboxes, **Select all** and
+**Clear all** to preview selected heading suggestions. Review the proposed
+pages, exact block moves and metadata effects before **Apply**. Selection and
+preview do not save; Apply is one Undoable change. Source grouping keeps exact
+page matches and reconstruction placeholders, explicitly retains existing empty
+draft pages, and asks where shared or unknown-source bundles belong. Selected
+heading groups leave unselected assignments and existing page metadata intact.
+Generated group titles use each page's first included H1 or H2 in reviewed
+reading order, with a numbered source/output-page fallback. Repeated headings
+may share a title while automatic slugs stay unique. **Preview generated page
+titles** repairs recognized earlier generated titles without regrouping content;
+inspect the changes, then choose **Apply generated page titles**. Custom titles,
+manual slugs and reconstruction labels are retained. Material metadata changes
+use the existing page-review invalidation; block approvals are preserved.
+Move whole content blocks, split or merge pages, edit
 metadata and internal Page parents, set contents order, and Undo changes. Page
 arrangements persist with the reviewed document. Unassigned content and invalid
 arrangements remain visible and block page exports.
 Use **Include unassigned content in this page** to recover missing assignments,
 or **Keep everything on one page** to replace the arrangement without editing
-content. Both support Undo. The arrangement outline is collapsed until needed.
+content. Both support Undo. **Add content to this page** opens the assignment
+outline for empty pages. **Move here** saves immediately, so save or revert page
+metadata drafts first. New page slugs follow the title, normalize accents, remain
+unique and fit the 100-character limit. Editing the slug makes it custom; later
+title edits preserve it. **Use title for slug** explicitly restores automatic
+generation. Existing saved slugs are not rewritten on opening a project.
+**Preview contents** lists incomplete pages with recovery links while valid
+pages remain previewable; publication checks still block incomplete exports.
 
 Export one page or the complete ZIP package with HTML, Gutenberg, WXR, media,
 contents, review findings, a versioned manifest and manual import instructions.
@@ -904,3 +1101,41 @@ Broader formatting preservation is a low-priority proposal in
 PDF to Web is released under the [Apache License 2.0](LICENSE). See
 [NOTICE](NOTICE) and [Third-party notices](THIRD_PARTY_NOTICES.md) for
 attribution information.
+
+### Preview output-page navigation
+
+Preview offers **Previous**, **Next**, an **Output page** selector and **Page N
+of M**. **Whole document** retains the single-document preview. Opening Preview
+from Arrange Pages carries the selected saved page, Semantic HTML/WordPress mode
+and Generic/WSUWP profile. **Arrange this page** returns to that page with the
+same mode/profile. Empty pages and reconstruction placeholders stay visible as
+incomplete; previewing does not approve or repair them.
+
+**Expand preview** gives the content more viewport space without changing its
+font or export styles. **Restore preview**, or Escape while focus is in the
+preview controls, returns to the normal layout. Desktop/Narrow widths remain
+available. The expansion is an in-page viewport, not a modal dialog.
+
+Arrange Pages places Title/Slug above compact Type/Parent/Contents order fields,
+uses one wrapping Assign/move and reorder row, and places Merge beside its
+selector. Unsaved metadata and reviewer notes block in-app navigation and
+arrangement changes; browser reload/back/close uses the browser's unsaved-edit
+confirmation. Save or revert drafts before leaving.
+
+Existing running processes need a deliberate relaunch to load changed Python
+page markup. Save drafts in all tabs, quit normally, relaunch with the usual
+launcher, reopen the project, and reload the browser. Code installation does
+not apply any live arrangement or repair.
+
+**Continue to Export** remains available in the expanded Preview toolbar. It
+opens the Export screen without generating files. The current output page, mode
+and profile are carried as return context; document export still covers the
+whole document. **Return to Preview** restores that context. For individual
+pages/packages, use Arrange Pages. Readiness findings remain visible on Export
+and incomplete content still blocks generation.
+
+A bounded navigation check shows Opening Export and prevents repeated clicks.
+An HTTP failure or ten-second timeout restores the controls and shows retry
+guidance beside Continue. **Restore preview** remains available. In an older
+open tab where Continue is covered/inert, choose Restore preview (or Escape),
+then Continue to Export; this does not require quitting the app.

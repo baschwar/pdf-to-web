@@ -19,7 +19,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlparse
+from urllib.parse import urlencode, quote, urlparse
 
 from . import __version__
 from .accessibility import assess_document, write_reports, visual_readiness
@@ -28,6 +28,7 @@ from . import output_pages as op
 from . import image_drafts as drafts
 from . import image_draft_ui
 from .app_lifecycle import LifecycleMiddleware, OwnedServerLifecycle, QuitUnavailable
+from .block_preview import saved_block_preview
 from .output_page_export import export_pages, contents_html
 from .review_state import update_output_pages
 from .errors import PdfToWebError
@@ -66,6 +67,7 @@ from .review_state import (
 from .source_pages import render_source_page, source_page_size, source_regions_for_blocks
 from .project_outputs import output_locations, preserve_previous_outputs, open_output_folder
 from .wordpress_preview import render_gutenberg_preview
+from .source_review import page_reviews
 
 try:
     from fastapi import Request
@@ -355,12 +357,14 @@ def _page(title: str, active: str, body: str, *, selected: bool = True, project=
     tab_title = ' | '.join(filter(None, [title, name, APP_NAME]))
     return f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{html.escape(tab_title)}</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/pico.min.css"><link rel="stylesheet" href="/static/app.css"></head>
+<title>{html.escape(tab_title)}</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/static/pico.min.css"><link rel="stylesheet" href="/static/app.css">{'<link rel="stylesheet" href="/static/reading-order.css">' if active == 'structure' else ''}</head>
 <body data-project-root="{html.escape(str(project_path or ''), quote=True)}"><header class="app-header" id="app-top" tabindex="-1"><div class="container">{_nav(active, selected)}</div></header>
-<main class="container">{document_reference}{body}</main><footer class="app-footer"><div class="container">{APP_NAME} v{html.escape(__version__)} · commit {html.escape(_commit_hash())}<p><a href="/help#acceptance">Accessibility review limits</a></p></div></footer><div id="app-status" class="visually-hidden" role="status" aria-live="polite"></div>
+<main class="container">{document_reference}{body}</main><footer class="app-footer"><div class="container">{APP_NAME} v{html.escape(__version__)} · commit {html.escape(_commit_hash())}
+<nav class="app-footer-links" aria-label="Project documentation"><a href="https://github.com/baschwar/pdf-to-web/blob/main/README.md" target="_blank" rel="noopener noreferrer">README<span class="visually-hidden"> (opens a new tab)</span></a><a href="https://github.com/baschwar/pdf-to-web/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Changelog<span class="visually-hidden"> (opens a new tab)</span></a><a href="/help#acceptance">Accessibility review limits</a></nav>
+</div></footer><div id="app-status" class="visually-hidden" role="status" aria-live="polite"></div>
 <button type="button" id="back-to-top" class="back-to-top" hidden><span aria-hidden="true">&uarr;</span> Back to top</button>
-<dialog id="quit-dialog" aria-labelledby="quit-heading" aria-describedby="quit-warning"><article><h2 id="quit-heading">Quit PDF to Web?</h2><p id="quit-warning">This stops the app for every open tab. Save unsaved edits in all tabs first. Project files already saved are kept.</p><p id="quit-edits"></p><p id="quit-status" role="status" aria-live="polite"></p><div id="quit-actions" class="button-row"><button type="button" id="quit-cancel" class="neutral-action">Keep working</button><button type="button" id="quit-confirm" class="review-exclude" disabled>Quit PDF to Web</button></div><p id="quit-launcher-note">Its dedicated launcher process will end. A Terminal window or shared command prompt may stay open according to its settings; you can close this browser tab afterward.</p></article></dialog>
-{'<script src="/static/accessibility-scan.js"></script>' if active == 'accessibility' else ''}<script src="/static/app.js"></script></body></html>'''
+<dialog id="quit-dialog" aria-labelledby="quit-heading" aria-describedby="quit-warning"><article><h2 id="quit-heading">Quit PDF to Web?</h2><p id="quit-warning">This stops the app for every open tab. Save unsaved edits in all tabs first. Project files already saved are kept.</p><p id="quit-edits"></p><p id="quit-status" role="status" aria-live="polite"></p><div id="quit-actions" class="button-row"><button type="button" id="quit-cancel" class="neutral-action">Keep working</button><button type="button" id="quit-confirm" class="review-exclude" disabled>Quit PDF to Web</button></div><p id="quit-launcher-note" class="helper-text">Its dedicated launcher process will end. A Terminal window or shared command prompt may stay open according to its settings; you can close this browser tab afterward.</p></article></dialog>
+{'<script src="/static/accessibility-scan.js"></script>' if active == 'accessibility' else ''}<script src="/static/app.js"></script>{'<script type="module" src="/static/reading-order.bundle.js"></script>' if active == 'structure' else ''}</body></html>'''
 
 
 def _status_banner(status: str, issues: list[dict[str, Any]], document=None) -> str:
@@ -381,14 +385,15 @@ def _help_page(*, selected=False, project=None, project_path=None):
 <li><a href="#project-files">Project files and setup</a></li><li><a href="#review-counts">Review counts</a></li>
 <li><a href="#image-descriptions">Image descriptions</a></li><li><a href="#bulk-review">Bulk review</a></li>
 <li><a href="#html-checks">Automated HTML checks</a></li><li><a href="#wordpress-media">WordPress media and approvals</a></li>
-<li><a href="#wordpress-preview">WordPress preview</a></li><li><a href="#title-export">Title export</a></li>
+<li><a href="#block-preview">Block content preview</a></li><li><a href="#wordpress-preview">WordPress preview</a></li><li><a href="#title-export">Title export</a></li>
 <li><a href="#quit-app">Quit the app</a></li><li><a href="#acceptance">Accessibility and platform acceptance</a></li></ul></nav>
 <section id="project-files"><h2>Project files and setup</h2><p>Folder I choose uses the exact selected folder. Default location creates a named folder under Documents/PDF to Web Projects. Existing loose files are preserved. The input PDF may be elsewhere; its source copy, extraction, review history, source-page cache and exports stay in the project folder.</p><p>Source-page rendering needs Poppler separately from Python dependencies. On a Mac with Homebrew already set up, install with <code>brew install poppler</code>. If pdftoppm is missing, finish setup and relaunch the app. Recreating the project is unnecessary. Extracted images and cached source pages are different; cached pages can display without Poppler. A Pillow extraction error is a separate dependency issue.</p></section>
 <section id="review-counts"><h2>Review counts</h2><p>Block and image approvals measure reviewed content. Each image with linked descriptions counts once; included descriptions are shown for context. Document accessibility findings cover judgments such as link purpose and extraction diagnostics. Automated HTML checks inspect rendered markup. These scopes overlap and their counts are not added together.</p><p>Resolved extraction notes retain the original diagnostic for reference. They do not add pending tasks. A diagnostic may point to a block already counted in content review.</p></section>
-<section id="image-descriptions"><h2>Image descriptions</h2><p>Review linked descriptions with the image alt and caption in Reading order. Save and approve covers every displayed included description. No separate description needed records a Not applicable decision; exclusion keeps the content recoverable. Genuine authored edits require review again.</p><p>Provide a long description or adjacent text equivalent. Adjacent text is written text, not a reference to another block. Decorative images use empty alt text and need no separate description. Extraction flags pages with at least five retained images or assets as possible complex visuals; the reviewer decides whether a longer description is needed. Standalone descriptions keep their own editor.</p><p>The preparation tools precede Reading order. They open initially when images need review or drafts exist. Your summary choice remembers open or closed per project in this browser. Direct drafting links reveal them for that visit without replacing your preference. Defaults never move focus or generate drafts.</p><h3>Manual drafting with Codex or ChatGPT</h3><ol><li>In Structure, choose Manual exchange as the drafting method. In Images to export, choose All pending images or Selected images, then Export image-draft ZIP. Pending uses saved review needs and skips generating, ready or rejected requests; Selected uses your checkboxes and an empty scope cannot export. Open the output folder and attach the saved ZIP directly. Optional browser copy makes an extra copy wherever your browser saves downloads.</li><li>Choose Copy instructions for Codex/ChatGPT. Attach that ZIP in your chosen tool, paste the instructions and run the request. Copying preserves unsaved fields; if it fails, select the displayed instructions and copy them manually.</li><li>The package contains INSTRUCTIONS.txt, request.json, response-template.json, review-sheet.csv and the image files. The included response-template.json is blank. Ask your drafting tool to write usable alt text for every image. The copied prompt and ZIP instructions name this project's response destination and a unique filename. A tool with authorized local access saves there without overwriting earlier responses; a tool without access returns the completed JSON as an attachment/download. Sharing the prompt or ZIP includes your local project path. Uploading the unchanged template imports nothing. Preserve document_id, block_id, asset_hash, context_hash and request_id exactly. The CSV is a review companion, not an import format.</li><li>Open Import manual responses, choose the returned JSON and Validate responses. Inspect the findings, then choose Import drafts into image fields. Review each image before approving it. Existing authored text is preserved; Apply deliberately replaces it. Optional captions and long descriptions may be null. Imported drafts never approve content automatically.</li></ol></section>
+<section id="image-descriptions"><h2>Image descriptions</h2><p>Review linked descriptions with the image alt and caption in Reading order. Save and approve covers every displayed included description. No separate description needed records a Not applicable decision; exclusion keeps the content recoverable. Genuine authored edits require review again.</p><p>Provide a long description or adjacent text equivalent. Adjacent text is written text, not a reference to another block. Decorative images use empty alt text and need no separate description. Extraction flags pages with at least five retained images or assets as possible complex visuals; the reviewer decides whether a longer description is needed. Standalone descriptions keep their own editor.</p><p>The preparation tools precede Reading order. They open initially for useful first-time preparation; after successful generation or import they default to collapsed on later visits. Active generation, failure and ready-for-review status stays visible above them. Your summary choice remembers open or closed per project in this browser, with tab storage fallback. Direct drafting links reveal them for that visit without replacing your preference. Defaults never move focus or generate drafts.</p><h3>Manual drafting with Codex or ChatGPT</h3><ol><li>In Structure, choose Manual exchange as the drafting method. In Images to export, choose All pending images or Selected images, then Export image-draft ZIP. Pending uses saved review needs and skips generating, ready or rejected requests; Selected uses your checkboxes and an empty scope cannot export. Open the output folder and attach the saved ZIP directly. Optional browser copy makes an extra copy wherever your browser saves downloads.</li><li>Choose Copy instructions for Codex/ChatGPT. Attach that ZIP in your chosen tool, paste the instructions and run the request. Copying preserves unsaved fields; if it fails, select the displayed instructions and copy them manually.</li><li>The package contains INSTRUCTIONS.txt, request.json, response-template.json, review-sheet.csv and the image files. The included response-template.json is blank. Ask your drafting tool to write usable alt text for every image. The copied prompt and ZIP instructions name this project's response destination and a unique filename. A tool with authorized local access saves there without overwriting earlier responses; a tool without access returns the completed JSON as an attachment/download. Sharing the prompt or ZIP includes your local project path. Uploading the unchanged template imports nothing. Preserve document_id, block_id, asset_hash, context_hash and request_id exactly. The CSV is a review companion, not an import format.</li><li>Open Import manual responses, choose the returned JSON and Validate responses. Inspect the findings, then choose Import drafts into image fields. Review each image before approving it. Existing authored text is preserved; Apply deliberately replaces it. Optional captions and long descriptions may be null. Imported drafts never approve content automatically.</li></ol></section>
 <section id="bulk-review"><h2>Bulk review</h2><p>Pending only is the default. Completed and All records expose earlier decisions. Classification and visibility filters define the exact selectable scope; changing either clears selections. Block approvals, description reviews and accessibility decisions have different permitted states. Image rows include their linked descriptions.</p><p>Saved-record counts can overlap image tasks and are not added to content progress. Confirmation applies only the displayed selection. One Undo restores the whole batch; a stale project or incomplete description prevents partial approval.</p></section>
 <section id="html-checks"><h2>Automated HTML checks</h2><p>Local axe-core checks use WCAG 2.2 A/AA rules on the saved semantic HTML. The scan is bound to the displayed saved revision. Passed counts rules with passing elements, not WCAG success criteria. Not applicable means no matching content was found. A rule can have different results for different elements, so rule counts are not a total of distinct WCAG criteria. Zero detected issues do not resolve human document judgments. Test the final WordPress page separately because the production theme and plugins can change markup and accessibility.</p></section>
 <section id="wordpress-media"><h2>WordPress media and approvals</h2><p>Media XML matching uses exact filenames. WordPress-renamed or duplicate filenames need manual CSV mapping. Use manual CSV mapping is visible beside XML matching. Unmatched or ambiguous results and XML errors reveal the tools and offer direct links. Prepare images first, download the current mapping CSV, edit wordpress_url and optionally wordpress_attachment_id, and keep block_id and asset_filename unchanged. Verify the correct image for each URL before importing. Existing validation and Undo apply; opening these tools does not change mappings or approval. Pasting Gutenberg requires mapped image URLs; importing content WXR is optional and does not upload or map images.</p><p>Adding only WordPress URLs, attachment IDs or routing metadata preserves content approval. Re-uploaded unchanged images can have new attachment IDs: select the explicit same-reviewed-images refresh option to update IDs only for a unique exact filename and the same saved URL. Missing, duplicate or different-URL entries keep existing mappings. XML cannot verify image bytes. Changed images need fresh alt and description review; mapping never approves pending content. Genuine source, alt, caption and description edits require review. Matching invalidates earlier publication files; generate fresh content afterward.</p><p>For approvals lost to an earlier media-only change, Preview recorded approvals shows the exact eligible images and original approval dates. Confirm restore restores recorded decisions only when retained history proves unchanged authored content and descriptions through every intervening revision. Newer approvals remain intact. Missing, ambiguous or changed history requires manual review. Restoration supports one Undo and keeps current media mappings. Before confirmation, the Undo notice explains that Undo returns images to pending review and consumes a saved snapshot. Another restoration may be unavailable because the retained history has a gap; manually review the pending images before export in that case.</p></section>
+<section id="block-preview"><h2>Block content preview</h2><p>Paragraphs and lists share one Edit / Preview area in Structure. Edit opens first. Preview displays saved HTML formatting; switching preserves unsaved fields and never saves or approves. Unsaved changes are not shown until you save. Use Save block in Edit, or the top Save &amp; Approve action to save edited fields and approve. Nested lists retain their existing review controls and whole-list editing safeguard.</p><p>Theme styles may differ. Destination links are inactive here; recognized footnote links and return links work within the preview. Extracted plain-text citation numbers are not automatically superscripted or linked. When a References or Bibliography section is detected, check numbering and correspondence manually and edit notation in WordPress as needed. Recognized footnote paragraphs and lists retain native Gutenberg blocks; their existing endnotes section uses a separate Custom HTML block. New citation association and footnote ARIA authoring are deferred pending native-block compatibility and human accessibility verification.</p></section>
 <section id="wordpress-preview"><h2>WordPress preview</h2><p>WordPress Preview is an approximate content and structure preview using local minimal CSS. Selecting WSUWP changes the exported block profile; it does not fetch the production WSU theme CSS. The actual theme and plugin versions determine the final design. Semantic Preview shows the reviewed content independently of WordPress.</p></section>
 <section id="title-export"><h2>Title export</h2><p>When My WordPress template supplies the page title (H1) is checked, Gutenberg and WXR omit the title heading. Semantic HTML also provides a body file for pasting into a template; its standalone file retains one H1. Copy page title fills the separate WordPress title field and does not change review decisions.</p></section>
 <section id="quit-app"><h2>Quit the app</h2><p>Quit PDF to Web opens a confirmation on every screen. Keep working or Escape preserves edits. The dialog checks this tab for unsaved fields and choices; save your work in all open tabs before confirming. Quit without saving explicitly leaves those edits unsaved. Already saved project files and review decisions are kept.</p><p>Processing, saves, downloads and queued/running generation must finish before Quit is available. The server also refuses a busy request even if another tab starts work after confirmation opens. Only the server owned by pdf-to-web serve is stopped. An externally managed server must be stopped through its own launcher. Failure feedback allows retry. After an accepted Quit and repeated unavailable local health checks, confirmation changes to PDF to Web has stopped, with a safe-to-close message and no active Quit/Keep working controls. Offline, HTTP-error or timeout checks cannot establish success and keep uncertainty/retry feedback.</p><p>The dedicated launcher process ends with the server. Terminal and shared command-prompt windows may remain according to their settings. Unrelated sessions and processes are not terminated. Actual Windows and host-window closing checks remain pending.</p></section>
@@ -525,8 +530,45 @@ def _structure_filters(document, progress) -> str:
 <dialog id="block-filter-dialog" aria-labelledby="block-filter-dialog-heading" aria-describedby="block-filter-dialog-message"><article><h2 id="block-filter-dialog-heading">Hide unsaved edits?</h2><p id="block-filter-dialog-message">These filters hide edited blocks. Your unsaved edits remain in this tab. Reset filters to show them again, and save before leaving or reloading.</p><div class="button-row"><button id="block-filter-cancel" type="button" class="neutral-action">Keep editing</button><button id="block-filter-confirm" type="button">Change filters</button></div></article></dialog>'''
 
 
+def _manual_reference_notice(document):
+    """Warn only for an explicit reference heading followed by a reference list."""
+    blocks = list(op.visible_walk(document.get('blocks', [])))
+    for index, block in enumerate(blocks):
+        if block.get('type') != 'heading' or str(block.get('content', '')).strip().lower().rstrip(':') not in {
+                'references', 'bibliography', 'works cited'}:
+            continue
+        for following in blocks[index + 1:index + 4]:
+            if following.get('type') == 'heading':
+                break
+            if following.get('type') == 'list' and len([item for item in list_render_items(following) if not is_excluded(item)]) >= 2:
+                return ('<p class="manual-reference-notice">References section detected. '
+                        'Check citation numbering and references manually; unassociated markers '
+                        'remain plain text and may need superscript or link editing in WordPress. '
+                        '<a href="/help#block-preview" target="_blank" rel="noopener">Reference review help</a>.</p>')
+    return ''
+
+
+def _block_content_modes(block, editor, document, index):
+    identity = html.escape(str(block['id']), quote=True)
+    preview_block = _document_with_local_preview_media({'blocks': [block]}, semantic=True)['blocks'][0]
+    preview = html.escape(saved_block_preview(preview_block, document or {}), quote=True)
+    return f'''<div class="block-content-modes">
+<div class="block-content-tabs" role="tablist" aria-label="Block {index} content" hidden>
+<button type="button" role="tab" id="content-edit-tab-{identity}" aria-controls="content-edit-{identity}" aria-selected="true" tabindex="0">Edit</button>
+<button type="button" role="tab" id="content-preview-tab-{identity}" aria-controls="content-preview-{identity}" aria-selected="false" tabindex="-1">Preview</button></div>
+<div class="block-content-panel" role="tabpanel" id="content-edit-{identity}" aria-labelledby="content-edit-tab-{identity}">{editor}</div>
+<div class="block-content-panel" role="tabpanel" id="content-preview-{identity}" aria-labelledby="content-preview-tab-{identity}" tabindex="0" hidden>
+<p class="block-preview-status" role="status" aria-live="polite">Saved content.</p>
+<iframe class="block-content-preview" title="Formatted preview for block {index}" sandbox="allow-same-origin" data-saved-preview="{preview}"></iframe>
+<small class="helper-text">HTML formatting; theme styles may differ. Destination links are inactive; footnote links work within this preview.</small></div></div>'''
+
+
 def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool = True, draft_controls: str = "", long_description: str = "", following=None, document=None, source_region_data=None) -> str:
     from .publication import effective_block_status
+    from .manual_reconstruction import managed_ids
+    held = bool(document and str(block.get('id')) in managed_ids(document))
+    if held:
+        draft_controls = ''
     block_id = html.escape(str(block.get("id", "")), quote=True)
     block_type = str(block.get("type", "unknown"))
     provenance = block.get("provenance", {})
@@ -552,21 +594,20 @@ def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool
         table = f'<p>{stats["rows"]} rows, {stats["columns"]} columns, {stats["spans"]} spanning cells</p><div class="table-scroll"><table><tbody>{rows}</tbody></table></div>'
     editable = block_type in BLOCK_TYPES
     nested_list = block_type == "list" and _list_has_nested_content(block)
-    save_and_approve = f'<button type="submit" class="review-approve" data-save-and-approve aria-label="Save and approve block {index}">Save and approve</button>'
     saved_token = f'<input type="hidden" name="expected_review_token" value="{review_token(document) if document else ""}">'
     text_editor = f'''<form class="block-form" data-block-id="{block_id}"><div class="form-grid">
 <label>Block type<select name="type">{options}</select></label>
 <label class="heading-level"{"" if block_type == "heading" else " hidden"}>Heading level<select name="level"{"" if block_type == "heading" else " disabled"}>{levels}</select></label>
 <label>Review state<select name="review_status">{states}</select></label></div>
 <label>Text<textarea name="content" rows="3">{html.escape(content)}</textarea></label>
-{saved_token}<div class="button-row"><button type="submit" aria-label="Save block {index}">Save block</button>{save_and_approve}</div></form>''' if editable and can_edit and not nested_list else ""
+{saved_token}<div class="button-row"><button type="submit" aria-label="Save block {index}">Save block</button></div></form>''' if editable and can_edit and not nested_list else ""
     if has_unstructured_list_text(block) and text_editor:
         text_editor = '<p class="block-issue">The retained text is shown below. Save block recovers it as one list item and requires review. This does not reconstruct nested steps. A blank save is blocked.</p>' + text_editor
     if nested_list and can_edit:
         text_editor = f'''<div class="list-structure-preview" aria-label="Nested list structure">{_list_structure_preview(block)}</div>
-<p><small>This nested list is shown hierarchically. Whole-list text editing is disabled to preserve its structure.</small></p>
+<p class="helper-text">This nested list is shown hierarchically. Whole-list text editing is disabled to preserve its structure.</p>
 <form class="block-form nested-list-review-form" data-block-id="{block_id}"><label>Review state<select name="review_status">{states}</select></label>
-{saved_token}<div class="button-row"><button type="submit" aria-label="Save review state for block {index}">Save review state</button>{save_and_approve}</div></form>'''
+{saved_token}<div class="button-row"><button type="submit" aria-label="Save review state for block {index}">Save review state</button></div></form>'''
     image_editor = ""
     if block_type == "image" and can_edit:
         image_src = str(block.get("src") or "")
@@ -584,18 +625,18 @@ def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool
             inline_id = 'visual-' + str(visual['id']) if description_owner(document, visual) is block else 'image-' + str(block['id']) + '-visual-' + str(visual['id'])
             disposition = visual.get('status') if visual.get('status') in {'excluded', 'not_applicable'} else 'include'
             use_options = ''.join(f'<option value="{value}"'+(' selected' if value == disposition else '')+f'>{label}</option>' for value, label in [('include', 'Use this description'), ('not_applicable', 'No separate description needed'), ('excluded', 'Exclude this description')])
-            description_fields += f'''<fieldset class="image-description-record" id="{html.escape(inline_id, quote=True)}" tabindex="-1" aria-labelledby="{html.escape(inline_id, quote=True)}-heading" aria-describedby="{html.escape(inline_id, quote=True)}-reason {html.escape(inline_id, quote=True)}-action" data-visual-id="{html.escape(str(visual['id']), quote=True)}"><legend id="{html.escape(inline_id, quote=True)}-heading">Description {record_index + 1} · {html.escape(str(visual.get('type') or 'image'))}</legend><p class="image-description-state">{html.escape(readiness['label'])}</p><p class="image-description-reason" id="{html.escape(inline_id, quote=True)}-reason">{html.escape(readiness['reason'])}</p><p id="{html.escape(inline_id, quote=True)}-action"><a href="/help#image-descriptions">Description review help</a></p><label>Description use<select name="description_{record_index}_use" data-description-field="disposition">{use_options}</select></label><label>Long description<textarea name="description_{record_index}_long" data-description-field="long_description" rows="6">{html.escape(str(fields.get('long_description') or ''))}</textarea></label><label>Adjacent text equivalent (optional when long description is provided)<textarea name="description_{record_index}_adjacent" data-description-field="adjacent_text" rows="4">{html.escape(str(fields.get('adjacent_text') or ''))}</textarea></label><small>Provide either field. Recorded description decision: <span class="image-description-decision">{html.escape(str(visual.get('status') or 'needs_text_equivalent'))}</span>.</small><details><summary>Classification and source text (optional)</summary><label>Classification<input name="description_{record_index}_type" data-description-field="type" value="{html.escape(str(visual.get('type') or ''), quote=True)}"></label><label>Recovered source text (optional)<textarea name="description_{record_index}_recovered" data-description-field="recovered_text" rows="4">{html.escape(str(visual.get('recovered_text') or ''))}</textarea></label><label>Reviewer note (optional)<textarea name="description_{record_index}_note" data-description-field="review_note" rows="2">{html.escape(str(visual.get('review_note') or ''))}</textarea></label></details></fieldset>'''
+            description_fields += f'''<fieldset class="image-description-record" id="{html.escape(inline_id, quote=True)}" tabindex="-1" aria-labelledby="{html.escape(inline_id, quote=True)}-heading" aria-describedby="{html.escape(inline_id, quote=True)}-reason {html.escape(inline_id, quote=True)}-action" data-visual-id="{html.escape(str(visual['id']), quote=True)}"><legend id="{html.escape(inline_id, quote=True)}-heading">Description {record_index + 1} · {html.escape(str(visual.get('type') or 'image'))}</legend><p class="image-description-state">{html.escape(readiness['label'])}</p><p class="image-description-reason" id="{html.escape(inline_id, quote=True)}-reason">{html.escape(readiness['reason'])}</p><p id="{html.escape(inline_id, quote=True)}-action"><a href="/help#image-descriptions">Description review help</a></p><label>Description use<select name="description_{record_index}_use" data-description-field="disposition">{use_options}</select></label><label>Long description<textarea name="description_{record_index}_long" data-description-field="long_description" rows="4">{html.escape(str(fields.get('long_description') or ''))}</textarea></label><label>Adjacent text equivalent (optional when long description is provided)<textarea name="description_{record_index}_adjacent" data-description-field="adjacent_text" rows="2">{html.escape(str(fields.get('adjacent_text') or ''))}</textarea></label><small>Provide either field. Recorded description decision: <span class="image-description-decision">{html.escape(str(visual.get('status') or 'needs_text_equivalent'))}</span>.</small><details><summary>Classification and source text (optional)</summary><label>Classification<input name="description_{record_index}_type" data-description-field="type" value="{html.escape(str(visual.get('type') or ''), quote=True)}"></label><label>Recovered source text (optional)<textarea name="description_{record_index}_recovered" data-description-field="recovered_text" rows="4">{html.escape(str(visual.get('recovered_text') or ''))}</textarea></label><label>Reviewer note (optional)<textarea name="description_{record_index}_note" data-description-field="review_note" rows="2">{html.escape(str(visual.get('review_note') or ''))}</textarea></label></details></fieldset>'''
         if not description_records:
-            description_fields = f'''<label>Long description (optional for a simple image)<textarea name="long_description" rows="6">{html.escape(long_description)}</textarea><small>Use for information that needs more detail than alt text.</small></label>'''
-        image_scope = 'This action approves this image and every included description shown here. Existing exclusions remain. Material edits require fresh review. Decorative images need no separate description.'
-        image_editor = f'''{accessibility_warning}<p><a href="#image-description-tools" class="draft-workflow-link">Draft image descriptions</a></p><form class="block-form image-block-form" data-block-id="{block_id}">{preview}<div class="form-grid">
-<label>Alt text<textarea name="alt" rows="3"{" disabled" if decorative else ""}>{html.escape(str(block.get("alt") or ""))}</textarea><small>Describe the image's purpose or information.</small></label>
-<label>Caption<textarea name="caption" rows="3">{html.escape(str(block.get("caption") or ""))}</textarea></label>
+            description_fields = f'''<label class="image-long-description">Long description (optional for a simple image)<textarea name="long_description" rows="4">{html.escape(long_description)}</textarea><small class="helper-text">Use for information that needs more detail than alt text.</small></label>'''
+        image_scope = 'The top approval action approves this image and every included description shown here. Existing exclusions remain. Material edits require fresh review. Decorative images need no separate description.'
+        image_editor = f'''{accessibility_warning}<form class="block-form image-block-form" data-block-id="{block_id}">{preview}
+<label class="image-decorative"><input type="checkbox" name="decorative"{" checked" if decorative else ""}> Decorative image</label>
+<small class="helper-text">No information to convey; exports with empty alt text.</small><div class="form-grid image-authoring-fields">
+<label>Alt text<textarea name="alt" rows="2"{" disabled" if decorative else ""}>{html.escape(str(block.get("alt") or ""))}</textarea><small class="helper-text">Describe the image's purpose or information.</small></label>
+<label>Caption<textarea name="caption" rows="2">{html.escape(str(block.get("caption") or ""))}</textarea></label>
 {description_fields}<input type="hidden" name="expected_review_token" value="{review_token(document) if document else ''}">
 </div>
-<label class="image-decorative"><input type="checkbox" name="decorative"{" checked" if decorative else ""}> Decorative image</label>
-<small>Decorative images export with an empty alt attribute and do not require alt text.</small><p class="image-approval-scope">{image_scope}</p>
-<div class="button-row"><button type="submit" aria-label="Save image block {index}">Save image block</button>{save_and_approve}</div></form>'''
+<div class="button-row image-save-actions"><button type="submit" aria-label="Save image block {index}">Save image block</button></div><p class="image-approval-scope helper-text">{image_scope}</p></form>'''
     table_editor = ""
     if block_type == "table" and can_edit:
         table_accessibility = block.get("table_accessibility", {})
@@ -604,7 +645,7 @@ def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool
 <label class="checkbox-label"><input type="checkbox" name="table_header_row"{" checked" if table_accessibility.get('header_row', True) else ""}> First row contains column headers</label>
 <label class="checkbox-label"><input type="checkbox" name="table_header_column"{" checked" if table_accessibility.get('header_column') else ""}> First column contains row headers</label>
 <label class="checkbox-label"><input type="checkbox" name="table_reviewed"{" checked" if table_accessibility.get('reviewed') else ""}> I reviewed the table structure</label></div>
-{saved_token}<div class="button-row"><button type="submit" aria-label="Save table accessibility for block {index}">Save table accessibility</button>{save_and_approve}</div></form>'''
+{saved_token}<div class="button-row"><button type="submit" aria-label="Save table accessibility for block {index}">Save table accessibility</button></div></form>'''
     link_editors = []
     def linked_runs(node):
         for run_index, run in enumerate(node.get('runs', [])):
@@ -618,27 +659,30 @@ def _block_card(block: dict[str, Any], index: int, *, total: int, can_edit: bool
 <input type="hidden" name="link_block_id" value="{html.escape(str(node['id']), quote=True)}"><input type="hidden" name="expected_review_token" value="{review_token(document) if document else ''}">
 <input type="hidden" name="link_index" value="{run_index}">
 <label>Link text<input name="link_text" required value="{html.escape(str(run.get('text') or ''), quote=True)}"></label>
-<p><small>Destination: {html.escape(str(run.get('url') or run.get('href')))}</small></p>
-<div class="button-row"><button type="submit">Save link text</button>{save_and_approve}</div><small>Save link text keeps the destination and marks the block for review. Save and approve saves this label and approves the displayed block in one step; other unresolved link findings remain.</small></form>''')
+<p class="helper-text">Destination: {html.escape(str(run.get('url') or run.get('href')))}</p>
+<div class="button-row"><button type="submit">Save link text</button></div><small>Save link text keeps the destination and marks the block for review. Use the top approval action to save all edited fields and approve the displayed block; other unresolved link findings remain.</small></form>''')
     editor = (image_editor or table_editor or text_editor) + ''.join(link_editors) + draft_controls
+    if can_edit and block_type in {'paragraph', 'list'} and editor:
+        editor = _block_content_modes(block, editor, document, index)
     include_label = "Include" if review_status == "excluded" else "Exclude"
+    approval_complete = review_status == 'approved'
+    if block_type == 'image' and document:
+        approval_complete = approval_complete and all(v.get('status') in {'reviewed', 'excluded', 'not_applicable'} for v in descriptions_for(document, block))
     merge_reason = merge_next_reason(block, following)
     actions = f'''<footer class="block-actions" aria-label="Actions for block {index}">
-<button type="button" class="secondary block-action" data-action="start" data-block-id="{block_id}" aria-label="Move block {index} to start"{" disabled" if index == 1 else ""}>Move to start</button>
-<button type="button" class="secondary block-action" data-action="up" data-block-id="{block_id}" aria-label="Move block {index} up"{" disabled" if index == 1 else ""}>Move up</button>
-<button type="button" class="secondary block-action" data-action="down" data-block-id="{block_id}" aria-label="Move block {index} down"{" disabled" if index == total else ""}>Move down</button>
-<button type="button" class="secondary block-action" data-action="end" data-block-id="{block_id}" aria-label="Move block {index} to end"{" disabled" if index == total else ""}>Move to end</button>
+<button type="button" class="secondary block-action" data-action="start" data-block-id="{block_id}" aria-label="Move block {index} to start"{" disabled" if index == 1 else ""}>Move to document start</button>
+<button type="button" class="secondary block-action" data-action="end" data-block-id="{block_id}" aria-label="Move block {index} to end"{" disabled" if index == total else ""}>Move to document end</button>
 <button type="button" class="secondary block-action" data-action="merge" data-block-id="{block_id}" data-merge-reason="{html.escape(merge_reason, quote=True)}" data-next-block-id="{html.escape(str(following.get('id', '')) if following else '', quote=True)}" data-merge-token="{review_token(document) if document else ''}" aria-label="Merge block {index} with next block"{' disabled' if merge_reason else ''} aria-describedby="merge-help-{block_id}">Merge next</button>
 <button type="button" class="secondary block-action" data-action="split" data-block-id="{block_id}" aria-label="Split block {index}">Split</button>
-<small id="merge-help-{block_id}" class="merge-help"{'' if merge_reason else ' hidden'}>{html.escape(merge_reason)}</small><p class="block-action-message" role="status" aria-live="polite" hidden></p></footer>''' if can_edit else '<footer><strong>Inspection only while conversion is blocked.</strong></footer>'
+<small id="merge-help-{block_id}" class="merge-help helper-text"{'' if merge_reason else ' hidden'}>{html.escape(merge_reason)}</small></footer>''' if can_edit else '<footer><strong>Read-only while this page is held for manual reconstruction.</strong></footer>' if held else '<footer><strong>Inspection only while conversion is blocked.</strong></footer>'
     review_actions = f'''<div class="block-review-actions" role="group" aria-label="Review block {index}">
 <button type="button" class="block-action review-needs" data-action="flag" data-block-id="{block_id}" aria-label="Mark block {index} as needs review">Needs review</button>
 <button type="button" class="block-action review-exclude" data-action="toggle-excluded" data-block-id="{block_id}" data-current-status="{review_status}" aria-label="{include_label} block {index}">{include_label}</button>
-{("" if block_type == "image" else f'<button type="button" class="block-action review-approve" data-action="approve" data-block-id="{block_id}" aria-label="Approve block {index}"' + (' disabled' if review_status == 'approved' else '') + '>Approve</button>')}</div>''' if can_edit else ""
+<button type="button" class="block-action review-approve" data-action="approve" data-block-id="{block_id}" id="block-{block_id}-approve" data-save-editors="true" data-approval-complete="{str(approval_complete).lower()}" aria-label="Approve block {index}"{' disabled' if approval_complete else ''}>Approve</button></div>''' if can_edit else ""
     return f'''<article class="block-card status-{html.escape(review_status)}" id="block-{block_id}" tabindex="-1" data-page="{page}" data-bbox="{bbox_value}" data-bboxes="{regions_value}" data-source-coverage="{html.escape(_source_region_coverage(block, source_region_data), quote=True)}" data-block-index="{index}" data-review-status="{html.escape(review_status)}" data-filter-type="{_block_filter_type(block)}" data-source-type="{html.escape(source_type, quote=True)}" aria-labelledby="block-{block_id}-heading">
-{review_actions}<header><div><span class="order">{index}</span> <h3 id="block-{block_id}-heading">{html.escape(block_type.replace("_", " ").title())}{f' H{level}' if block_type == 'heading' else ''}</h3></div><span class="block-status status-{html.escape(review_status)}">{_status_label(review_status)}</span></header>
-{f'<p class="block-review-reason">{html.escape(approval_reason)}</p>' if approval_reason else ''}<p class="source-provenance">OpenDataLoader source: {html.escape(source_type)}{f' · Source region available' if bbox_value else ''}{' · Reading order inferred from layout' if inferred_order else ''}</p>{f'<p class="block-issue">{html.escape(issue_text)}</p>' if issue_text else ''}{table}{editor}
-{actions}</article>'''
+{review_actions}{'<p class="block-action-message" role="status" aria-live="polite" hidden></p>' if can_edit else ''}<p id="block-{block_id}-unsaved-help" class="block-review-dirty-help helper-text" role="status" aria-live="polite" aria-atomic="true" hidden></p><header><div><span class="order">{index}</span> <h3 id="block-{block_id}-heading">{html.escape(block_type.replace("_", " ").title())}{f' H{level}' if block_type == 'heading' else ''}</h3></div><span class="block-status status-{html.escape(review_status)}">{_status_label(review_status)}</span></header>
+{f'<p class="block-review-reason">{html.escape(approval_reason)}</p>' if approval_reason else ''}{f'<p class="block-issue">{html.escape(issue_text)}</p>' if issue_text else ''}{table}{editor}
+{f'<p class="review-actions-return"><a href="#block-{block_id}-approve" data-review-actions-return>Back to review actions</a></p>' if can_edit else ""}{actions}<details class="block-source-details"><summary>Source details</summary><p class="source-provenance">OpenDataLoader source: {html.escape(source_type)}{f' · Source region available' if bbox_value else ''}{' · Reading order inferred from layout' if inferred_order else ''}</p></details></article>'''
 
 
 def _visual_image_url(root: Path, document: dict[str, Any], visual: dict[str, Any]) -> str:
@@ -669,14 +713,62 @@ def _visual_image_url(root: Path, document: dict[str, Any], visual: dict[str, An
     return ""
 
 
+def _visual_source_page(visual):
+    try:
+        page = int(visual.get('source_page'))
+        return page if page > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _source_page_visual_reviews(document, page_count):
+    page_count = int(page_count or 1)
+    result = {}
+    positions = {str(b['id']): index for index, b in enumerate(document.get('blocks', []), 1)}
+    for visual in document.get('review', {}).get('complex_visuals', []):
+        page = _visual_source_page(visual)
+        if not page or page > page_count or visual_readiness(document, visual)['complete']:
+            continue
+        owner = description_owner(document, visual)
+        number = positions.get(str((owner or {}).get('id')))
+        label = f'Block {number}: description review pending' if number else 'Whole-page visual check: decision pending'
+        result.setdefault(str(page), []).append({'target': 'visual-' + str(visual['id']), 'label': label})
+    return result
+
+
+def _visual_reference(root, document, visual):
+    image_url = _visual_image_url(root, document, visual)
+    page = _visual_source_page(visual)
+    count = int(load_project(root).get('source', {}).get('page_count') or 0)
+    source = next((b for b in _walk(document.get('blocks', [])) if str(b.get('id')) == str(visual.get('source_block_id'))), None)
+    positions = {str(b['id']): index for index, b in enumerate(document.get('blocks', []), 1)}
+    owner = description_owner(document, visual)
+    number = positions.get(str((owner or source or {}).get('id')))
+    identity = f'Source page {page}' if page else 'Source page unknown'
+    identity += f' · Block {number}' if number else ' · No individual block assigned'
+    if image_url:
+        caption = identity + ' · Associated image'
+        note = 'Review the associated image alongside the authored description.'
+    elif page and page <= count:
+        image_url = f'/source-page/{page}.png'
+        caption = identity + ' · Whole-page context'
+        note = ('This finding is attached to the source page, not a specific photograph. '
+                'Check whether its visual information needs a separate text equivalent. '
+                'A possible-complex-visual flag is an automated prompt for review, not a confirmed infographic. '
+                'If existing image alternatives and surrounding text already cover it, record Not applicable rather than duplicating descriptions.')
+    else:
+        return '<p class="visual-reference-unavailable">No associated image or valid source page is recorded. Check Source details before making a description decision.</p>'
+    pdf_link = f'<a href="/source.pdf#page={page}" target="_blank" rel="noopener">Open source PDF at page {page}</a>' if page and page <= count else ''
+    return f'''<figure class="visual-source-reference"><figcaption>{html.escape(caption)}</figcaption><img class="visual-reference-image" src="{html.escape(image_url, quote=True)}" alt="{html.escape(caption, quote=True)}" loading="lazy"><p class="visual-reference-error" role="status" hidden>Preview could not be loaded. Open the source PDF to inspect this finding.</p><button type="button" class="secondary visual-reference-retry" hidden>Retry visual preview</button><p class="helper-text">{html.escape(note)}</p><div class="button-row"><a href="{html.escape(image_url, quote=True)}" target="_blank" rel="noopener">Open full-size preview</a>{pdf_link}</div></figure>'''
+
+
 def _complex_visual_card(visual: dict[str, Any], *, can_edit: bool, root: Path, document: dict[str, Any]) -> str:
     visual_id = html.escape(str(visual.get("id", "")), quote=True)
     ratio = visual.get("text_recovery_ratio")
     recovery = f"{ratio:.1%}" if ratio is not None else "Unknown"
     assets = visual.get("asset_references", [])
     asset_list = "".join(f"<li><code>{html.escape(str(asset))}</code></li>" for asset in assets)
-    image_url = _visual_image_url(root, document, visual)
-    asset_image = f'<img class="image-block-preview" src="{html.escape(image_url, quote=True)}" alt="">' if image_url else '<p>Image preview unavailable. Verify the retained image association.</p>'
+    asset_image = _visual_reference(root, document, visual)
     source_id = str(visual.get("source_block_id") or "")
     linked_block = next((b for b in drafts._walk(document.get("blocks", [])) if str(b.get("id")) == source_id), None)
     status = str(visual.get("status", "needs_text_equivalent"))
@@ -694,12 +786,12 @@ def _complex_visual_card(visual: dict[str, Any], *, can_edit: bool, root: Path, 
 <label>Classification<input name="type" value="{html.escape(str(visual.get('type','infographic')), quote=True)}"></label>
 <label>Review state<select name="status">{state_options}</select></label></div>
 <label>Short alt text (required unless decorative or excluded)<textarea name="short_alt" rows="3">{html.escape(str(accessibility.get('short_alt','')))}</textarea></label>
-<label>Long description (or adjacent text)<textarea name="long_description" rows="6">{html.escape(str(accessibility.get('long_description','')))}</textarea><small>Provide this or an adjacent text equivalent; both are not required.</small></label>
+<label>Long description (or adjacent text)<textarea name="long_description" rows="6">{html.escape(str(accessibility.get('long_description','')))}</textarea><small class="helper-text">Provide this or an adjacent text equivalent; both are not required.</small></label>
 <label>Adjacent text equivalent (optional when a long description is provided)<textarea name="adjacent_text" rows="6">{html.escape(str(accessibility.get('adjacent_text','')))}</textarea></label>
 <label>Recovered source text (optional)<textarea name="recovered_text" rows="8">{html.escape(str(visual.get('recovered_text','')))}</textarea></label>
 <label>Reviewer note (optional)<textarea name="review_note" rows="2">{html.escape(str(visual.get('review_note','')))}</textarea></label><button type="submit">Save complex visual review</button><p class="visual-save-message" role="status" aria-live="polite"></p></form>''' if can_edit else "<p><strong>Inspection only while conversion is blocked.</strong></p>"
     block_link = f'<p><a href="/structure#block-{quote(source_id)}">Open linked image block</a> — <span class="linked-image-status">{_status_label(str(linked_block.get("review", {}).get("status", "unreviewed")))}</span></p>' if linked_block else ''
-    return f'''<article class="complex-visual {'visual-complete' if readiness['complete'] else 'visual-pending'}" id="visual-{visual_id}" tabindex="-1" aria-labelledby="visual-{visual_id}-heading" aria-describedby="visual-{visual_id}-reason visual-{visual_id}-action"><p class="description-selection-notice" hidden>Selected description for review</p><h3 id="visual-{visual_id}-heading">{html.escape(title)}</h3><p>Source page {visual.get('source_page')} · <span class="visual-state">{html.escape(readiness['label'])}</span></p><p class="description-context">{html.escape(context)}</p><p class="description-review-reason" id="visual-{visual_id}-reason"{' hidden' if not readiness['reason'] else ''}>{html.escape(readiness['reason'])}</p><p class="description-review-action" id="visual-{visual_id}-action"{' hidden' if not readiness['action'] else ''}>{html.escape(readiness['action'])}</p>{block_link}{asset_image}<details><summary>Extracted assets and recovered text</summary>{f'<p>Text recovered: {recovery}</p>' if ratio is not None else ''}<ul>{asset_list or '<li>No separate assets were retained.</li>'}</ul><p>{html.escape(str(visual.get('recovered_text','')))}</p></details>{form}</article>'''
+    return f'''<article class="complex-visual {'visual-complete' if readiness['complete'] else 'visual-pending'}" id="visual-{visual_id}" data-source-page="{_visual_source_page(visual) or ''}" tabindex="-1" aria-labelledby="visual-{visual_id}-heading" aria-describedby="visual-{visual_id}-reason visual-{visual_id}-action"><p class="description-selection-notice" hidden>Selected description for review</p><h3 id="visual-{visual_id}-heading">{html.escape(title)}</h3><p>Source page {visual.get('source_page')} · <span class="visual-state">{html.escape(readiness['label'])}</span></p><p class="description-context">{html.escape(context)}</p><p class="description-review-reason" id="visual-{visual_id}-reason"{' hidden' if not readiness['reason'] else ''}>{html.escape(readiness['reason'])}</p><p class="description-review-action" id="visual-{visual_id}-action"{' hidden' if not readiness['action'] else ''}>{html.escape(readiness['action'])}</p>{block_link}{asset_image}<details><summary>Extracted assets and recovered text</summary>{f'<p>Text recovered: {recovery}</p>' if ratio is not None else ''}<ul>{asset_list or '<li>No separate assets were retained.</li>'}</ul><p>{html.escape(str(visual.get('recovered_text','')))}</p></details>{form}</article>'''
 
 
 def _description_context(document, visual):
@@ -712,7 +804,9 @@ def _review_task_summary(document, progress=None):
     linked = progress.get('linked_pending_descriptions', 0)
     detail = f"{linked} description review{'s' if linked != 1 else ''} included in the image reviews; {progress.get('standalone_pending_descriptions', 0)} standalone description reviews" if linked else f"{progress['pending_descriptions']} description review{'s' if progress['pending_descriptions'] != 1 else ''}"
     owner_counts = f"{progress['pending_images']} image review{'s' if progress['pending_images'] != 1 else ''} · {progress['pending_blocks'] - progress['pending_images']} other block reviews" if linked else f"{progress['pending_blocks']} block review{'s' if progress['pending_blocks'] != 1 else ''}"
-    return f'''<div class="review-task-summary" id="review-summary" aria-label="Block and image approval progress"><p id="review-counts">Blocks reviewed {progress['approved']} · Excluded {progress['excluded']} · Total {progress['total']} block{'s' if progress['total'] != 1 else ''}</p><p id="review-task-counts" role="status" aria-live="polite">Block and image approvals: <strong>Pending {progress['pending_tasks']} review task{'s' if progress['pending_tasks'] != 1 else ''}</strong> · {owner_counts} · {detail}</p></div>'''
+    manual_count = len(document.get('review', {}).get('manual_reconstruction_pages', {}))
+    manual_note = f'<p>Manual reconstruction pending: {manual_count} source page(s). Export remains blocked.</p>' if manual_count else ''
+    return f'''<div class="review-task-summary" id="review-summary" aria-label="Block and image approval progress"><p id="review-counts">Blocks reviewed {progress['approved']} · Excluded {progress['excluded']} · Total {progress['total']} block{'s' if progress['total'] != 1 else ''}</p><p id="review-task-counts" role="status" aria-live="polite">Block and image approvals: <strong>Pending {progress['pending_tasks']} review task{'s' if progress['pending_tasks'] != 1 else ''}</strong> · {owner_counts} · {detail}</p>{manual_note}</div>'''
 
 
 def _diagnostic_detail(model, item, *, accessibility=False):
@@ -806,6 +900,10 @@ def _document_diagnostics(model):
 
 
 def _structure_completion(document, *, structure_path=""):
+    from .manual_reconstruction import marked_pages
+    if marked_pages(document):
+        links = ''.join(f'<li><a href="{structure_path}?source_page={page}">Source page {page} needs manual reconstruction</a></li>' for page in marked_pages(document))
+        return f'<section class="status-banner status-needs_review"><h2>Manual reconstruction pending</h2><p>Fragments are retained. Restore and review completed content before export.</p><ul>{links}</ul></section>'
     progress = review_progress(document)
     unresolved_visuals = [v for v in document.get('review', {}).get('complex_visuals', []) if not visual_readiness(document, v)['complete']]
     complete = document.get('review', {}).get('status') != 'conversion_blocked' and progress['total'] > 0 and progress['approved'] + progress['excluded'] == progress['total']
@@ -819,33 +917,77 @@ def _structure_completion(document, *, structure_path=""):
 
 
 def _structure_page(model: dict[str, Any]) -> str:
+    from .manual_reconstruction import marked_pages, managed_ids
     document = model["document"]
     status = document.get("review", {}).get("status", "needs_review")
     can_edit = status != "conversion_blocked"
     progress = model["progress"]
     blocks = document.get("blocks", [])
     page_count = int(model["project"].get("source", {}).get("page_count") or 1)
+    source_reviews = html.escape(json.dumps(page_reviews(document, page_count)), quote=True)
     source_preview_key = html.escape(str(model["source_preview_key"]), quote=True)
+    source_visual_reviews = html.escape(json.dumps(_source_page_visual_reviews(document, page_count)), quote=True)
     source_overlay = source_regions_for_blocks(model['project_dir'], blocks)
-    cards = "".join(_block_card(block, index, total=len(blocks), following=blocks[index] if index < len(blocks) else None, document=document, can_edit=can_edit, long_description=str((drafts.visual_for(document, block) or {}).get("accessibility", {}).get("long_description") or ""), draft_controls=image_draft_ui.controls(model["project_dir"], document, block) if can_edit and block.get("type") == "image" else "", source_region_data=source_overlay.get(str(block['id']))) for index, block in enumerate(blocks, 1))
+    cards = "".join(_block_card(block, index, total=len(blocks), following=blocks[index] if index < len(blocks) else None, document=document, can_edit=can_edit and str(block['id']) not in managed_ids(document), long_description=str((drafts.visual_for(document, block) or {}).get("accessibility", {}).get("long_description") or ""), draft_controls=image_draft_ui.controls(model["project_dir"], document, block) if can_edit and block.get("type") == "image" else "", source_region_data=source_overlay.get(str(block['id']))) for index, block in enumerate(blocks, 1))
     visual_records = [v for v in document.get("review", {}).get("complex_visuals", []) if description_owner(document, v) is None]
     pending_visuals = sum(not visual_readiness(document, visual)['complete'] for visual in visual_records)
     visuals = "".join(_complex_visual_card(visual, can_edit=can_edit, root=model["project_dir"], document=document) for visual in visual_records)
-    undo_control = f'''<details class="review-history"><summary>Saved review history</summary><p>Undo restores the previous saved change, including changes from earlier sessions.</p><button id="undo-action" type="button" class="secondary"{' disabled' if not model['can_undo'] else ''}>Undo last action</button>{'<p class="undo-empty">No saved actions to undo.</p>' if not model['can_undo'] else ''}</details>''' if can_edit else ''
+    undo_control = f'''<details class="review-history"><summary>Saved review history</summary><p class="helper-text">Undo restores the previous saved change, including changes from earlier sessions.</p><button id="undo-action" type="button" class="secondary"{' disabled' if not model['can_undo'] else ''}>Undo last action</button>{'<p class="undo-empty">No saved actions to undo.</p>' if not model['can_undo'] else ''}</details>''' if can_edit else ''
     reading_order_undo = f'''<button id="reading-order-undo" type="button" class="neutral-action" title="Restore the most recent saved project change, including changes from earlier sessions."{' disabled' if not model['can_undo'] else ''}>Undo last saved change</button>''' if can_edit else ''
     completion_message = _structure_completion(document)
     review_label = "Conversion blocked" if not can_edit else "Structure reviewed" if 'id="structure-review-complete"' in completion_message else "Review in progress"
-    draft_useful = progress['pending_images'] > 0 or bool(drafts.state(document)['active'])
+    draft_workflow = image_draft_ui.workflow_state(document, progress['pending_images'])
     drafting_tools = ('<section class="image-draft-workflow" aria-labelledby="image-draft-heading"><h2 id="image-draft-heading" tabindex="-1">Image description drafts</h2>'
         '<p>Prepare image descriptions here before reviewing the image blocks below. Drafting is optional; you can author descriptions directly.</p>'
-        f'<details id="image-description-tools" class="review-tools"{" open" if draft_useful else ""}><summary>Drafting tools (optional)</summary>'
+        f'<p id="draft-workflow-status" class="helper-text" role="status" aria-live="polite">{html.escape(draft_workflow["status"])}</p>'
+        f'<details id="image-description-tools" class="review-tools"{" open" if draft_workflow["open"] else ""} data-generation-completed="{str(draft_workflow["completed"]).lower()}"><summary>Drafting tools (optional)</summary>'
         + image_draft_ui.toolbar(document, model['project_dir']) + '</details></section>') if can_edit and any(b.get('type') == 'image' for b in blocks) else ''
     body = f'''<h1>Structure</h1><div class="review-toolbar"><p class="review-overall-status"{' hidden' if not can_edit or 'id="structure-review-complete"' in completion_message else ''}><strong>{review_label}</strong></p>{_review_task_summary(document, progress)}{undo_control}</div><div id="structure-completion-region">{completion_message}</div>{_status_banner(status, document.get("review", {}).get("issues", []), document) if not can_edit else ''}
-{drafting_tools}
+{_manual_reference_notice(document)}{drafting_tools}
 {f'<details id="visual-description-tools" class="visual-descriptions review-tools"><summary>Standalone visual descriptions · <span id="visual-description-counts">{pending_visuals} to review · {len(visual_records) - pending_visuals} complete or not applicable</span></summary><h2 id="complex-heading">Standalone visual descriptions</h2><p>Add a long description or adjacent text, then choose Reviewed. Choose Not applicable if short alt text is sufficient. <a href="/help#image-descriptions">Image description help</a>.</p>{visuals}</details>' if visuals else ''}
-<div class="structure-layout"><section class="source-pane" tabindex="0" aria-labelledby="source-heading" data-page-count="{page_count}" data-source-key="{source_preview_key}"><h2 id="source-heading">Source page</h2><form id="source-page-controls" class="source-page-controls"><button id="source-page-previous" type="button" class="secondary" disabled aria-label="Previous source page">Previous</button><label>Page <input id="source-page-number" type="number" min="1" max="{page_count}" value="1" inputmode="numeric" aria-describedby="source-page-total"></label><span id="source-page-total">of {page_count}</span><button id="source-page-next" type="button" class="secondary"{(' disabled' if page_count <= 1 else '')} aria-label="Next source page">Next</button></form><p id="source-page-label" aria-live="polite">Select a block to view and outline its source region.</p><p id="source-page-render-status" role="status" aria-live="polite">Loading source page 1…</p><button id="source-page-retry" type="button" class="neutral-action" hidden>Retry source page</button><div class="source-image-stage" aria-busy="true"><img id="source-image" data-source-url="/source-page/1.png?v={source_preview_key}" alt="Rendered source PDF page 1" hidden><span id="source-highlights" aria-hidden="true"></span></div><p><a id="open-source-page" href="/source.pdf?v={source_preview_key}#page=1" target="_blank" rel="noopener">Open source PDF page 1</a></p></section>
-<section class="blocks-pane" aria-labelledby="blocks-heading"><div class="reading-order-header"><h2 id="blocks-heading">Reading order</h2>{reading_order_undo}<div class="block-navigation" role="group" aria-label="Selected block navigation"><button id="previous-block" type="button" class="secondary" disabled>Previous block</button><span class="block-navigation-position" aria-live="polite"><span id="selected-block-page">No block selected</span><span id="selected-block-position">No block selected</span></span><button id="next-block" type="button" class="secondary"{(' disabled' if not blocks else '')}>Next block</button></div>{_structure_filters(document, progress)}</div><p>Use the movement controls on each block to correct reading order. Changes save immediately.</p>{cards or '<p>No normalized blocks are available.</p>'}</section></div>'''
+<div class="structure-layout"><section class="source-pane" tabindex="0" aria-labelledby="source-heading" data-page-count="{page_count}" data-page-reviews="{source_reviews}" data-source-visuals="{source_visual_reviews}" data-source-key="{source_preview_key}"><div class="structure-column-title"><h2 id="source-heading">Source page</h2><span id="source-page-review-status" class="source-review-pill" role="status" aria-live="polite" aria-atomic="true" hidden></span></div><form id="source-page-controls" class="source-page-controls"><button id="source-page-previous" type="button" class="secondary" disabled aria-label="Previous Page">Previous Page</button><label>Page <input id="source-page-number" type="number" min="1" max="{page_count}" value="1" inputmode="numeric" aria-label="Source page" aria-describedby="source-page-total"><span id="source-page-total">of {page_count}</span></label><button id="source-page-next" type="button" class="secondary"{(' disabled' if page_count <= 1 else '')} aria-label="Next Page">Next Page</button></form><div class="source-action-row" role="group" aria-label="Source page tools"><button id="repair-reading-order" data-project-id="{html.escape(str(document['output_pages']['project_id']), quote=True)}" type="button" class="neutral-action"{(' disabled' if not can_edit else '')} aria-label="Repair reading order on this page">Repair reading order</button><section id="manual-reconstruction-control" data-pages="{html.escape(json.dumps(marked_pages(document)), quote=True)}" data-review-token="{review_token(document)}"><div class="manual-reconstruction-line"><label class="checkbox-label"><input type="checkbox" id="manual-reconstruction-toggle" autocomplete="off"{' disabled' if not can_edit else ''} aria-describedby="manual-reconstruction-help"> Needs manual reconstruction</label><button type="button" id="manual-reconstruction-help-button" class="manual-reconstruction-help-button neutral-action" aria-label="About manual reconstruction" aria-controls="manual-reconstruction-help" aria-expanded="false" aria-describedby="manual-reconstruction-help"><span aria-hidden="true">ⓘ</span></button></div><p id="manual-reconstruction-help" class="manual-reconstruction-tooltip helper-text" role="tooltip" popover="manual" hidden>Temporarily exclude this page’s fragments and add an unfinished placeholder in Arrange Pages. Uncheck to restore prior review states. Shared blocks stay included.</p><p id="manual-reconstruction-status" class="helper-text" role="status" aria-live="polite" hidden></p></section></div><span id="reading-order-launch-status" role="status" aria-live="polite"></span><section id="source-page-visual-reviews" class="source-page-visual-reviews" role="region" aria-label="Source-page accessibility reviews" hidden><p class="source-page-visual-summary"></p><ul></ul></section><div class="source-preview-notes"><p class="helper-text" aria-live="polite"><span id="source-page-label">Page 1</span><span aria-hidden="true"> · </span><span id="source-region-status">Select a block to outline its source region.</span></p></div><p id="source-page-render-status" role="status" aria-live="polite">Loading source page 1…</p><button id="source-page-retry" type="button" class="neutral-action" hidden>Retry source page</button><div class="source-image-stage" aria-busy="true"><img id="source-image" data-source-url="/source-page/1.png?v={source_preview_key}" alt="Rendered source PDF page 1" hidden><span id="source-highlights" aria-hidden="true"></span></div><p><a id="open-source-page" href="/source.pdf?v={source_preview_key}#page=1" target="_blank" rel="noopener">Open source PDF page 1</a></p></section>
+<section class="blocks-pane" aria-labelledby="blocks-heading"><div class="reading-order-header"><div class="structure-column-title"><h2 id="blocks-heading">Reading order</h2>{reading_order_undo}</div><div class="block-navigation" role="group" aria-label="Selected block navigation"><button id="previous-block" type="button" class="secondary" disabled>Previous block</button><span class="block-navigation-position" aria-live="polite"><span id="selected-block-page">No block selected</span><span id="selected-block-position">No block selected</span></span><button id="next-block" type="button" class="secondary"{(' disabled' if not blocks else '')}>Next block</button></div>{_structure_filters(document, progress)}</div><p>Use the movement controls on each block to correct reading order. Changes save immediately.</p>{cards or '<p>No normalized blocks are available.</p>'}</section></div>'''
     return _page("Structure", "structure", body, project=model["project"], project_path=model["project_dir"])
+
+
+def _structure_review_patch(root, previous):
+    """Small authoritative review refresh after a confirmed local mutation."""
+    from .manual_reconstruction import managed_ids, marked_pages
+    model = document_model(root)
+    document, progress = model['document'], model['progress']
+    blocks = document.get('blocks', [])
+    old = {str(b['id']): b for b in previous.get('blocks', [])}
+    descriptions_changed = previous.get('review', {}).get('complex_visuals') != document.get('review', {}).get('complex_visuals')
+    changed = [b for b in blocks if old.get(str(b['id'])) != b or descriptions_changed and b.get('type') == 'image']
+    overlay = source_regions_for_blocks(root, changed)
+    held = managed_ids(document)
+    cards = [_block_card(b, index, total=len(blocks), following=blocks[index] if index < len(blocks) else None,
+                         document=document, can_edit=str(b['id']) not in held,
+                         long_description=str((drafts.visual_for(document, b) or {}).get('accessibility', {}).get('long_description') or ''),
+                         draft_controls=image_draft_ui.controls(root, document, b) if b.get('type') == 'image' else '',
+                         source_region_data=overlay.get(str(b['id'])))
+             for index, b in enumerate(blocks, 1) if b in changed]
+    completion = _structure_completion(document)
+    return {'review_token': review_token(document), 'block_ids': [str(b['id']) for b in blocks], 'cards': cards,
+            'summary': _review_task_summary(document, progress), 'completion': completion,
+            'filters': _structure_filters(document, progress), 'can_undo': model['can_undo'],
+            'complete': 'id="structure-review-complete"' in completion, 'manual_pages': marked_pages(document),
+            'source_page_reviews': page_reviews(document, model['project'].get('source', {}).get('page_count', 1)),
+            'source_page_visual_reviews': _source_page_visual_reviews(document, model['project'].get('source', {}).get('page_count', 1))}
+
+
+def _saved_review_result(root, document, previous, refresh=False, block_status=None):
+    result = {'status': 'ok', 'progress': review_progress(document), 'review_token': review_token(document)}
+    if block_status:
+        result['block_status'] = block_status
+    if refresh:
+        try:
+            result['review_patch'] = _structure_review_patch(root, previous)
+        except Exception:
+            # The write already succeeded. Never report a rendering problem as
+            # a rejected save that could be blindly retried.
+            result['refresh_error'] = 'Saved, but the review display could not be refreshed. Reload Structure before making another change.'
+    return result
 
 
 def _bulk_review_controls(document, root):
@@ -922,7 +1064,11 @@ def _accessibility_page(model: dict[str, Any]) -> str:
                 location += f" · Block {position}"
             return_query = '?return_to=accessibility&amp;finding=' + quote(item['id'], safe='')
             block_link = f' <a href="/structure{return_query}#block-{quote(str(item["block_id"]))}" role="button" class="secondary compact-action">Open block</a>' if item.get("block_id") else ""
+            if item['id'].startswith('manual-reconstruction:'):
+                block_link = f' <a href="/structure?source_page={item["source_page"]}" role="button" class="secondary compact-action">Open source page</a>'
             if item.get('visual_id'):
+                page = _visual_source_page(item)
+                if page: return_query += '&amp;source_page=' + str(page)
                 block_link = f' <a href="/structure{return_query}#visual-{quote(str(item["visual_id"]))}" role="button" class="secondary compact-action">Open description</a>'
             if category == 'images' and model['document'].get('review', {}).get('status') != 'conversion_blocked':
                 block_link += ' <a href="/structure#image-description-tools" class="draft-workflow-link">Draft image descriptions</a>'
@@ -963,8 +1109,8 @@ def _accessibility_page(model: dict[str, Any]) -> str:
             cards.append(card)
         if cards:
             groups.append(f'<section aria-labelledby="accessibility-{category}"><h2 id="accessibility-{category}">{category_labels[category]} <small>({len(cards)})</small></h2>{"".join(cards)}</section>')
-    history = f'<details class="diagnostic-history"><summary>Resolved extraction notes ({len(resolved_diagnostics)})</summary><p>No action is needed. These notes record the original extraction and your saved decisions. They are retained for reference and can be reopened if the decision needs to change.</p>{"".join(resolved_diagnostics)}</details>' if resolved_diagnostics else ''
-    reviewed_history = f'<details class="reviewed-findings"><summary>Reviewed document findings ({len(reviewed_findings)})</summary><p>Earlier decisions remain editable here.</p>{"".join(reviewed_findings)}</details>' if reviewed_findings else ''
+    history = f'<details class="diagnostic-history"><summary>Resolved extraction notes ({len(resolved_diagnostics)})</summary><p class="helper-text">No action is needed. These notes record the original extraction and your saved decisions. They are retained for reference and can be reopened if the decision needs to change.</p>{"".join(resolved_diagnostics)}</details>' if resolved_diagnostics else ''
+    reviewed_history = f'<details class="reviewed-findings"><summary>Reviewed document findings ({len(reviewed_findings)})</summary><p class="helper-text">Earlier decisions remain editable here.</p>{"".join(reviewed_findings)}</details>' if reviewed_findings else ''
     empty = '<section class="status-banner"><h2>No findings</h2><p>The current deterministic checks found no items requiring a decision.</p></section>' if not groups else ""
     from .image_review import review_token
     token = review_token(model['document'])
@@ -974,7 +1120,7 @@ def _accessibility_page(model: dict[str, Any]) -> str:
 <p>Correct content in the linked editor or record a decision where allowed. Required corrections cannot be waived. <a href="/help#review-counts">How review counts differ</a>.</p>{empty}{''.join(groups)}{reviewed_history}{history}</section>
 {_bulk_review_controls(model['document'], model['project_dir'])}
 <section aria-labelledby="automated-heading"><h2 id="automated-heading">Automated HTML checks</h2>
-<p>Checks the saved HTML; document judgments above remain separate. <a href="/help#html-checks">What these checks cover</a>.</p>
+<p class="helper-text">Checks the saved HTML; document judgments above remain separate. <a href="/help#html-checks">What these checks cover</a>.</p>
 <p id="axe-status" role="status" aria-live="polite">Checking rendered HTML…</p><div id="axe-results"></div>
 <iframe id="axe-preview" title="HTML used for automated accessibility checks" sandbox="allow-same-origin allow-scripts" aria-hidden="true" tabindex="-1" data-review-token="{token}" data-review-revision="{revision}" src="/api/accessibility/preview?expected_review_token={token}"></iframe></section>
 <section id="accessibility-complete" class="structure-review-complete" data-document-ready="{str(summary['unresolved'] == 0 and model['progress']['total'] > 0 and model['document'].get('review', {}).get('status') != 'conversion_blocked').lower()}" hidden><h2>Accessibility review complete</h2><p>Document findings are resolved and the current HTML scan has no detected issues or checks awaiting human review.</p><p class="button-row workflow-next"><a href="/output-pages" role="button" class="review-approve">Continue to Arrange Pages</a></p></section>'''
@@ -983,6 +1129,9 @@ def _accessibility_page(model: dict[str, Any]) -> str:
 
 def _output_pages_page(model, selected_id=None):
     document = model['document']
+    selected_profile = str(model['project'].get('export', {}).get('wordpress_profile', 'generic'))
+    profile_options = ''.join(f'<option value="{value}"'+(' selected' if value == selected_profile else '')+f'>{label}</option>'
+                              for value, label in [('generic', 'Generic'), ('wsuwp', 'WSUWP (approximate preview)')])
     group = op.pages(document)
     selected = op.page_by_id(document, selected_id) or (group[0] if group else None)
     esc = lambda value: html.escape(str(value or ''), quote=True)
@@ -1003,7 +1152,10 @@ def _output_pages_page(model, selected_id=None):
         unresolved = state['accessibility']['summary']['unresolved'] + len(state['unresolved_targets'])
         listing.append(f'<li><a href="/output-pages?page_id={esc(p["id"])}">{esc(p["title"])}</a><br><small>Source {ranges} · {len(p["block_ids"])} blocks · Structure: {esc(state["structural"].replace("_", " "))} · {unresolved} findings · Page decision: {esc(p["approval"]["status"].replace("_", " "))}</small></li>')
     suggestions = op.suggest(document)
-    proposals = ''.join(f'<li>{esc(p["title"])} — {len(p["block_ids"])} blocks; source {esc(p["source_ranges"])}; starts at {esc(p["block_ids"][0])}</li>' for p in suggestions)
+    source_count = int(model['project'].get('source', {}).get('page_count') or 1)
+    ranges_label = lambda ranges: ', '.join(str(a) if a == b else f'{a}–{b}' for a, b in ranges) or 'unknown'
+    proposals = ''.join(f'<li><label class="grouping-choice"><input type="checkbox" name="suggestion" value="{i}"> <span>{esc(p["title"])} <small>— {len(p["block_ids"])} blocks; source {esc(ranges_label(p["source_ranges"]))}</small></span></label></li>' for i, p in enumerate(suggestions))
+    held_count = len(document.get('review', {}).get('manual_reconstruction_pages', {}))
     editor = '<p>Create a page and assign content to begin.</p>'
     if selected:
         p = selected
@@ -1024,40 +1176,58 @@ def _output_pages_page(model, selected_id=None):
         state = op.status(document, p['id'])
         target_findings = ''.join('<li>Unresolved link target: ' + esc(i['target']) + '</li>' for i in state['unresolved_targets'])
         findings = target_findings + ''.join(f'<li>{esc(i["title"])}: {esc(i["message"])} — {esc(i["status"])} {esc(i["note"])}</li>' for i in state['accessibility']['items'])
-        editor = f'''<section id="page-editor" tabindex="-1" data-page-id="{esc(p['id'])}"><h2>{esc(p['title'])}</h2>
-<form id="output-page-metadata"><div class="form-grid"><label>Title<input name="title" value="{esc(p['title'])}" required></label><label>Slug<input name="slug" value="{esc(p['slug'])}" required></label><label>Type<select name="type"><option value="page"{' selected' if p['type']=='page' else ''}>Page</option><option value="post"{' selected' if p['type']=='post' else ''}>Article</option></select></label><label>Parent<select name="parent">{options}</select></label><label>Contents order<input type="number" min="0" name="navigation_order" value="{p['navigation_order']}"></label></div><button>Save page</button></form>
-<p><button type="button" data-page-action="reorder" data-direction="up">Move page up</button> <button type="button" data-page-action="reorder" data-direction="down">Move page down</button></p>
-<form id="output-page-merge"><label>Merge into this page<select name="other_id">{targets}</select></label><button{' disabled' if not targets else ''}>Merge pages</button></form>
-<details id="content-outline"><summary>Arrange content across pages (optional)</summary><p>Use this outline only to split or move content between web pages. Reading order follows Structure. Tables and image descriptions stay intact.</p><ol>{''.join(outline)}</ol></details>
+        editor = f'''<section id="page-editor" tabindex="-1" data-page-id="{esc(p['id'])}" data-page-slug="{esc(p['slug'])}"><h2>{esc(p['title'])}</h2>
+<form id="output-page-metadata" data-other-slugs="{esc(json.dumps([i['slug'] for i in group if i is not p]))}"><input type="hidden" name="slug_mode" value="{esc(p.get('slug_mode', 'custom'))}"><div class="form-grid page-metadata-grid"><label>Title<input name="title" value="{esc(p['title'])}" required></label><label>Slug<input name="slug" value="{esc(p['slug'])}" required maxlength="100"><small id="page-slug-status" class="helper-text">{'Automatic from title' if p.get('slug_mode') == 'auto' else 'Custom slug — title edits keep this value'}</small></label><label>Type<select name="type"><option value="page"{' selected' if p['type']=='page' else ''}>Page</option><option value="post"{' selected' if p['type']=='post' else ''}>Article</option></select></label><label>Parent<select name="parent">{options}</select></label><label>Contents order<input type="number" min="0" name="navigation_order" value="{p['navigation_order']}"></label></div><div class="button-row"><button>Save page</button><button type="button" id="page-slug-auto" class="secondary">Use title for slug</button></div></form>
+<div class="page-arrangement-actions"><button type="button" id="output-page-add-content" class="secondary">{'Add content to this page' if not any(r in {str(b['id']) for b in op.included(document)} for r in p['block_ids']) else 'Assign or move content here'}</button>
+<button type="button" data-page-action="reorder" data-direction="up">Move page up</button> <button type="button" data-page-action="reorder" data-direction="down">Move page down</button></div>
+<form id="output-page-merge" class="page-merge-row"><label>Merge into this page<select name="other_id">{targets}</select></label><button{' disabled' if not targets else ''}>Merge pages</button></form>
+<details id="content-outline"><summary>Arrange content across pages (optional)</summary><p>Destination: <strong>{esc(p['title'])}</strong>. Move here transfers existing content from its current page and saves immediately. Save or revert page edits first. Reading order follows Structure; tables and image descriptions stay intact.</p><ol>{''.join(outline)}</ol></details>
 <h3>Review</h3><p>Structure: {esc(state['structural'])}. Page decision: {esc(p['approval']['status'])}. Page decisions are recorded separately from block review.</p><ul>{findings}</ul>
 <form id="output-page-approval"><label>Page reviewer note<textarea name="note">{esc(p['approval'].get('note'))}</textarea></label><button>Mark page reviewed</button></form>
-<h3>Preview and export</h3><label>WordPress profile<select id="output-page-profile"><option value="generic">Generic</option><option value="wsuwp">WSUWP (approximate preview)</option></select></label>
-<p>Approximate WordPress preview. <a href="/help#wordpress-preview">Preview appearance help</a>.</p>
+<h3>Preview and export</h3><label>WordPress profile<select id="output-page-profile">{profile_options}</select></label>
+<p class="helper-text">Approximate WordPress preview. <a href="/help#wordpress-preview">Preview appearance help</a>.</p>
 <p>For WordPress images, <a href="/export#media-export-heading">prepare and map media first</a>, then return here to export your arrangement.</p>
-<div class="workflow-actions"><div class="button-row"><button type="button" id="output-page-preview">Preview page</button> <button type="button" id="output-page-wordpress-preview">WordPress Preview</button></div><div class="button-row workflow-next"><button type="button" data-page-export="individual"{individual_disabled}>Export page</button> <button type="button" data-page-export="package"{package_disabled}>Export complete package</button></div></div>
-<iframe id="output-page-frame" title="Output page preview" sandbox="allow-same-origin" src="/output-preview/{esc(p['slug'])}.html"></iframe></section>'''
+<div class="workflow-actions"><div class="button-row" role="group" aria-label="Page preview mode"><button type="button" id="output-page-preview" class="secondary" aria-pressed="false">Semantic HTML</button> <button type="button" id="output-page-wordpress-preview" aria-pressed="true">WordPress Preview</button></div><div class="button-row workflow-next"><button type="button" data-page-export="individual"{individual_disabled}>Export page</button> <button type="button" data-page-export="package"{package_disabled}>Export complete package</button></div></div>
+<iframe id="output-page-frame" title="WordPress page preview" sandbox="allow-same-origin" src="/output-preview/{esc(p['slug'])}.html?mode=wordpress&amp;profile={esc(selected_profile)}"></iframe></section>'''
+    if selected and selected.get('manual_reconstruction_source_page'):
+        number = selected['manual_reconstruction_source_page']
+        editor = f'''<section id="page-editor" tabindex="-1" data-page-id="{esc(selected['id'])}"><h2>{esc(selected['title'])}</h2><p role="status">Unfinished reconstruction placeholder. No finished content is assigned here; publication remains blocked.</p><p><a href="/structure?source_page={number}">Open source page {number} and restore its fragments</a></p><p><button type="button" data-page-action="reorder" data-direction="up">Move page up</button> <button type="button" data-page-action="reorder" data-direction="down">Move page down</button></p></section>'''
     body = f'''<h1>Arrange Pages</h1>{_review_task_summary(document, model['progress'])}<p>Optional: arrange several web pages or articles. For one long page, go directly to <a href="/preview">Preview</a> and <a href="/export">Export</a>.</p>
 <div id="output-page-message" role="status" aria-live="polite"></div><section aria-label="Arrangement validation">{validation}</section>
 <div class="workflow-actions"><div class="button-row" role="group" aria-label="Page arrangement actions"><button type="button" data-page-action="single_page">Keep everything on one page</button> <button type="button" data-page-action="create">Create page</button> <button type="button" id="output-page-undo" class="neutral-action">Undo last action</button> <a href="/output-pages-contents" target="_blank" rel="noopener" role="button" class="review-approve">Preview contents</a></div><p class="button-row workflow-next"><a href="/preview" role="button" class="review-approve">Continue to Preview</a></p></div><p>Keeping everything on one page replaces the arrangement, includes all content that is not excluded, and supports Undo.</p>
-<details><summary>Grouping suggestions</summary><p>Heading levels 1 and 2 and explicit section boundaries propose groups. Applying replaces the current arrangement and can be undone.</p><ol>{proposals}</ol><button type="button" data-page-action="apply_suggestions"{' disabled' if not suggestions else ''}>Apply replacement arrangement</button></details>
+<details id="grouping-suggestions"><summary>Grouping suggestions</summary><fieldset id="grouping-methods"><legend>Starting arrangement</legend><label><input type="radio" name="grouping_method" value="source" checked> PDF / source pages — {source_count} physical pages</label><label><input type="radio" name="grouping_method" value="headings"> Heading sections — {len(suggestions)} suggested sections</label></fieldset>
+<div id="source-grouping-options"><p class="helper-text">Build one output page per PDF page in source order. Existing exact page matches retain their metadata; the preview explains replacements and retained empty pages. {held_count} reconstruction placeholder(s) remain unfinished. Empty or excluded-only pages remain incomplete.</p></div>
+<div id="heading-grouping-options" hidden><p class="helper-text">These are optional sections based on heading levels 1 and 2 and explicit boundaries, not required web pages. Select sections to move into their own pages. Unselected assignments and existing page metadata stay unchanged.</p><div class="button-row"><button type="button" id="grouping-select-all" class="secondary">Select all</button><button type="button" id="grouping-clear-all" class="secondary">Clear all</button></div><ol>{proposals}</ol></div>
+<div class="button-row"><button type="button" id="grouping-preview">Preview source-page arrangement</button><button type="button" id="grouping-title-preview" class="secondary">Preview generated page titles</button></div><p class="helper-text">Generated page titles use the first included H1 or H2 in Structure order. Without one, use a numbered page title. Title refresh keeps current assignments, custom titles, manual slugs and reconstruction placeholders.</p><div id="grouping-proposal" tabindex="-1" aria-label="Proposed arrangement" hidden></div><div class="button-row" id="grouping-apply-actions" hidden><button type="button" id="grouping-apply" disabled>Apply source-page arrangement</button><button type="button" id="grouping-cancel" class="secondary">Cancel proposal</button></div><p id="grouping-status" role="status" aria-live="polite"></p></details>
 <div class="output-pages-layout"><aside aria-label="Output pages"><ol>{''.join(listing)}</ol></aside>{editor}</div>'''
     return _page('Arrange Pages', 'output-pages', body, project=model['project'], project_path=model['project_dir'])
 
 
-def _preview_page(project: dict[str, Any], document=None, project_path=None) -> str:
+def _preview_page(project: dict[str, Any], document=None, project_path=None, selected_id=None, mode="wordpress", profile=None) -> str:
     selected_profile = str(project.get("export", {}).get("wordpress_profile", "generic"))
     profile_options = "".join(
         f'<option value="{value}"{" selected" if value == selected_profile else ""}>{label}</option>'
         for value, label in (("generic", "Generic Gutenberg"), ("wsuwp", "WSUWP (approximate preview)"))
     )
-    next_step = '<p class="button-row workflow-next"><a href="/export" role="button" class="review-approve">Continue to Export</a></p>'
-    body = f'''<h1>Preview</h1>{_review_task_summary(document) if document is not None else ''}{next_step}
-<div class="preview-toolbar">
-<div class="segmented-control" role="group" aria-label="Preview mode"><button type="button" class="preview-mode" data-mode="semantic" aria-pressed="true">Semantic HTML</button><button type="button" class="secondary preview-mode" data-mode="wordpress" aria-pressed="false">WordPress Preview</button></div>
-<label class="preview-profile" hidden>WordPress profile<select id="preview-profile">{profile_options}</select></label>
-<div class="preview-controls" role="group" aria-label="Preview width"><button type="button" class="preview-width" data-width="desktop">Desktop</button><button type="button" class="secondary preview-width" data-width="mobile">Narrow</button></div></div>
-<p id="preview-description">Semantic Preview shows the reviewed document independently of WordPress.</p>
-<div class="preview-shell" id="preview-shell"><iframe title="Semantic HTML preview" sandbox="allow-same-origin" src="/api/preview/html"></iframe></div>{next_step}'''
+    group = sorted(op.pages(document), key=lambda p: p['navigation_order']) if document else []
+    selected = op.page_by_id(document, selected_id) if document and selected_id else None
+    if selected is None and selected_id is None and len(group) > 1:
+        selected = group[0]
+    page_options = '<option value="">Whole document</option>' + ''.join(
+        f'<option value="{html.escape(p["id"], quote=True)}" data-slug="{html.escape(p["slug"], quote=True)}" data-state="{'Unfinished reconstruction' if p.get('manual_reconstruction_source_page') else ('Incomplete: no included content' if not any(str(b['id']) in p['block_ids'] for b in op.included(document)) else '')}"'
+        + (' selected' if selected and p['id'] == selected['id'] else '')
+        + f'>{index + 1}. {html.escape(p["title"])}</option>' for index, p in enumerate(group))
+    initial_profile = profile or selected_profile
+    initial_src = (f"/output-preview/{quote(selected['slug'], safe='')}.html?mode={mode}&profile={initial_profile}" if selected else (f"/api/preview/wordpress?profile={initial_profile}" if mode == 'wordpress' else '/api/preview/html'))
+    pagination = f'''<div class="preview-pagination" role="group" aria-label="Output page navigation"><button type="button" id="preview-previous" class="secondary">Previous</button><label>Output page<select id="preview-page">{page_options}</select></label><span id="preview-page-status" role="status" aria-live="polite"></span><button type="button" id="preview-next" class="secondary">Next</button><a id="preview-arrange" href="/output-pages">Arrange this page</a></div>'''
+    next_step = '<p class="button-row workflow-next"><a href="/export" data-preview-export role="button" class="review-approve">Continue to Export</a></p>'
+    body = f'''<h1>Preview</h1>{_review_task_summary(document) if document is not None else ''}
+<section id="preview-workspace" data-mode="{html.escape(mode, quote=True)}" data-profile="{html.escape(profile or selected_profile, quote=True)}">{pagination}<div class="preview-toolbar">
+<div class="segmented-control" role="group" aria-label="Preview mode"><button type="button" class="secondary preview-mode" data-mode="semantic" aria-pressed="false">Semantic HTML</button><button type="button" class="preview-mode" data-mode="wordpress" aria-pressed="true">WordPress Preview</button></div>
+<label class="preview-profile">WordPress profile<select id="preview-profile">{profile_options}</select></label>
+<div class="preview-controls" role="group" aria-label="Preview width"><button type="button" class="preview-width" data-width="desktop" aria-pressed="true">Desktop</button><button type="button" class="secondary preview-width" data-width="mobile" aria-pressed="false">Narrow</button></div><button type="button" id="preview-expand" class="secondary" aria-expanded="false" aria-controls="preview-workspace">Expand preview</button>{next_step}</div>
+<p id="preview-export-status" role="status" aria-live="polite" hidden></p><p id="preview-description" class="helper-text">Approximate content and structure preview using local minimal CSS. Production WSU theme and plugins determine the final design.</p>
+<div class="preview-shell" id="preview-shell"><iframe title="WordPress Gutenberg preview" sandbox="allow-same-origin" src="{html.escape(initial_src, quote=True)}"></iframe></div></section>{next_step}'''
     return _page("Preview", "preview", body, project=project, project_path=project_path)
 
 
@@ -1088,7 +1258,11 @@ def _export_review_state(model: dict[str, Any]) -> dict[str, Any]:
             finding = group[0]
             visual = visuals.get(str(finding.get('visual_id', '')))
             owner = owners.get(str(finding.get('block_id', '')))
-            if visual:
+            if finding['code'] == 'manual_reconstruction_pending':
+                label = f'Source page {finding["source_page"]} needs manual reconstruction'
+                target = '?source_page=' + str(finding['source_page'])
+                reason = 'Open the source page, restore its fragments when ready to edit, and review complete replacement content. Existing duplicate fragments can then be deliberately excluded.'
+            elif visual:
                 source = next((block for block in _walk(document.get('blocks', [])) if str(block.get('id')) == str(visual.get('source_block_id', ''))), None)
                 preview = str((source or {}).get('alt') or (source or {}).get('caption') or visual.get('visual_type') or 'Image description')[:100]
                 label = f"Description on source page {visual.get('source_page') or 'unknown'}: {preview}"
@@ -1151,7 +1325,7 @@ def _export_page(model: dict[str, Any]) -> str:
     mapping_message = state['mapping_message']
     mapping_issues = '<div id="unmapped-media">' + state['unmapped_html'] + '</div>'
     mapping_csv_available = (Path(model['project_dir']) / 'output/wordpress/reports/media-mapping.csv').is_file()
-    body = f'''<h1>Export</h1><div id="export-review-state">{state["html"]}</div>
+    body = f'''<h1>Export</h1><div id="export-review-state">{state["html"]}</div>{_manual_reference_notice(document)}
 <section aria-labelledby="media-export-heading"><h2 id="media-export-heading">1. Prepare images in this project</h2>
 <p>{len(images)} included images. Choose a prefix before uploading them; original extracted files keep their names.</p>
 <form id="media-export-form"><label>Image filename prefix<input name="image_prefix" value="{prefix}" placeholder="citi-training-" required aria-describedby="image-prefix-help"></label>
@@ -1161,18 +1335,18 @@ def _export_page(model: dict[str, Any]) -> str:
 <section aria-labelledby="media-mapping-heading"><h2 id="media-mapping-heading">2. Map WordPress media</h2>
 <p id="media-mapping-status" role="status" aria-live="polite">{mapping_message}</p>{mapping_issues}
 <p>WordPress renamed files or XML left images unmatched? Map their URLs with the CSV.</p><div class="button-row"><button type="button" id="open-manual-media" class="neutral-action" aria-controls="manual-media-tools">Use manual CSV mapping</button></div>
-<ol><li>Open the project output folder and unzip output/wordpress/media-upload.zip.</li><li>Upload the images to your WordPress Media Library.</li><li>In WordPress, choose Tools &gt; Export &gt; Media and download the XML file.</li><li>Choose that XML file below and select Match WordPress media.</li><li>Review any unmatched images listed in the result, then export your content in step 3.</li></ol><p><a href="/help#wordpress-media">Matching rules and WordPress import help</a>.</p>
+<ol><li>Open the project output folder and unzip output/wordpress/media-upload.zip.</li><li>Upload the images to your WordPress Media Library.</li><li>In WordPress, choose Tools &gt; Export &gt; Media and download the XML file.</li><li>Choose that XML file below and select Match WordPress media.</li><li>Review any unmatched images listed in the result, then export your content in step 3.</li></ol><p class="helper-text"><a href="/help#wordpress-media">Matching rules and WordPress import help</a>.</p>
 <form id="media-wxr-form" class="inline-file-form"><label>WordPress media export<input type="file" name="media_wxr" accept=".xml,application/xml,text/xml" required></label>
 <button type="submit" class="review-approve">Match WordPress media</button><div><label><input id="refresh-existing-media" type="checkbox" name="refresh_existing" aria-describedby="refresh-existing-media-help"> These are the same reviewed images; refresh existing attachment IDs</label><small id="refresh-existing-media-help">Choose the XML first, then check this option for re-uploaded unchanged images. Choosing another XML clears this confirmation. Only unique exact filenames with the same saved URL can refresh. XML cannot verify image contents. If images changed, review their alt text and descriptions first; use manual CSV mapping for different URLs.</small><p id="media-refresh-selection-notice" role="status" aria-live="polite" hidden></p></div></form>
-<details id="manual-media-tools"><summary>Map images manually with a CSV</summary><h3 id="manual-media-heading" tabindex="-1">Manual media mapping</h3><p id="manual-media-notice" role="status" aria-live="polite">Prepare the images ZIP and mapping CSV in step 1. Fill in wordpress_url and optionally wordpress_attachment_id for each image; keep block_id and asset_filename unchanged. Use full WordPress URLs and verify the correct image before importing. <a href="/help#wordpress-media">Manual mapping help</a>.</p><p><button type="button" class="neutral-action" data-open-project-output>Open output folder</button></p><details><summary>Optional browser copy of mapping CSV</summary><p>The original CSV is saved in output/wordpress/reports/. This makes an extra copy wherever your browser saves downloads.</p><p><a id="manual-media-download" href="/download/output/wordpress/reports/media-mapping.csv" download{"" if mapping_csv_available else " hidden"}>Save browser copy of current mapping CSV</a></p></details>
+<details id="manual-media-tools"><summary>Map images manually with a CSV</summary><h3 id="manual-media-heading" tabindex="-1">Manual media mapping</h3><p id="manual-media-notice" role="status" aria-live="polite">Prepare the images ZIP and mapping CSV in step 1. Fill in wordpress_url and optionally wordpress_attachment_id for each image; keep block_id and asset_filename unchanged. Use full WordPress URLs and verify the correct image before importing. <a href="/help#wordpress-media">Manual mapping help</a>.</p><p><button type="button" class="neutral-action" data-open-project-output>Open output folder</button></p><details><summary>Optional browser copy of mapping CSV</summary><p class="helper-text">The original CSV is saved in output/wordpress/reports/. This makes an extra copy wherever your browser saves downloads.</p><p><a id="manual-media-download" href="/download/output/wordpress/reports/media-mapping.csv" download{"" if mapping_csv_available else " hidden"}>Save browser copy of current mapping CSV</a></p></details>
 <form id="media-mapping-form" class="inline-file-form"><label>Completed media mapping CSV<input type="file" name="mapping" accept=".csv,text/csv" required></label>
 <button type="submit" class="review-approve">Import media mapping</button></form></details><section id="media-mapping-result" tabindex="-1" hidden aria-label="Media mapping results"><p id="media-mapping-announcement" role="status" aria-live="polite"></p><div id="media-mapping-details"></div></section></section>
 <section aria-labelledby="content-export-heading"><h2 id="content-export-heading">3. Export and copy content</h2><p>This exports the whole reviewed document as one web page. Use <a href="/output-pages">Arrange Pages</a> only when arranging several pages.</p>
 <form id="export-form" data-conversion-blocked="{str(blocked).lower()}" data-publication-ready="{str(state["publication_ready"]).lower()}"><div class="form-grid"><label>Format<select name="target"><option value="html">Semantic HTML</option><option value="gutenberg">Gutenberg</option><option value="wordpress-xml">WXR/XML</option></select></label>
 <label>WordPress profile<select name="profile"><option value="generic">Generic Gutenberg</option><option value="wsuwp">WSUWP</option></select></label>
-<label>Content type<select name="post_type"><option value="page">Page</option><option value="post">Post</option></select></label></div><label><input type="checkbox" name="wrap_in_section" value="true"> Wrap content in a WSU Section block</label><p>WordPress exports are created as Drafts.</p>
+<label>Content type<select name="post_type"><option value="page">Page</option><option value="post">Post</option></select></label></div><label><input type="checkbox" name="wrap_in_section" value="true"> Wrap content in a WSU Section block</label><p class="helper-text">WordPress exports are created as Drafts.</p>
 <label>Page title<input id="export-page-title" value="{page_title}" readonly></label>
-<label><input type="checkbox" name="title_in_template"{' checked' if settings.get('title_in_template', True) else ''}> My WordPress template supplies the page title (H1)</label><p><a href="/help#title-export">Title export help</a></p>
+<label><input type="checkbox" name="title_in_template"{' checked' if settings.get('title_in_template', True) else ''}> My WordPress template supplies the page title (H1)</label><p class="helper-text"><a href="/help#title-export">Title export help</a></p>
 <label>Body headings<select name="heading_style"><option value="sections"{' selected' if settings.get('heading_style', 'nested') == 'sections' else ''}>H2 section headings</option><option value="nested"{' selected' if settings.get('heading_style', 'nested') == 'nested' else ''}>Keep nested headings without skipped levels</option></select></label>
 <div class="button-row workflow-next"><div class="copy-title-row"><button type="button" id="copy-page-title" class="neutral-action">Copy page title</button><span id="copy-page-title-status" role="status" aria-live="polite"></span></div><button type="submit" class="review-approve" aria-describedby="export-availability"{(' disabled' if not state['publication_ready'] else '')}>Export reviewed document</button></div><p id="export-availability" role="status" aria-live="polite"><span id="export-availability-message">{('Ready to export.' if state['publication_ready'] else 'Export is unavailable until the required content reviews are resolved.')}</span> <a id="export-readiness-link" href="#readiness-heading">View Export readiness</a></p><p class="blocked-export-note"{"" if blocked else " hidden"}>Conversion-blocked projects may export diagnostic HTML only.</p></form><div id="export-result" role="status" aria-live="polite"></div></section>'''
     if not images:
@@ -1549,7 +1723,9 @@ def create_app(config: WebAppConfig, *, lifecycle: OwnedServerLifecycle | None =
     @app.get("/structure", response_class=HTMLResponse)
     async def structure_page(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
         require_session(session)
-        return _structure_page(document_model(current()))
+        # History navigation must not combine cached review tokens/initial form
+        # baselines with browser-restored values from later in-place approvals.
+        return HTMLResponse(_structure_page(document_model(current())), headers={"Cache-Control": "private, no-store"})
 
     @app.get("/accessibility", response_class=HTMLResponse)
     async def accessibility_page(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
@@ -1567,10 +1743,84 @@ def create_app(config: WebAppConfig, *, lifecycle: OwnedServerLifecycle | None =
         document = ensure_review_document(current())
         errors = op.validate(document)
         if errors:
-            return HTMLResponse('<p>' + html.escape('; '.join(errors)) + '</p>', status_code=400)
+            rows = []
+            slug_counts = Counter(p.get('slug') for p in op.pages(document))
+            for p in op.pages(document):
+                title = html.escape(str(p.get('title') or 'Untitled page'))
+                editor = '/output-pages?page_id=' + quote(str(p['id']), safe='') + '#page-editor'
+                if p.get('manual_reconstruction_source_page'):
+                    target = '/structure?source_page=' + str(int(p['manual_reconstruction_source_page']))
+                    action = 'Needs reconstruction — open source page'
+                elif not any(str(b['id']) in p['block_ids'] for b in op.included(document)):
+                    target, action = editor, 'Needs content — assign blocks'
+                elif slug_counts[p.get('slug')] != 1 or not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', str(p.get('slug', ''))) or len(str(p.get('slug', ''))) > 100 or p.get('slug') in {'contents', 'publications'}:
+                    target, action = editor, 'Invalid or duplicate slug — edit page'
+                else:
+                    target, action = '/output-preview/' + quote(p['slug'], safe='') + '.html', 'Preview page'
+                rows.append(f'<li>{title} — <a href="{html.escape(target, quote=True)}">{action}</a> · <a href="{html.escape(editor, quote=True)}">Edit page</a></li>')
+            body = '<h1>Incomplete contents preview</h1><p>This arrangement needs corrections before publication. Every output page is listed below; export checks remain required.</p><ol>' + ''.join(rows) + '</ol><h2>Arrangement findings</h2><ul>' + ''.join('<li>' + html.escape(e) + '</li>' for e in errors) + '</ul>'
+            return HTMLResponse(_page('Contents preview', 'output-pages', body))
         content = contents_html(document)
         content = content.replace('href="', 'href="/output-preview/')
         return HTMLResponse(content)
+
+    @app.post('/api/page-grouping/{action}')
+    async def page_grouping_action(action: str, request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
+        require_change(request, session, csrf)
+        require_editable_document()
+        try:
+            from .page_grouping import plan
+            from .image_review import review_token, validate_token
+            from .publication import digest
+            data = await request.json()
+            document = ensure_review_document(current())
+            token = review_token(document)
+            if action == 'apply':
+                validate_token(document, data.get('expected_review_token'))
+            elif action != 'preview':
+                raise ValueError('Choose Preview or Apply for the page arrangement.')
+            count = load_project(current()).get('source', {}).get('page_count') or 1
+            proposal = plan(document, count, data.get('method'), selected=data.get('selected', []), choices=data.get('choices', {}))
+            proposal_digest = digest(proposal)
+            if action == 'preview':
+                lookup = {str(b['id']): (i + 1, b) for i, b in enumerate(document['blocks'])}
+                projected = copy.deepcopy(document)
+                projected['output_pages']['pages'] = copy.deepcopy(proposal['pages'])
+                proposal['publication_findings'] = op.validate(projected)
+                for exception in proposal['exceptions']:
+                    numbers = ', '.join(str(lookup[r][0]) for r in exception['block_ids'] if r in lookup)
+                    exception['label'] = f"{exception['reason']} · Block {numbers}"
+                names = {p['id']: p['title'] for p in op.pages(document)}
+                field_names = {'title': 'Title', 'slug': 'Slug', 'type': 'Type', 'parent': 'Parent', 'navigation_order': 'Contents order', 'approval': 'Page review', 'block_ids': 'Assigned blocks'}
+                def readable_field(key, value):
+                    if value is None:
+                        return 'None'
+                    if key == 'block_ids':
+                        return ', '.join('Block ' + str(lookup[r][0]) for r in value if r in lookup) or 'No blocks'
+                    if key == 'parent':
+                        return names.get(value, 'Unavailable parent')
+                    if key == 'type':
+                        return 'Article' if value == 'post' else 'Page'
+                    if key == 'approval':
+                        status = 'Reviewed' if value.get('status') == 'reviewed' else 'Needs review'
+                        return status + (': ' + str(value['note']) if value.get('note') else '')
+                    return str(value)
+                for effect in proposal['effects']:
+                    effect['display_fields'] = [{'label': field_names.get(key, key.replace('_', ' ').capitalize()), 'before': readable_field(key, values.get('before')), 'after': readable_field(key, values.get('after'))} for key, values in effect.get('fields', {}).items()]
+                for move in proposal['moves']:
+                    move['block_number'] = lookup.get(move['block_id'], (None,))[0]
+                for p in proposal['pages']:
+                    p['preview_blocks'] = [{'number': lookup[r][0], 'snippet': ' '.join(str(lookup[r][1].get('content') or lookup[r][1].get('alt') or lookup[r][1].get('type')).split()[:5]), 'excluded': op.is_excluded(lookup[r][1])} for r in p['block_ids'] if r in lookup]
+                return {'status': 'ok', 'expected_review_token': token, 'proposal_digest': proposal_digest, 'proposal': proposal}
+            if not proposal.get('can_apply') or proposal['errors']:
+                raise ValueError('; '.join(proposal['errors']) or 'Select an arrangement and resolve its assignment questions before Apply.')
+            if data.get('proposal_digest') != proposal_digest:
+                raise ValueError('Preview this exact selection again before applying. No arrangement was saved.')
+            document['output_pages']['pages'] = proposal['pages']
+            save_review_document(current(), document, expected_review_token=token)
+            return {'status': 'ok', 'page_id': proposal['pages'][0]['id'] if proposal['pages'] else None}
+        except (ValueError, KeyError, TypeError, PdfToWebError, OSError) as exc:
+            return error_response(exc)
 
     @app.post('/api/output-pages/{action}')
     async def output_pages_action(action: str, request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
@@ -1622,14 +1872,22 @@ def create_app(config: WebAppConfig, *, lifecycle: OwnedServerLifecycle | None =
         return HTMLResponse(content, headers={'Content-Security-Policy': "default-src 'none'; img-src 'self' data: http: https:; style-src 'self' 'unsafe-inline'; frame-ancestors 'self'"})
 
     @app.get("/preview", response_class=HTMLResponse)
-    async def preview_page(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+    async def preview_page(page_id: str | None = None, mode: str = "wordpress", profile: str | None = None, session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
         require_session(session)
-        return _preview_page(load_project(current()), ensure_review_document(current()), current())
+        return _preview_page(load_project(current()), ensure_review_document(current()), current(), page_id, mode if mode in {"semantic", "wordpress"} else "wordpress", profile if profile in {"generic", "wsuwp"} else None)
 
     @app.get("/export", response_class=HTMLResponse)
-    async def export_page(session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+    async def export_page(page_id: str | None = None, mode: str = "wordpress", profile: str = "generic", session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
         require_session(session)
-        return _export_page(document_model(current()))
+        model = document_model(current())
+        content = _export_page(model)
+        if page_id is not None:
+            page = op.page_by_id(model['document'], page_id)
+            params = urlencode({'page_id': page['id'] if page else '', 'mode': mode if mode in {'semantic', 'wordpress'} else 'wordpress', 'profile': profile if profile in {'generic', 'wsuwp'} else 'generic'})
+            label = html.escape(page['title']) if page else 'Whole document'
+            context = f'<section aria-label="Preview context"><p>From Preview: <strong>{label}</strong>. Document export below covers the whole document. Use Arrange Pages for individual-page or package export.</p><p><a href="/preview?{html.escape(params, quote=True)}">Return to Preview</a></p></section>'
+            content = content.replace('<h1>Export</h1>', '<h1>Export</h1>' + context, 1)
+        return content
 
     @app.get("/download/{relative_path:path}")
     async def download_export(relative_path: str, session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
@@ -1826,15 +2084,64 @@ def create_app(config: WebAppConfig, *, lifecycle: OwnedServerLifecycle | None =
             media_type="image/svg+xml",
         )
 
+    @app.get('/api/source-pages/{page}/reading-order')
+    async def reading_order_snapshot(page: int, session: str | None = Cookie(default=None, alias=SESSION_COOKIE)):
+        require_session(session)
+        require_editable_document()
+        try:
+            from .reading_order import snapshot
+            return snapshot(current(), page)
+        except Exception as exc:
+            return error_response(exc)
+
+    @app.post('/api/source-pages/{page}/reading-order/preview')
+    async def reading_order_preview(page: int, request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
+        require_change(request, session, csrf)
+        require_editable_document()
+        try:
+            from .reading_order import preview
+            data = await request.json()
+            return preview(current(), page, data.get('operations'), data.get('expected_review_token'), data.get('project_id'))
+        except Exception as exc:
+            return error_response(exc)
+
+    @app.post('/api/source-pages/{page}/reading-order')
+    async def reading_order_apply(page: int, request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
+        require_change(request, session, csrf)
+        require_editable_document()
+        try:
+            from .reading_order import apply
+            data = await request.json()
+            document = apply(current(), page, data.get('block_ids'), data.get('expected_review_token'), data.get('project_id'), operations=data.get('operations'))
+            return {'status': 'ok', 'review_token': review_token(document),
+                    'source_page_reviews': page_reviews(document, load_project(current()).get('source', {}).get('page_count', 1))}
+        except Exception as exc:
+            return error_response(exc)
+
+    @app.post('/api/source-pages/manual-reconstruction')
+    async def manual_page_toggle(request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
+        require_change(request, session, csrf)
+        require_editable_document()
+        try:
+            from .manual_reconstruction import toggle
+            data = await request.json()
+            document = toggle(current(), data.get('page'), data.get('enabled'), data.get('expected_review_token'))
+            return {'status': 'ok', 'source_page_reviews': page_reviews(document, load_project(current()).get('source', {}).get('page_count', 1))}
+        except Exception as exc:
+            return error_response(exc)
+
     @app.post("/api/blocks/{block_id}")
     async def edit_block(block_id: str, request: Request, session: str | None = Cookie(default=None, alias=SESSION_COOKIE), csrf: str | None = Header(default=None, alias=CSRF_HEADER)):
         require_change(request, session, csrf)
         require_editable_document()
         try:
-            document = update_block(current(), block_id, await request.json())
+            data = await request.json()
+            refresh = data.pop('review_refresh', False) is True
+            previous = copy.deepcopy(ensure_review_document(current())) if refresh else None
+            document = update_block(current(), block_id, data)
             from .review_state import _find_location
             block = _find_location(document.get('blocks', []), block_id)[2]
-            return {"status": "ok", "block_status": block.get('review', {}).get('status'), "progress": review_progress(document)}
+            return _saved_review_result(current(), document, previous, refresh, block.get('review', {}).get('status'))
         except Exception as exc:
             return error_response(exc)
 
@@ -1843,23 +2150,40 @@ def create_app(config: WebAppConfig, *, lifecycle: OwnedServerLifecycle | None =
         require_change(request, session, csrf)
         require_editable_document()
         try:
+            from .manual_reconstruction import require_unmanaged
+            require_unmanaged(ensure_review_document(current()), block_id)
             data = await request.json()
+            refresh = data.pop('review_refresh', False) is True
+            previous = copy.deepcopy(ensure_review_document(current())) if refresh else None
             if action in {"start", "up", "down", "end"}:
                 move_block(current(), block_id, action)
             elif action == "save-and-approve":
                 document = update_block(current(), block_id, data, approve_after_save=True)
-                return {"status": "ok", "block_status": "approved", "progress": review_progress(document)}
+                return _saved_review_result(current(), document, previous, refresh, 'approved')
             elif action == "merge":
                 merge_with_next(current(), block_id, expected_review_token=data.get('expected_review_token'),
                                 expected_next_block_id=data.get('expected_next_block_id'))
             elif action == "split":
                 split_block(current(), block_id, int(data.get("offset", 0)))
             elif action in {"approve", "flag", "exclude", "include"}:
+                if refresh:
+                    from .image_review import validate_token
+                    validate_token(ensure_review_document(current()), data.get('expected_review_token'))
                 state = {"approve": "approved", "flag": "needs_review", "exclude": "excluded", "include": "unreviewed"}[action]
-                update_block(current(), block_id, {"review_status": state})
+                from .review_state import _find_location
+                block = _find_location(ensure_review_document(current()).get('blocks', []), block_id)[2]
+                if action == 'approve' and block.get('type') == 'image':
+                    # Approve the saved image and exactly the descriptions shown
+                    # by this editor through the existing atomic image validator.
+                    update_block(current(), block_id, {
+                        'expected_review_token': data.get('expected_review_token'),
+                        'displayed_description_ids': data.get('displayed_description_ids'),
+                    }, approve_after_save=True)
+                else:
+                    update_block(current(), block_id, {"review_status": state})
             else:
                 raise ValueError("Unsupported block action")
-            return {"status": "ok"}
+            return _saved_review_result(current(), ensure_review_document(current()), previous, refresh) if refresh else {"status": "ok", "source_page_reviews": page_reviews(ensure_review_document(current()), load_project(current()).get("source", {}).get("page_count", 1))}
         except Exception as exc:
             return error_response(exc)
 
@@ -1870,7 +2194,7 @@ def create_app(config: WebAppConfig, *, lifecycle: OwnedServerLifecycle | None =
         try:
             undo_last(current())
             cancel_draft_jobs()
-            return {"status": "ok"}
+            return {"status": "ok", "source_page_reviews": page_reviews(ensure_review_document(current()), load_project(current()).get("source", {}).get("page_count", 1))}
         except Exception as exc:
             return error_response(exc)
 
@@ -1885,7 +2209,7 @@ def create_app(config: WebAppConfig, *, lifecycle: OwnedServerLifecycle | None =
             readiness = visual_readiness(document, visual)
             block = next((b for b in drafts._walk(document.get('blocks', [])) if str(b.get('id')) == str(visual.get('source_block_id'))), None)
             return {"status": "ok", 'reload_required': bool(block and len(descriptions_for(document, block)) > 1), 'visual': {**readiness, 'status': visual.get('status'), 'context': _description_context(document, visual)}, 'block_status': block.get('review', {}).get('status') if block else None,
-                    'review_token': review_token(document), 'completion_html': _structure_completion(document), 'progress': review_progress(document), 'review_summary_html': _review_task_summary(document)}
+                    'review_token': review_token(document), 'completion_html': _structure_completion(document), 'progress': review_progress(document), 'review_summary_html': _review_task_summary(document), 'source_page_reviews': page_reviews(document, load_project(current()).get('source', {}).get('page_count', 1)), 'source_page_visual_reviews': _source_page_visual_reviews(document, load_project(current()).get('source', {}).get('page_count', 1))}
         except Exception as exc:
             return error_response(exc)
 

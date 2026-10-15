@@ -157,5 +157,7 @@ class SaveAndApproveTests(unittest.TestCase):
             with self.subTest(type=block['type']):
                 self.document(block)
                 page = self.client.get('/structure').text
-                self.assertEqual(page.count('data-save-and-approve'), 1)
-                self.assertIn('aria-label="Save and approve block 1"', page)
+                self.assertEqual(page.count('data-save-and-approve'), 0)
+                self.assertEqual(page.count('data-action="approve"'), 1)
+                self.assertIn('Back to review actions', page)
+                self.assertIn('aria-label="Approve block 1"', page)

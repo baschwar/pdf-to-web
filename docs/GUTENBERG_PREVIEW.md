@@ -1,5 +1,10 @@
 # Local Gutenberg Preview
 
+Preview and the embedded Arrange Pages preview start in WordPress mode using
+the project's saved profile. Semantic HTML remains an explicit mode. The selected
+mode, iframe title and WordPress profile stay consistent during switching;
+profile changes refresh an active WordPress preview without saving review state.
+
 ## Evaluation
 
 `wp-block-to-html` 1.5.0 is MIT licensed, has no required runtime dependencies,
@@ -70,3 +75,23 @@ The converter includes many core handlers, but this project validates only the
 six core blocks and two WSU handlers listed above. Unsupported blocks are not a
 preview error and never alter or suppress the Gutenberg export. Actual WordPress
 imports remain required for regression and final compatibility testing.
+
+## Recognized footnotes and native blocks
+
+Preview sanitization preserves the exporters' existing `sup`, backlink
+`aria-label`, and endnotes-section `aria-labelledby` markup. Styled-run marker
+placement uses the shared inline renderer. These corrections do not change
+paragraph/list block types or add a Custom HTML fallback. The existing recognized
+footnote endnotes section is already a separate `core/html` block.
+
+Saved literal line breaks, including blank lines, become HTML `br` elements in
+the shared renderer and survive local WordPress preview conversion. Paragraphs
+and list items retain their native wrappers and existing IDs; this does not add
+a Custom HTML fallback or alter the simple-list editor's item-per-line convention.
+
+New citation association and footnote ARIA authoring are deferred. The compact
+Structure block preview shows saved semantic formatting, retains unsaved fields
+in Edit, and makes destination links inactive while retaining local note links.
+Neither preview creates associations for plain extracted citation numbers.
+Actual WordPress open/save/reopen and human VoiceOver checks remain separate
+acceptance steps.

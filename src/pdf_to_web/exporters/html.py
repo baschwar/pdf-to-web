@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import html
 from typing import Any
 
@@ -81,6 +82,36 @@ def _block(block: dict[str, Any]) -> str:
     role = block.get("role")
     role_attr = f' data-role="{html.escape(str(role), quote=True)}"' if role else ""
     return f'<div data-pdf-to-web-type="unknown"{role_attr}>{render_inline(block)}</div>'
+
+
+def render_block(block: dict[str, Any], *, document: dict[str, Any] | None = None) -> str:
+    """Render saved block semantics with its notes, without document title projection.
+
+    This display projection never changes the reviewed model. Only backlinks
+    belonging to references visible in this fragment are included.
+    """
+    markup = _block(block)
+    if not markup or document is None:
+        return markup
+
+    def references(node):
+        if is_excluded(node) or is_footnote_body(node) or node.get('export_as_part_of_image'):
+            return []
+        return [ref for ref in node.get('footnote_references', []) if isinstance(ref, dict)] + [
+            ref for child in node.get('children', []) for ref in references(child)]
+
+    refs = references(block)
+    reference_ids = {ref.get('id') for ref in refs}
+    note_ids = {ref.get('footnote_id') for ref in refs}
+    notes = []
+    for note in document.get('footnotes', []):
+        if not isinstance(note, dict) or note.get('id') not in note_ids:
+            continue
+        note = copy.deepcopy(note)
+        note['references'] = [ref for ref in note.get('references', [])
+                              if isinstance(ref, dict) and ref.get('id') in reference_ids]
+        notes.append(note)
+    return markup + render_footnotes_list({'footnotes': notes})
 
 
 def render_document(document: dict[str, Any], *, annotate_blocks: bool = False, body_only: bool = False, template_title: bool = False) -> str:

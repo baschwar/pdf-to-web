@@ -28,7 +28,8 @@ def visible_walk(blocks):
 
 
 def new_page(title, block_ids=(), **metadata):
-    return {'id': 'page-' + uuid.uuid4().hex, 'title': str(title), 'slug': slugify(str(title))[:100].rstrip('-'),
+    from .page_grouping import auto_slug
+    return {'id': 'page-' + uuid.uuid4().hex, 'title': str(title), 'slug': auto_slug(title), 'slug_mode': 'auto',
             'type': 'page', 'parent': None, 'navigation_order': 0,
             'block_ids': list(block_ids), 'approval': {'status': 'needs_review', 'note': ''}, **metadata}
 
@@ -115,7 +116,9 @@ def validate(document):
             errors.append(f'{label}: contents order must be a nonnegative integer')
         refs = p.get('block_ids', [])
         assigned.extend(refs)
-        if not any(ref in required for ref in refs):
+        if p.get('manual_reconstruction_source_page'):
+            errors.append(f'{label}: open its source page in Structure to resolve manual reconstruction')
+        elif not any(ref in required for ref in refs):
             errors.append(f'{label}: assign included content or merge this empty page')
         for ref in refs:
             if ref not in blocks:
@@ -230,7 +233,9 @@ def mutate(document, action, data):
     group = pages(document)
     p = page_by_id(document, data.get('page_id'))
     if action == 'single_page':
-        p = p or (group[0] if group else new_page(document.get('metadata', {}).get('title') or 'Document'))
+        if p and p.get('manual_reconstruction_source_page'):
+            p = next((item for item in group if not item.get('manual_reconstruction_source_page')), None)
+        p = p or next((item for item in group if not item.get('manual_reconstruction_source_page')), None) or new_page(document.get('metadata', {}).get('title') or 'Document')
         p['block_ids'] = [str(b['id']) for b in document.get('blocks', [])]
         p['parent'], p['navigation_order'] = None, 0
         document['output_pages']['pages'] = [p]
@@ -240,20 +245,36 @@ def mutate(document, action, data):
         return document['output_pages']['pages'][0]['id'] if group else None
     if action == 'create':
         p = new_page(data.get('title') or 'New page', navigation_order=len(group))
+        from .page_grouping import auto_slug
+        p['slug'] = auto_slug(p['title'], {item['slug'] for item in group})
         # Creation is explicit; an empty page stays visible and blocks export.
         group.append(p)
         return p['id']
     if p is None:
         raise ValueError('Select an existing output page')
+    if p.get('manual_reconstruction_source_page') and action != 'reorder':
+        raise ValueError('This is a reconstruction placeholder. Restore the source page in Structure before editing, merging or approving it.')
     if action == 'assign_unassigned':
         assigned = {ref for item in group for ref in item['block_ids']}
         for block in included(document):
             if str(block['id']) not in assigned:
                 mutate(document, 'assign', {'page_id': p['id'], 'block_id': block['id']})
     elif action == 'metadata':
+        from .page_grouping import auto_slug
+        mode = data.get('slug_mode')
+        if mode is None and p.get('slug_mode') == 'auto':
+            mode = 'auto' if 'slug' not in data else 'custom'
+        if mode not in (None, 'auto', 'custom'):
+            raise ValueError('Choose an automatic or custom page slug.')
+        if 'title' in data and data['title'] != p.get('title'):
+            p['title_mode'] = 'custom'
         for key in ('title', 'slug', 'type', 'parent', 'navigation_order'):
             if key in data:
                 p[key] = int(data[key]) if key == 'navigation_order' else data[key] or (None if key == 'parent' else '')
+        if mode == 'auto':
+            p['slug'] = auto_slug(p['title'], {item['slug'] for item in group if item is not p})
+        if mode is not None:
+            p['slug_mode'] = mode
     elif action == 'assign':
         ref = str(data.get('block_id'))
         if ref not in {str(b['id']) for b in document.get('blocks', [])}:
@@ -292,16 +313,15 @@ def mutate(document, action, data):
         block = next(b for b in document['blocks'] if str(b['id']) == ref)
         title = block.get('content') if block.get('type') == 'heading' else p['title'] + ' continued'
         new = new_page(title, p['block_ids'][index:], parent=p.get('parent'), navigation_order=p['navigation_order'] + 1)
-        base = new['slug']
-        n = 2
-        while new['slug'] in {item['slug'] for item in group}:
-            new['slug'] = f'{base}-{n}'
-            n += 1
+        from .page_grouping import auto_slug
+        new['slug'] = auto_slug(title, {item['slug'] for item in group})
         p['block_ids'] = p['block_ids'][:index]
         group.insert(group.index(p) + 1, new)
         return new['id']
     elif action == 'merge':
         other = page_by_id(document, data.get('other_id'))
+        if other and other.get('manual_reconstruction_source_page'):
+            raise ValueError('Restore the source page before merging its reconstruction placeholder.')
         if other is None or other is p:
             raise ValueError('Choose a different page to merge into this page')
         p['block_ids'].extend(other['block_ids'])
@@ -398,6 +418,7 @@ def status(document, page_id):
     projected = page_document(document, page_id)
     report = assess_document(projected)
     unresolved = projected['output_unresolved_targets']
-    return {'structural': 'reviewed' if all(b.get('review', {}).get('status') == 'approved' for b in projected['blocks']) else 'needs_review',
+    reconstruction_page = page_by_id(document, page_id).get('manual_reconstruction_source_page')
+    return {'structural': 'reviewed' if not reconstruction_page and all(b.get('review', {}).get('status') == 'approved' for b in projected['blocks']) else 'needs_review',
             'accessibility': report, 'approval': copy.deepcopy(page_by_id(document, page_id)['approval']),
-            'unresolved_targets': unresolved, 'source_ranges': source_ranges(projected['blocks'])}
+            'unresolved_targets': unresolved, 'source_ranges': [[reconstruction_page, reconstruction_page]] if reconstruction_page else source_ranges(projected['blocks'])}
