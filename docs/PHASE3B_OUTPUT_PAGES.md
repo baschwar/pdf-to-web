@@ -30,18 +30,58 @@ Both support Undo. Invalid arrangements show the reason and disable export.
 
 Open a reviewed project and select **Arrange Pages**. Older projects start with
 one page containing every included top-level block; no heading grouping is
-applied on load. Expand **Grouping suggestions** to inspect proposed headings,
-start boundaries, counts and source ranges. **Apply replacement arrangement**
-explicitly replaces the arrangement and supports Undo. Suggestions use headings
-at H1/H2 and explicit `section_boundary` markers and keep visual bundles intact.
+applied on load. Expand **Grouping suggestions** and choose a starting method:
+
+- **PDF / source pages** uses the physical PDF page count and proposes one group
+  per source page in numeric order. Preview identifies reconstruction holds,
+  empty/excluded-only pages, metadata replacement effects and retained empty
+  drafts. Exact assignment matches retain their page identity and metadata.
+  Shared or missing source information requires an explicit destination choice;
+  visual bundles remain intact. Existing empty drafts may make the final page
+  count larger than the physical-page count, and are disclosed rather than lost.
+- **Heading sections** uses H1/H2 and explicit `section_boundary` markers.
+  Check the suggestions you want, or use **Select all / Clear all**. Preview
+  shows the selected block moves; Apply moves only those sections and retains
+  unselected assignments, page metadata and held fragments. Residual empty pages
+  stay visible and unfinished. Conflicting semantic bundles require correction.
+
+Both methods require **Preview** before **Apply**. Preview does not persist;
+Apply recomputes the exact proposal, rejects stale review versions, saves once
+and supports normal saved Undo. Unsaved page metadata blocks Apply while keeping
+the draft visible. No grouping certifies review or publication readiness.
+
+Generated titles follow the first included H1 or H2 encountered in reviewed
+reading order within each page; excluded headings and descendants of excluded
+blocks do not contribute. Paragraph text or retained merge provenance is not
+treated as a heading. Without a usable heading, source groups use **Source page
+N**, and heading groups use **Page N**. Reconstruction placeholders retain their
+unfinished label. Duplicate heading text is allowed; automatic slugs remain unique.
+
+For already generated defaults, choose **Preview generated page titles** and
+inspect the title/slug before-and-after fields, then **Apply generated page
+titles**. This changes no content assignments, identities, order or parent/type
+metadata and supports saved Undo. Recognition uses tracked generated values or
+the exact prior source-builder identity/default title; unrecognized or custom
+titles remain untouched. Editing a title records a custom override. Automatic
+slugs follow repaired titles; manual slugs remain unchanged. Changed page
+metadata retains normal page-review invalidation while block approvals survive.
 
 Select a page to edit its title, slug, Page/Article type, optional internal Page
 parent and contents order. **Save page** persists locally. **Create page** creates
-an empty group requiring content. **Move here** reassigns a complete block,
+an empty group requiring content. **Add content to this page** opens the outline.
+New slugs follow title edits, normalize Unicode accents and avoid collisions,
+reserved package names and values longer than 100 characters. A manual slug
+override survives later title edits; **Use title for slug** restores automatic
+generation deliberately. Legacy saved slugs remain custom until explicitly changed.
+**Move here** reassigns a complete block and saves immediately; page metadata
+must first be saved or reverted.
 **Split before** creates a page beginning at that block, and **Merge pages**
 combines the selected second page into the current one. Page up/down updates
 contents order. Structure continues to own content reading order. Parent/child
-contents links are shown in **Preview contents**.
+contents links are shown in **Preview contents**. An incomplete arrangement lists
+every page once, including orphaned or cyclic pages, with links to edit invalid
+slugs, assign content or restore a held source page. Valid individual pages remain
+previewable. Package serializers and export validation keep their existing gates.
 
 The page outline shows all document content and its assignment. Empty groups,
 unassigned content, missing references, duplicate assignments, invalid slugs,
@@ -199,3 +239,41 @@ an image, a reviewed table and an extended visual description. It is synthetic,
 not evidence of source extraction quality. Browser reports and screenshots are
 local ignored artifacts under `build/phase3b/`. Real VoiceOver and WordPress
 acceptance remain distinct from these checks.
+
+### Preview output-page navigation
+
+Preview offers **Previous**, **Next**, an **Output page** selector and **Page N
+of M**. **Whole document** retains the single-document preview. Opening Preview
+from Arrange Pages carries the selected saved page, Semantic HTML/WordPress mode
+and Generic/WSUWP profile. **Arrange this page** returns to that page with the
+same mode/profile. Empty pages and reconstruction placeholders stay visible as
+incomplete; previewing does not approve or repair them.
+
+**Expand preview** gives the content more viewport space without changing its
+font or export styles. **Restore preview**, or Escape while focus is in the
+preview controls, returns to the normal layout. Desktop/Narrow widths remain
+available. The expansion is an in-page viewport, not a modal dialog.
+
+Arrange Pages places Title/Slug above compact Type/Parent/Contents order fields,
+uses one wrapping Assign/move and reorder row, and places Merge beside its
+selector. Unsaved metadata and reviewer notes block in-app navigation and
+arrangement changes; browser reload/back/close uses the browser's unsaved-edit
+confirmation. Save or revert drafts before leaving.
+
+Existing running processes need a deliberate relaunch to load changed Python
+page markup. Save drafts in all tabs, quit normally, relaunch with the usual
+launcher, reopen the project, and reload the browser. Code installation does
+not apply any live arrangement or repair.
+
+**Continue to Export** remains available in the expanded Preview toolbar. It
+opens the Export screen without generating files. The current output page, mode
+and profile are carried as return context; document export still covers the
+whole document. **Return to Preview** restores that context. For individual
+pages/packages, use Arrange Pages. Readiness findings remain visible on Export
+and incomplete content still blocks generation.
+
+A bounded navigation check shows Opening Export and prevents repeated clicks.
+An HTTP failure or ten-second timeout restores the controls and shows retry
+guidance beside Continue. **Restore preview** remains available. In an older
+open tab where Continue is covered/inert, choose Restore preview (or Escape),
+then Continue to Export; this does not require quitting the app.

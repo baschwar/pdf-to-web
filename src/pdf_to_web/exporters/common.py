@@ -85,42 +85,43 @@ def _reference_link(reference: dict[str, Any]) -> str:
     return f'<sup><a href="#{footnote_id}" id="{ref_id}">{marker}</a></sup>'
 
 
-def _render_text_with_footnote_references(text: str, references: list[dict[str, Any]]) -> str:
-    if not references:
-        return html.escape(text)
-    replacements = sorted(
-        (
-            int(ref["start"]),
-            int(ref["end"]),
-            _reference_link(ref),
-        )
-        for ref in references
-        if isinstance(ref.get("start"), int)
-        and isinstance(ref.get("end"), int)
-        and 0 <= int(ref["start"]) < int(ref["end"]) <= len(text)
-    )
-    if replacements:
-        parts: list[str] = []
-        cursor = 0
-        for start, end, link in replacements:
-            if start < cursor:
-                continue
-            parts.append(html.escape(text[cursor:start]))
-            parts.append(link)
-            cursor = end
-        parts.append(html.escape(text[cursor:]))
-        return "".join(parts)
-
-    rendered = html.escape(text)
-    for reference in references:
-        marker = str(reference.get("marker", ""))
+def _footnote_spans(text, references):
+    """Locate existing associations in text before escaping or adding run markup."""
+    spans = []
+    pending = []
+    for ref in references:
+        start, end = ref.get('start'), ref.get('end')
+        marker = str(ref.get('marker', ''))
+        if (isinstance(start, int) and isinstance(end, int)
+                and 0 <= start < end <= len(text) and text[start:end] == marker):
+            if not any(start < right and end > left for left, right, _ in spans):
+                spans.append((start, end, ref))
+        else:
+            pending.append(ref)
+    for ref in pending:
+        marker = str(ref.get('marker', ''))
         if not marker:
             continue
-        pattern = re.compile(rf"(?<!\w){re.escape(html.escape(marker))}(?!\w)")
-        rendered, changed = pattern.subn(_reference_link(reference), rendered, count=1)
-        if changed:
-            break
-    return rendered
+        for match in re.finditer(rf'(?<!\w){re.escape(marker)}(?!\w)', text):
+            start, end = match.span()
+            if not any(start < right and end > left for left, right, _ in spans):
+                spans.append((start, end, ref))
+                break
+    return sorted(spans, key=lambda span: span[:2])
+
+
+def _render_run(run, text):
+    # Text fields store literal line breaks. HTML otherwise collapses them;
+    # render explicit breaks after escaping, without shifting note offsets.
+    value = html.escape(text).replace('\r\n', '\n').replace('\r', '\n').replace('\n', '<br>')
+    if run.get('type') == 'strong':
+        return f'<strong>{value}</strong>'
+    if run.get('type') == 'emphasis':
+        return f'<em>{value}</em>'
+    if run.get('type') == 'link':
+        href = html.escape(str(run.get('url', '')), quote=True)
+        return f'<a href="{href}">{value}</a>'
+    return value
 
 
 def render_inline(block: dict[str, Any]) -> str:
@@ -128,27 +129,33 @@ def render_inline(block: dict[str, Any]) -> str:
         ref for ref in block.get("footnote_references", []) if isinstance(ref, dict)
     ]
     runs = block.get("runs")
-    if not isinstance(runs, list):
-        return _render_text_with_footnote_references(str(block.get("content", "")), references)
-    rendered: list[str] = []
-    for run in runs:
-        if not isinstance(run, dict):
-            continue
-        value = html.escape(str(run.get("text", "")))
-        run_type = run.get("type", "text")
-        if run_type == "strong":
-            rendered.append(f"<strong>{value}</strong>")
-        elif run_type == "emphasis":
-            rendered.append(f"<em>{value}</em>")
-        elif run_type == "link":
-            href = html.escape(str(run.get("url", "")), quote=True)
-            rendered.append(f'<a href="{href}">{value}</a>')
-        else:
-            rendered.append(value)
-    inline = "".join(rendered)
-    for reference in references:
-        inline += _reference_link(reference)
-    return inline
+    styled = isinstance(runs, list)
+    runs = [run for run in runs if isinstance(run, dict)] if styled else [
+        {'type': 'text', 'text': str(block.get('content', ''))}]
+    text = ''.join(str(run.get('text', '')) for run in runs)
+    spans = _footnote_spans(text, references)
+
+    def segment(start, end):
+        result, offset = [], 0
+        for run in runs:
+            value = str(run.get('text', ''))
+            left, right = max(start, offset), min(end, offset + len(value))
+            if left < right:
+                result.append(_render_run(run, value[left - offset:right - offset]))
+            offset += len(value)
+        return ''.join(result)
+
+    rendered, cursor = [], 0
+    for start, end, ref in spans:
+        rendered.extend((segment(cursor, start), _reference_link(ref)))
+        cursor = end
+    rendered.append(segment(cursor, len(text)))
+    if styled:
+        # Legacy run records may contain an explicit reference with no textual
+        # marker. Retain that existing association without inventing a position.
+        rendered.extend(_reference_link(ref) for ref in references
+                        if not any(found is ref for _, _, found in spans))
+    return ''.join(rendered)
 
 
 def render_footnote_backlinks(footnote: dict[str, Any]) -> str:

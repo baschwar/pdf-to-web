@@ -3,6 +3,8 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import threading
+from functools import wraps
 import re
 import uuid
 from difflib import SequenceMatcher
@@ -148,10 +150,28 @@ def _snapshot(project_dir: Path, current: dict[str, Any]) -> Path:
     return path
 
 
-def save_review_document(project_dir: Path, document: dict[str, Any], *, snapshot: bool = True) -> dict[str, Any]:
+review_write_lock = threading.RLock()
+
+
+def _locked_review_write(function):
+    @wraps(function)
+    def locked(*args, **kwargs):
+        with review_write_lock:
+            return function(*args, **kwargs)
+    return locked
+
+
+@_locked_review_write
+def save_review_document(project_dir: Path, document: dict[str, Any], *, snapshot: bool = True, expected_review_token: str | None = None) -> dict[str, Any]:
+    from .manual_reconstruction import sync_placeholders
+    if 'output_pages' in document:
+        sync_placeholders(document)
     project_dir = project_dir.expanduser().resolve()
     path = review_path(project_dir)
     original_bytes = path.read_bytes() if path.is_file() else None
+    if expected_review_token is not None:
+        from .image_review import validate_token
+        validate_token(_read_document(path), expected_review_token)
     project_path = project_dir / 'project.json'
     project_bytes = project_path.read_bytes()
     revision_path = None
@@ -391,7 +411,7 @@ def _set_status(block: dict[str, Any], status: str) -> None:
     review["updated_at"] = utc_now()
 
 
-def _rewrite_inline(block: dict[str, Any], content: str) -> None:
+def _rewrite_inline(block: dict[str, Any], content: str, *, preserve_link_labels: bool = False) -> None:
     """Keep formatting/destinations for edits contained within a single run."""
     runs = block.get('runs')
     old = str(block.get('content') or '')
@@ -404,7 +424,10 @@ def _rewrite_inline(block: dict[str, Any], content: str) -> None:
         end = cursor + len(str(run.get('text', '')))
         spans.append((cursor, end, run))
         cursor = end
-    for index, (start, end, run) in enumerate(spans):
+    candidates = list(enumerate(spans))
+    if preserve_link_labels:
+        candidates.sort(key=lambda item: item[1][2].get('type') == 'link')
+    for index, (start, end, run) in candidates:
         suffix = old[end:]
         if content.startswith(old[:start]) and content.endswith(suffix) and len(content) >= start + len(suffix):
             replacement = content[start:len(content) - len(suffix) if suffix else len(content)]
@@ -510,11 +533,49 @@ def _approve_block(block: dict[str, Any]) -> None:
         raise ValueError('Add alt text or mark the image as decorative before approving it')
 
 
+@_locked_review_write
 def update_block(project_dir: Path, block_id: str, changes: dict[str, Any], *, approve_after_save: bool = False) -> dict[str, Any]:
     document = ensure_review_document(project_dir)
     if 'expected_review_token' in changes:
         from .image_review import validate_token
         validate_token(document, changes['expected_review_token'])
+    if 'form_edits' in changes:
+        from .image_review import validate_token
+        validate_token(document, changes.get('expected_review_token'))
+        if not approve_after_save or set(changes) - {'form_edits', 'expected_review_token', 'displayed_description_ids'}:
+            raise ValueError('Combined editor changes require the top Save & Approve action.')
+        entries = changes['form_edits']
+        if not isinstance(entries, list) or not entries or len(entries) > 1000 or any(not isinstance(entry, dict) for entry in entries):
+            raise ValueError('Submit the edited fields for this block.')
+        primary = None
+        links = []
+        seen = set()
+        allowed = {'type', 'level', 'content', 'review_status', 'alt', 'caption', 'decorative',
+                   'long_description', 'description_edits', 'table_header_row', 'table_header_column',
+                   'table_caption', 'table_reviewed'}
+        for entry in entries:
+            if 'link_block_id' in entry:
+                if set(entry) != {'link_block_id', 'link_index', 'link_text'}:
+                    raise ValueError('Submit only the displayed link fields.')
+                try:
+                    index = int(entry['link_index'])
+                except (TypeError, ValueError):
+                    raise ValueError('Choose an existing link to edit') from None
+                key = (entry['link_block_id'], index)
+                if not isinstance(key[0], str) or key in seen:
+                    raise ValueError('Submit each displayed link once.')
+                seen.add(key)
+                links.append(entry)
+            else:
+                if primary is not None or set(entry) - allowed:
+                    raise ValueError('Submit one set of block fields and its displayed links.')
+                primary = {key: value for key, value in entry.items() if key != 'review_status'}
+        combined = {**(primary or {}), 'link_edits': links,
+                    'expected_review_token': changes['expected_review_token']}
+        if 'displayed_description_ids' in changes:
+            combined['displayed_description_ids'] = changes['displayed_description_ids']
+        _edit_block(document, block_id, combined, approve_after_save=True)
+        return save_review_document(project_dir, document, expected_review_token=changes['expected_review_token'])
     if 'link_block_id' in changes:
         # Link labels can belong to a nested item, while the displayed top-level
         # block owns its content review. Save both in one existing Undo snapshot.
@@ -537,6 +598,8 @@ def update_block(project_dir: Path, block_id: str, changes: dict[str, Any], *, a
 
 
 def _edit_block(document, block_id, changes, *, approve_after_save=False):
+    from .manual_reconstruction import require_unmanaged
+    require_unmanaged(document, block_id)
     _siblings, _index, block = _find_location(document.get("blocks", []), block_id)
     if block.get('type') == 'image' and 'expected_review_token' in changes and not approve_after_save:
         from .image_review import validate_token
@@ -553,6 +616,18 @@ def _edit_block(document, block_id, changes, *, approve_after_save=False):
             raise ValueError('Include the image before saving and approving it')
     from .publication import content_digest
     previous_content = content_digest(block)
+    pending_links = []
+    for edit in changes.get('link_edits', []):
+        target = next((node for node in _walk([block]) if str(node.get('id')) == edit['link_block_id']), None)
+        try:
+            index = int(edit['link_index'])
+            run = target['runs'][index]
+            if index < 0 or run.get('type') != 'link':
+                raise ValueError()
+            ordinal = sum(value.get('type') == 'link' for value in target['runs'][:index])
+        except (TypeError, KeyError, IndexError, ValueError):
+            raise ValueError('Choose an existing link in the displayed block') from None
+        pending_links.append((edit, copy.deepcopy(run), ordinal))
     from .exporters.common import has_unstructured_list_text, retained_list_text
     malformed_list = has_unstructured_list_text(block)
     retained_text = retained_list_text(block) if malformed_list else str(block.get('content') or '')
@@ -584,7 +659,7 @@ def _edit_block(document, block_id, changes, *, approve_after_save=False):
             raise ValueError("Text editing is not supported for this block type")
         content = str(changes["content"])
         old_content = str(block.get('content') or '')
-        _rewrite_inline(block, content)
+        _rewrite_inline(block, content, preserve_link_labels=bool(pending_links))
         if block.get("type") == "list" and not block.get('children') and content.strip() and (
                 content == old_content or malformed_list or block.get('runs') or block.get('footnote_references') or block.get('source_links')):
             # A type change or explicit recovery keeps the whole text as one
@@ -657,6 +732,12 @@ def _edit_block(document, block_id, changes, *, approve_after_save=False):
             block['content'] = ''.join(str(r.get('text', '')) for r in runs)
             _set_status(block, 'needs_review')
             _mark_content_parents(document, block)
+    for edit, original, ordinal in pending_links:
+        target = next((node for node in _walk([block]) if str(node.get('id')) == edit['link_block_id']), None)
+        links = [(index, run) for index, run in enumerate((target or {}).get('runs', [])) if run.get('type') == 'link']
+        if ordinal >= len(links) or links[ordinal][1] != original:
+            raise ValueError('The text edit also changes a selected link. Reconcile its text and link label before saving; no edits were saved.')
+        _edit_block(document, edit['link_block_id'], {'link_index': links[ordinal][0], 'link_text': edit['link_text']})
     if any(field in changes for field in ("alt", "caption", "decorative", "long_description", "description_edits")):
         if block.get("type") != "image":
             raise ValueError("Image accessibility fields can only be set on an image block")
@@ -856,6 +937,8 @@ def merge_with_next(project_dir: Path, block_id: str, *, expected_review_token: 
 
 def split_block(project_dir: Path, block_id: str, offset: int) -> dict[str, Any]:
     document = ensure_review_document(project_dir)
+    from .manual_reconstruction import require_unmanaged
+    require_unmanaged(document, block_id)
     siblings, index, block = _find_location(document.get("blocks", []), block_id)
     if block.get("type") not in TEXT_BLOCK_TYPES:
         raise ValueError("Only text blocks can be split")
@@ -939,6 +1022,8 @@ def update_complex_visual(
     visual = next((item for item in visuals if str(item.get("id")) == visual_id), None)
     if visual is None:
         raise KeyError(f"Complex visual was not found: {visual_id}")
+    from .manual_reconstruction import require_unmanaged
+    require_unmanaged(document, visual.get('source_block_id'))
     if 'expected_review_token' in changes:
         from .image_review import validate_token
         validate_token(document, changes['expected_review_token'])

@@ -5,6 +5,92 @@ observed issues; they are not implemented unless explicitly marked complete.
 Implementation requires a scoped directive and verification. Keep private
 project snapshots, screenshots and assessment output untracked under `build/`.
 
+## Apply reviewed reading order and element tags to a PDF
+
+Recorded 2026-10-12 at the user's request. **Deferred concept; no PDF-writing
+implementation or project fork is authorized.** Explore using the drag-and-drop
+reading-order review and reviewed block classifications to produce a separately
+saved remediated PDF that preserves the source's visual layout. This could reduce
+manual reading-order and block-tagging work in Adobe Acrobat. Preserve the original
+PDF unchanged and keep processing local.
+
+Consider a project fork or a separate PDF-remediation project before extending
+PDF to Web's product scope. Reuse the review interface, stable block identities,
+source provenance and authored semantics where appropriate; choose the project
+boundary after a feasibility investigation rather than committing to it now.
+
+A first proof of concept should use a synthetic or approved, already-tagged PDF:
+match reviewed blocks to existing PDF content/tag associations, apply their order
+to the logical tag structure, and save a separate output. Source-page bounding
+boxes alone do not establish those associations. Report missing, ambiguous or
+partial matches rather than guessing or declaring the output complete.
+
+Creating tags for untagged or badly tagged PDFs is a larger follow-on problem.
+Account for nested lists, table cells and headers, figures and alternatives,
+links/annotations, artifacts and content spanning pages. Web-authored content
+edits may no longer match the original PDF; define that behavior explicitly.
+Web exclusion decisions must not automatically become PDF artifact decisions.
+
+Future acceptance must verify unchanged visual appearance, correct content/tag
+associations, logical order and semantic nesting, Acrobat inspection, appropriate
+PDF accessibility validation and human screen-reader review. Automated validator
+results alone do not establish usable reading order or PDF/UA conformance.
+Implementation requires a later scoped directive; this entry is not a release
+commitment or a change to current exports.
+
+## Vector artwork and QR destination review
+
+Recorded 2026-10-09. **Deferred by the user; no vector recovery or project repair
+implemented.** Source-page inspection can reveal vector QR artwork absent from
+raster image extraction. A future scoped warning could identify a decoded QR on
+the rendered source page without a corresponding extracted asset, show its exact
+destination locally, and require review against nearby printed text. Do not follow
+the URL, insert blocks or approve a replacement automatically. The preferred web
+treatment is a descriptive text link once the intended destination is confirmed;
+printed text alone does not guarantee either a clickable link or a matching QR
+destination. Any detection feature needs false-positive and source-page tests.
+
+## Re-review and starting over
+
+Recorded 2026-10-08. **Deferred by the user for a future review; no reset feature
+or project reset is authorized.** Review Structure currently reopens saved edits
+and valid approvals. Consider clearer View reviewed structure / Continue structure
+review labels and distinguish four intentions:
+
+- Reopen and recheck the saved review without clearing decisions.
+- Require review again while keeping edited content, IDs, reading order and
+  exclusions, with an explicit scope for approval decisions.
+- Restore the saved original extracted content, replacing authored edits; keep
+  this separate from rerunning extraction.
+- Create a new independent project for a new PDF or a clean conversion run.
+
+A future proposal must account for Accessibility decisions, table and image
+description reviews, arranged-page approvals, media associations and stale exports.
+Show affected counts, preserve a dated project backup and provide recovery before
+replacing content. Existing Needs review / Bulk review controls allow rechecking
+without discarding edits; a new project in a separate folder remains the current
+clean-run option. Implementation requires a later scoped decision.
+
+## Refresh README screenshot and silent walkthrough
+
+Recorded 2026-10-04 at the user's request. **Noncritical documentation follow-up;
+not a 0.7.1 release blocker.** The existing Structure screenshot and 54-second
+silent walkthrough were added on 2026-09-18, before the expanded navigation,
+review controls and export workflow. Refresh both using a synthetic demonstration
+project. Keep the walkthrough silent, with readable step captions and enough time
+to follow each action; its duration can exceed 54 seconds.
+
+Cover opening a chosen project folder, source comparison, the two Structure
+filters, Save and approve, Accessibility review, previews, Export readiness,
+saved outputs, Copy and Quit. Show optional image-draft ZIP/import, Arrange Pages
+and WordPress media matching as separate steps where appropriate. Longer steps
+can use chapters or short companion clips rather than rushing the demonstration.
+
+Use neutral demonstration paths and synthetic content. Exclude private project
+names, source publications, attachment IDs and actual project screenshots.
+Check legibility, captions, alternative text and README artifact links. Publish
+the refreshed media in a later documentation update; preserve the 0.7.1 tag.
+
 ## Explicit source-header title recovery
 
 Recorded 2026-10-05. **Automatic detection remains a limitation; manual arranged
@@ -209,3 +295,85 @@ Potential scope:
 
 This is intentionally deferred. The current supported workflow is local asset
 export followed by manual Media Library upload and CSV mapping import.
+
+## Multi-select merge inside reading-order repair
+
+Recorded 2026-10-12. The initial assessment below preceded implementation approval.
+**A constrained first version is now implemented locally**: adjacent plain
+paragraphs or compatible lists, exact confirmation, staged ordering/merges, one
+Apply/Undo, retained original provenance and persistent Unmerge for unchanged
+results. See README and the acceptance ledger for actual verification. Edited
+results refuse Unmerge rather than silently losing changes. Rich/associated cases,
+numbering restarts, re-merging an existing merged row and automatic hyphen removal
+remain unsupported. Original assessment follows as design rationale; it is not a
+claim that all future variants are implemented.
+
+Optimize for orphan paragraph fragments and PDF extraction splits in lists.
+Allow homogeneous **paragraph** selections or compatible **list blocks** only.
+Disable images, headings, tables, mixed types, excluded/held/shared-page content,
+and unsafe rich/footnote cases with a concrete reason. Joining list blocks appends
+existing items; it must not turn separate items into one concatenated text item.
+Keep Move to as the explicit keyboard/screen-reader alternative to dragging.
+Up/down is useful for a single quick move in ordinary Structure, but need not be
+repeated in the compact drag editor. Document start/end has a different scope.
+
+Suggested UI: labelled selection checkboxes independent of drag handles; a live
+selection count; Merge selected near Cancel/Apply with its disabled reason.
+Confirmation previews originals in staged reading order and the resulting content,
+including list markers/start numbers, before staging a merge. Replace selected
+rows with one draggable row showing first five words and a “Merged · 3 paragraphs”
+or “Merged · 2 lists / 6 items” badge. Expand Full text for result and original
+fragments. Draft Undo and Unmerge restore original rows. Cancel discards ordering
+and merge drafts; Apply commits their validated result as **one** saved action.
+
+Require consecutive eligible selections in the complete staged document order,
+not simply adjacent cards in a page projection. Excluded, other-page, unlocated,
+shared boundaries or intervening unselected blocks must not disappear from the
+adjacency test. A reviewer can move eligible fragments together before merging,
+but only within existing page/segment limits. Bind the transaction to current
+project identity, review token, exact origin IDs and source-page scope.
+
+Paragraph merge produces one semantic paragraph. Show the boundary policy in
+preview: retain the extracted boundary, use a joining space, or explicitly join a
+split word. Do not silently remove visible hyphens, infer missing words, or guess
+whether a line break is intentional. Keep original text recoverable and require
+review of the resulting paragraph. Rich links, formatting and footnote offsets
+need exact preservation or an explicit unsupported reason.
+
+For lists, require the same ordered/unordered kind and compatible marker style.
+Preserve child IDs, nesting, item order, formatting and footnotes without flattening.
+Unordered compatible lists can append items. Ordered lists require compatible
+start/continuation numbers; a deliberate restart is a separate list and must not
+be silently renumbered. Mixed kinds/styles, conflicting numbering or ambiguous
+hierarchy remain disabled until a separately scoped authoring decision exists.
+
+Reuse existing content validation, output-page reference reconciliation and saved
+Undo, but not repeated calls to today's immediate Merge next. That function only
+joins two adjacent same-type plain text blocks (including several nonparagraph
+text types), refuses lists, keeps the first ID, inserts a blank-line boundary,
+records the second ID/source-page membership, deletes its live row and marks the
+result Needs review. Undo restores the preceding complete snapshot. It does not
+retain a dedicated full original bundle or a persistent Unmerge command. Its
+text merge also retains the first bounding box rather than all original boxes.
+
+A transactional merger must retain complete original block objects, stable IDs,
+reading positions, per-page source boxes, approval metadata, exclusions and output
+assignments. Keep the first reviewed ID as the resulting row and retain a mapping
+for absorbed IDs; validate duplicate IDs and conflicting page assignments. Render
+all recorded source regions, never a fabricated enclosing box. Reconcile affected
+output references and page approvals; mark the merged result Needs review instead
+of carrying approval over to changed content. Retain unaffected blocks/decisions.
+Persist origins if Unmerge must work after later saves/reopen; a revision-level
+Undo alone cannot safely unmerge one older operation. If merged content has since
+been edited, explain that original restoration cannot apportion those edits
+without a separate review decision. Do not claim Split is an inverse: it makes
+new IDs and does not reconstruct original provenance or approvals.
+
+Feasibility: checkboxes and one resulting card are a modest UI change. The safe
+work is a medium-sized model/transaction feature: pure in-memory reorder/merge
+planning, list compatibility, provenance/origin persistence, output-reference
+mapping, conflict validation and reversible commit. Start with plain adjacent
+paragraphs and compatible lists; defer mixed/rich unsupported cases. Acceptance
+must cover Cancel/no-write, one Apply/Undo revision, stage Undo/Unmerge, save/reopen,
+original IDs and all boxes, list nesting/numbering, failed validation rollback,
+stale/double submission, exports and keyboard/touch/screen-reader flows.

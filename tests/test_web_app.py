@@ -259,7 +259,9 @@ class WebAppTests(unittest.TestCase):
         self.assertRegex(response.text, r'data-source-key="[0-9a-f]{16}"')
         self.assertRegex(response.text, r'data-source-url="/source-page/1\.png\?v=[0-9a-f]{16}"')
         self.assertIn('aria-label="Move block 1 to start" disabled', response.text)
-        self.assertIn('aria-label="Move block 1 up" disabled', response.text)
+        self.assertNotIn('data-action="up"', response.text)
+        self.assertNotIn('data-action="down"', response.text)
+        self.assertIn('aria-label="Move block 1 to start" disabled', response.text)
         self.assertIn('aria-label="Move block 3 to end" disabled', response.text)
         self.assertIn('id="previous-block"', response.text)
         self.assertIn('id="selected-block-page">No block selected</span>', response.text)
@@ -279,9 +281,9 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("regions.forEach((bbox) =>", app_script.text)
         self.assertIn("function updateStickyHeaderOffset()", app_script.text)
         self.assertIn("--structure-scroll-offset", app_script.text)
-        self.assertIn("card.scrollIntoView({ block: 'start' })", app_script.text)
+        self.assertIn("card.scrollIntoView({ block: 'start', behavior: 'instant' })", app_script.text)
         self.assertIn("`Page ${cards[index].dataset.page}`", app_script.text)
-        self.assertIn("await loadSourcePageImage(`/source-page/${requestedPage}.png?v=${sourceKey}`)", app_script.text)
+        self.assertIn("await loadSourcePageImage(sourceUrl)", app_script.text)
         self.assertIn("firstCard = blockCards().find", app_script.text)
         self.assertIn("else delete values.level", app_script.text)
         self.assertIn("querySelector('select').disabled", app_script.text)
@@ -494,6 +496,50 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("Semantic HTML", response.text)
         self.assertIn("WordPress Preview", response.text)
         self.assertIn('sandbox="allow-same-origin"', response.text)
+
+    def test_wordpress_is_initial_preview_for_document_and_pages_without_review_changes(self):
+        from html.parser import HTMLParser
+        from urllib.parse import parse_qs, urlparse
+        from pdf_to_web.project import save_project
+        from pdf_to_web.review_state import ensure_review_document, review_path
+
+        class Frames(HTMLParser):
+            def __init__(self, markup):
+                super().__init__()
+                self.frames = []
+                self.feed(markup)
+
+            def handle_starttag(self, tag, attrs):
+                if tag == 'iframe':
+                    self.frames.append(dict(attrs))
+
+        self.bootstrap()
+        ensure_review_document(self.project)
+        before = review_path(self.project).read_bytes()
+        for profile in ('generic', 'wsuwp'):
+            project = load_project(self.project)
+            project['export']['wordpress_profile'] = profile
+            save_project(self.project, project)
+            for route in ('/preview', '/output-pages'):
+                with self.subTest(profile=profile, route=route):
+                    page = self.client.get(route)
+                    frame = Frames(page.text).frames[0]
+                    query = parse_qs(urlparse(frame['src']).query)
+                    self.assertEqual(query['profile'], [profile])
+                    self.assertIn('WordPress', frame['title'])
+                    self.assertEqual(frame['sandbox'], 'allow-same-origin')
+                    self.assertIn('<option value="' + profile + '" selected>', page.text)
+                    if route == '/output-pages':
+                        self.assertEqual(query['mode'], ['wordpress'])
+                    else:
+                        self.assertEqual(urlparse(frame['src']).path, '/api/preview/wordpress')
+                    with mock.patch('pdf_to_web.web.render_gutenberg_preview',
+                                    return_value=WordPressPreview('<p>Converted saved content</p>', ('core/paragraph',), ())) as render:
+                        rendered = self.client.get(frame['src'])
+                    self.assertEqual(rendered.status_code, 200)
+                    self.assertIn('Converted saved content', rendered.text)
+                    self.assertIn('Original one', render.call_args.args[0])
+                    self.assertEqual(review_path(self.project).read_bytes(), before)
 
     def test_blocked_document_cannot_export_gutenberg_or_wxr(self):
         data = json.loads(original_path(self.project).read_text())

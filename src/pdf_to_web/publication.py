@@ -78,6 +78,9 @@ def effective_block_status(block, document=None):
 def readiness_findings(document, selected_pages=None):
     """Visible source blocks own nested edits; derived markup cannot approve them."""
     issues = []
+    for page in document.get('review', {}).get('manual_reconstruction_pages', {}):
+        issues.append({'code': 'manual_reconstruction_pending', 'source_page': int(page),
+                      'message': f'Source page {page} needs manual reconstruction. Restore and review its content before publication.'})
     owners = {}
     nodes = {}
     def add(code, message, block=None, visual=None, page=None):

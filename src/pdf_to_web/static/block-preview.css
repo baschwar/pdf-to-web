@@ -1,0 +1,13 @@
+:root { color-scheme: light; font-family: system-ui, sans-serif; line-height: 1.55; color: #20252b; background: #fff; }
+body { margin: 0; overflow-wrap: anywhere; }
+main { display: flow-root; }
+p:first-child, ol:first-child, ul:first-child { margin-top: 0; }
+ol, ul { padding-inline-start: 1.6rem; }
+li > ol, li > ul { margin-block: .35rem; }
+a { color: #175d91; }
+a[aria-disabled="true"] { text-decoration: underline; cursor: default; }
+a:focus-visible { outline: 3px solid #175d91; outline-offset: 3px; }
+img { max-width: 100%; height: auto; }
+table { border-collapse: collapse; max-width: 100%; }
+th, td { border: 1px solid #b7bbc0; padding: .4rem; }
+.footnotes, section { border-top: 1px solid #b7bbc0; margin-top: 1rem; }

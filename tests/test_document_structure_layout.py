@@ -249,8 +249,9 @@ class DocumentStructureLayoutTests(unittest.TestCase):
         update_block(self.root, 'photo', {'review_status': 'needs_review'})
         page = self.client.get('/structure').text
         self.assertRegex(page, r'aria-label="Approve block 1" disabled>Approve')
-        self.assertNotIn('aria-label="Approve block 3"', page)
-        self.assertIn('aria-label="Save and approve block 3"', page)
+        self.assertIn('aria-label="Approve block 3"', page)
+        self.assertIn('id="block-photo-approve"', page)
+        self.assertNotIn('data-save-and-approve', page)
         tag = re.search(r'<details id="image-description-tools"[^>]*>', page).group()
         self.assertIn(' open', tag)  # The image above was explicitly returned to Needs review.
         standalone = re.search(r'<details id="visual-description-tools"[^>]*>', page).group()

@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "@dnd-kit/dom": "0.5.0",
+    "esbuild": "0.28.2"
+  },
+  "private": true,
+  "scripts": {
+    "build": "esbuild reading-order.js --bundle --format=esm --outfile=../../src/pdf_to_web/static/reading-order.bundle.js --legal-comments=linked"
+  }
+}

@@ -121,6 +121,12 @@ def _link_items(block: dict[str, Any]) -> list[dict[str, Any]]:
 def assess_document(document: dict[str, Any]) -> dict[str, Any]:
     from .publication import effective_block_status
     items: list[dict[str, Any]] = []
+    for page in document.get('review', {}).get('manual_reconstruction_pages', {}):
+        item = _item(f'manual-reconstruction:{page}', 'unresolved_content',
+                     f'Source page {page} needs manual reconstruction',
+                     'Retained fragments are excluded temporarily. Restore and review the completed content in Structure; this hold cannot be approved away.')
+        item['source_page'] = int(page)
+        items.append(item)
     decisions = document.get("accessibility_review", {}).get("decisions", {})
     headings: list[dict[str, Any]] = []
 

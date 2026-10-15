@@ -84,6 +84,8 @@ def apply_batch(project_dir, data):
         row = catalog[identity]
         try:
             if kind == 'block':
+                from .manual_reconstruction import require_unmanaged
+                require_unmanaged(working, row['target_id'])
                 block = _find_location(working['blocks'], row['target_id'])[2]
                 if status == 'approved':
                     if is_excluded(block):

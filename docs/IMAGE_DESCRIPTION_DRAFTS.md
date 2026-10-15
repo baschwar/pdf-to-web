@@ -4,6 +4,25 @@ This feature extends Structure's existing image authoring workflow. It does not
 approve images, certify accessibility, upload media, or connect to WordPress.
 Accepted fields continue to drive HTML, Gutenberg, WXR and Output Pages.
 
+## Batch preparation and per-image suggestions
+
+The upper **Image description drafts** panel configures the drafting method,
+selects batches, generates through the chosen provider, or exports manual requests
+and validates/imports completed response JSON. Each image's optional drafting
+area addresses that image alone: context/association, request/retry, suggestion
+editing and per-field Apply. Both use the same request store and provider/exchange
+pipeline; these are batch and per-image views, not separate generators.
+
+**Draft alt text** is a suggestion field, distinct from the image's authoring
+**Alt text**. **Save draft edits** saves the suggestion; **Apply alt text/caption/
+long description** deliberately replaces that authored field. Generation/import
+can populate only empty authored fields while preserving existing text. These
+writes never approve the image. Read the final authored alternatives/descriptions,
+then use top **Approve** for saved content or **Save & Approve** for edited review
+fields. The approval action saves authored fields, not pending draft edits,
+provider settings or image/context association changes. Ordinary image save stays
+available without approval, with Back to review actions for efficient return.
+
 ## Review workflow
 
 The preparation tools appear before Reading order and open initially when image
@@ -61,7 +80,7 @@ the useful default.
    while preserving subsequent author edits. Population never approves a block;
    use the existing review controls to approve. Decorative suggestions require
    the existing decorative control, which retains a legitimate caption.
-   Successful image Save and approve advances to the next pending block within
+   Successful image top Save & Approve advances to the next pending block within
    the exact current filter, like solo Approve. Empty filters remain selected with
    Show all recovery; failures keep the current image and unsaved fields. Earlier
    decisions remain intact and do not need repeated approval for this UI change.
